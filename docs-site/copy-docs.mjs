@@ -36,7 +36,30 @@ if (fs.existsSync(indexDestMdx)) {
 }
 
 if (fs.existsSync(readmeSrc)) {
-  fs.copyFileSync(readmeSrc, indexDestMd);
+  let readmeContent = fs.readFileSync(readmeSrc, 'utf8');
+  if (!readmeContent.startsWith('---')) {
+    const heroFrontmatter = `---
+title: LangChain Logbook
+description: The ultimate learning path for LangChain and AI Agents.
+template: splash
+hero:
+  tagline: 从底层重新认识大语言模型应用架构，构建工业级 Agent
+  image:
+    file: ../../assets/houston.webp
+  actions:
+    - text: 开始阅读教程
+      link: /langchain-logbook/tutorials/01_getting_started/
+      icon: right-arrow
+      variant: primary
+    - text: 在 GitHub 查看源码
+      link: https://github.com/HappyFrame/langchain-logbook
+      icon: external
+---
+
+`;
+    readmeContent = heroFrontmatter + readmeContent;
+  }
+  fs.writeFileSync(indexDestMd, readmeContent);
 }
 
 // 4. Inject frontmatter into all markdown files

@@ -1,0 +1,76 @@
+:root {
+  /* Dynamic Theme Variables: Emerald/Cyan AI hacker aesthetic */
+  --sl-hue: 160;
+  
+  --sl-color-accent-low: #064e3b;
+  --sl-color-accent: #10b981; 
+  --sl-color-accent-high: #a7f3d0; 
+  --sl-color-text-accent: #34d399; 
+
+  /* Give the background a slightly cooler dark tone instead of pure black/purple */
+  --sl-color-bg: #090e17;
+  --sl-color-bg-nav: rgba(9, 14, 23, 0.7);
+}
+
+/* Light mode adjustments (Starlight supports toggling) */
+:root[data-theme='light'] {
+  --sl-hue: 160;
+  --sl-color-bg: #f8fafc;
+  --sl-color-bg-nav: rgba(248, 250, 252, 0.7);
+  --sl-color-accent-low: #d1fae5;
+}
+
+/* Glassmorphism Navigation Bar */
+header.header {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background-color: var(--sl-color-bg-nav) !important;
+}
+
+/* Premium Gradient for Hero Title */
+.hero h1 {
+  background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0px 0px 40px rgba(16, 185, 129, 0.2));
+  letter-spacing: -0.05em;
+  font-weight: 800;
+}
+
+/* Sub-headings glow effect */
+h2, h3 {
+  transition: text-shadow 0.3s ease;
+}
+h2:hover, h3:hover {
+  text-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+/* Interactive Card Premium Hover Effects */
+.sl-link-card, .card {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sl-link-card:hover, .card:hover {
+  border-color: var(--sl-color-accent);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.15), 0 0 10px rgba(14, 165, 233, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Button Animations */
+.action.primary {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease-in-out;
+}
+.action.primary:hover {
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
+  transform: scale(1.05);
+}
+
+/* Code block luxury touches */
+.astro-code {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.2);
+}
