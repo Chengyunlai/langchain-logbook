@@ -10,8 +10,6 @@ wheels/
 .venv
 .env
 # global rule
-.cursorrules
-
 # MkDocs
 site/
 
