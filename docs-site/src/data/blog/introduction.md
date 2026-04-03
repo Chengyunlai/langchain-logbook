@@ -1,7 +1,7 @@
 ---
 title: "🦜🔗 LangChain 1.2.x Agent-First 航海日志 (2026)"
 description: "LangChain Logbook content: 🦜🔗 LangChain 1.2.x Agent-First 航海日志 (2026)"
-pubDatetime: 2026-04-02T23:46:41.150Z
+pubDatetime: 2026-04-03T14:16:05.874Z
 featured: true
 tags: ["tutorial"]
 ---
@@ -46,12 +46,49 @@ tags: ["tutorial"]
 | ✅ | [**01: 环境配置与 DeepSeek 启航**](/langchain-logbook/posts/01_getting_started/) | Agent-First 理念, create_agent, stream_mode |
 | ✅ | [**02: 结构化输出与模型特征 (Pydantic)**](/langchain-logbook/posts/02_structured_output/) | .profile, with_structured_output, 复合 Schema |
 | ✅ | [**03: RAG 2.0: 增强型数据检索**](/langchain-logbook/posts/03_rag_20/) | Vector Distribution, Indexing API, Context Filter |
-| ⬜ | **04: 高级工具调用 (Smart Tooling)** | extras, Dynamic Arguments, Schema Adherence |
-| ⬜ | **05: Agent 中间件 (Middleware)** | PII Redaction, Human-in-the-loop, Retries |
-| ⬜ | **06: 记忆管理与会话上下文** | Session Persistence, Summarization Middleware |
-| ⬜ | **07: 进阶：LangGraph 异步图构建** | StateGraph, Nodes & Edges, Cycles |
-| ⬜ | **08: 多智能体协同 (Multi-Agent)** | Supervisory Control, Shared State |
-| ⬜ | **09: 实战：公众号智能助教系统** | Full-Stack Integration, Deployment |
+| ✅ | [**04: 高级工具调用 (Smart Tooling)**](/langchain-logbook/posts/04_smart_tooling/) | Context Injection, Schema Adherence |
+| ✅ | [**05: Agent 中间件 (Middleware)**](/langchain-logbook/posts/05_agent_middleware/) | PII Redaction, Human-in-the-loop, Retries |
+| 🔄 | **06: 基础设施：可观测性与持久化** | LangSmith Tracing, Checkpointer, MemorySaver |
+| ⬜ | **07: 核心编排：StateGraph 状态机** | TypedDict State, Nodes & Edges, Conditional Edges |
+| ⬜ | **08: 工程防御：安全断点与状态注入** | Breakpoints (HITL), InjectedState, Time Travel |
+| ⬜ | **09: 实战演练：多智能体协作与质检** | Multi-Agent, LangSmith Eval, API Deployment |
+
+---
+
+## 🚀 快速开始 (Quick Start)
+
+为了简化环境配置和日常开发，项目提供了 `Makefile` 工具。如果你是第一次使用，可以按照以下步骤操作：
+
+1. **环境初始化**:
+   - 如果你还没有安装 `uv` (推荐的 Python 包管理工具)，可以运行：
+     ```bash
+     make install-uv
+     ```
+   - 初始化虚拟环境并创建 `.env` 文件：
+     ```bash
+     make setup
+     ```
+   - 编辑 `.env` 文件，填入你的 API Key (如 OpenAI 或 DeepSeek)。
+
+2. **安装依赖**:
+   ```bash
+   make install
+   ```
+
+3. **启动学习**:
+   - 运行 Jupyter Notebook 以交互式学习教程：
+     ```bash
+     make notebook
+     ```
+   - 或者运行 Jupyter Lab：
+     ```bash
+     make lab
+     ```
+
+4. **清理环境**:
+   ```bash
+   make clean
+   ```
 
 ---
 

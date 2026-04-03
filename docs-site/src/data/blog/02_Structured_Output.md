@@ -1,7 +1,7 @@
 ---
 title: "第 02 章：结构化输出与模型特征 (Pydantic)"
 description: "LangChain Logbook content: 第 02 章：结构化输出与模型特征 (Pydantic)"
-pubDatetime: 2026-04-02T23:46:41.150Z
+pubDatetime: 2026-04-03T14:16:05.874Z
 featured: false
 tags: ["tutorial"]
 ---

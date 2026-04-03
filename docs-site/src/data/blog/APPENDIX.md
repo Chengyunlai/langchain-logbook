@@ -1,7 +1,7 @@
 ---
 title: "📚 附录：LangChain 1.2.x 底层协议详解 (2026)"
 description: "LangChain Logbook content: 📚 附录：LangChain 1.2.x 底层协议详解 (2026)"
-pubDatetime: 2026-04-02T23:46:41.150Z
+pubDatetime: 2026-04-03T14:16:05.874Z
 featured: false
 tags: ["tutorial"]
 ---
