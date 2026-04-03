@@ -1,7 +1,7 @@
 ---
 title: "第 06 章：基础设施 (Observability & Persistence)"
 description: "LangChain Logbook content: 第 06 章：基础设施 (Observability & Persistence)"
-pubDatetime: 2026-04-03T14:16:05.874Z
+pubDatetime: 2026-03-28T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 ---

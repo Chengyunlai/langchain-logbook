@@ -1,7 +1,7 @@
 ---
 title: "🦜🔗 LangChain 1.2.x Agent-First 航海日志 (2026)"
 description: "LangChain Logbook content: 🦜🔗 LangChain 1.2.x Agent-First 航海日志 (2026)"
-pubDatetime: 2026-04-03T14:16:05.874Z
+pubDatetime: 2026-04-03T12:00:00Z
 featured: true
 tags: ["tutorial"]
 ---

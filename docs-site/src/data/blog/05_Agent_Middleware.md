@@ -1,7 +1,7 @@
 ---
 title: "第 05 章：Agent 中间件 (Agent Middleware)"
 description: "LangChain Logbook content: 第 05 章：Agent 中间件 (Agent Middleware)"
-pubDatetime: 2026-04-03T14:16:05.874Z
+pubDatetime: 2026-03-29T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 ---

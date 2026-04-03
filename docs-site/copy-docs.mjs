@@ -4,7 +4,7 @@ import path from 'path';
 const SRC_DIR = path.resolve('../');
 const DEST_DIR = path.resolve('./src/data/blog');
 const BASE_PATH = '/langchain-logbook';
-const PUB_DATE = new Date().toISOString();
+const BASE_DATE = new Date('2026-04-01T00:00:00Z');
 
 // Slugify function to match AstroPaper's behavior (kebab-case)
 function slugify(text) {
@@ -19,13 +19,26 @@ function slugify(text) {
     .replace(/-+$/, '');        
 }
 
+// Helper to determine publication date for sorting (01 < 02 < 03 ... Appendix)
+function getPubDate(filename) {
+  if (filename.toLowerCase() === 'introduction') return '2026-04-03T12:00:00Z';
+  const match = filename.match(/^(\d+)_/);
+  if (match) {
+    const chapterNum = parseInt(match[1]);
+    const date = new Date('2026-04-03T00:00:00Z');
+    date.setDate(date.getDate() - chapterNum);
+    return date.toISOString();
+  }
+  return '2025-01-01T00:00:00Z'; // Appendix or others (Oldest)
+}
+
 if (!fs.existsSync(DEST_DIR)) {
   fs.mkdirSync(DEST_DIR, { recursive: true });
 }
 
 // Clear destination
 if (fs.existsSync(DEST_DIR)) {
-  const existingFiles = fs.readdirSync(DEST_DIR);
+  const existingFiles = fs.readdirSync(DEST_DIR).filter(f => !f.startsWith('.'));
   for (const file of existingFiles) {
     fs.rmSync(path.join(DEST_DIR, file), { recursive: true, force: true });
   }
@@ -36,8 +49,7 @@ function rewriteLinks(content) {
   return content.replace(/\[([^\]]+)\]\(\.\/([^)]+)\.md\)/g, (match, text, relPath) => {
     const filename = path.basename(relPath);
     if (filename.toLowerCase() === 'readme') return `[${text}](${BASE_PATH}/)`;
-    if (filename.toLowerCase() === 'appendix') return `[${text}](${BASE_PATH}/posts/appendix/)`;
-    const slug = slugify(filename);
+    const slug = slugify(filename === 'APPENDIX' ? 'appendix' : filename);
     return `[${text}](${BASE_PATH}/posts/${slug}/)`;
   });
 }
@@ -45,18 +57,20 @@ function rewriteLinks(content) {
 function processFile(srcPath, destFilename) {
   if (!fs.existsSync(srcPath)) return;
   let content = fs.readFileSync(srcPath, 'utf8');
-  let title = destFilename.replace('.md', '');
+  let name = destFilename.replace('.md', '');
+  let title = name;
   const h1Match = content.match(/^#\s+(.+)$/m);
   if (h1Match) {
     title = h1Match[1].trim();
     content = content.replace(/^#\s+.+$/m, '').trim();
   }
   content = rewriteLinks(content);
+  const pubDate = getPubDate(name);
   const frontmatter = `---
 title: "${title.replace(/"/g, '\\"')}"
 description: "LangChain Logbook content: ${title}"
-pubDatetime: ${PUB_DATE}
-featured: ${destFilename === 'introduction.md'}
+pubDatetime: ${pubDate}
+featured: ${name === 'introduction'}
 tags: ["tutorial"]
 ---
 

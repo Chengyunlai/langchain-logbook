@@ -36,7 +36,7 @@ const recentPosts = sortedPosts.filter(({ data }) => !data.featured);
         直接点击下方的 
         <LinkButton
           class="underline decoration-dashed underline-offset-4 hover:text-accent font-bold"
-          href={`${import.meta.env.BASE_URL}posts/introduction/`}
+          href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/introduction/`}
         >
           课程看板 (Introduction)
         </LinkButton> 开始你的航海之旅。
@@ -48,7 +48,7 @@ const recentPosts = sortedPosts.filter(({ data }) => !data.featured);
           我是 <strong>HappyFrame</strong>，一名深耕于 AI 智能体与模型架构的开发者。
           本日志是我在 LangChain 1.2.x 时代的深度实践记录。
           <LinkButton
-            href={`${import.meta.env.BASE_URL}about/`}
+            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/about/`}
             class="text-accent underline underline-offset-2 ml-1"
           >
             了解更多 →

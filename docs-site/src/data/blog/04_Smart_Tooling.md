@@ -1,7 +1,7 @@
 ---
 title: "第 04 章：高级工具调用 (Smart Tooling)"
 description: "LangChain Logbook content: 第 04 章：高级工具调用 (Smart Tooling)"
-pubDatetime: 2026-04-03T14:16:05.874Z
+pubDatetime: 2026-03-30T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 ---
