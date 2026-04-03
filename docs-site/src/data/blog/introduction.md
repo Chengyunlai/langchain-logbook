@@ -48,8 +48,8 @@ tags: ["tutorial"]
 | ✅ | [**03: RAG 2.0: 增强型数据检索**](/langchain-logbook/posts/03_rag_20/) | Vector Distribution, Indexing API, Context Filter |
 | ✅ | [**04: 高级工具调用 (Smart Tooling)**](/langchain-logbook/posts/04_smart_tooling/) | Context Injection, Schema Adherence |
 | ✅ | [**05: Agent 中间件 (Middleware)**](/langchain-logbook/posts/05_agent_middleware/) | PII Redaction, Human-in-the-loop, Retries |
-| 🔄 | **06: 基础设施：可观测性与持久化** | LangSmith Tracing, Checkpointer, MemorySaver |
-| ⬜ | **07: 核心编排：StateGraph 状态机** | TypedDict State, Nodes & Edges, Conditional Edges |
+| ✅ | [**06: 基础设施：可观测性与持久化**](/langchain-logbook/posts/06_observability_persistence/) | LangSmith Tracing, Checkpointer, MemorySaver |
+| 🔄 | [**07: 核心编排：StateGraph 状态机**](/langchain-logbook/posts/07_stategraph/) | TypedDict State, Nodes & Edges, Conditional Edges |
 | ⬜ | **08: 工程防御：安全断点与状态注入** | Breakpoints (HITL), InjectedState, Time Travel |
 | ⬜ | **09: 实战演练：多智能体协作与质检** | Multi-Agent, LangSmith Eval, API Deployment |
 
