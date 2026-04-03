@@ -40,7 +40,7 @@
 | ✅ | [**01: 环境配置与 DeepSeek 启航**](./tutorials/01_Getting_Started.md) | Agent-First 理念, create_agent, stream_mode |
 | ✅ | [**02: 结构化输出与模型特征 (Pydantic)**](./tutorials/02_Structured_Output.md) | .profile, with_structured_output, 复合 Schema |
 | ✅ | [**03: RAG 2.0: 增强型数据检索**](./tutorials/03_RAG_2.0.md) | Vector Distribution, Indexing API, Context Filter |
-| ⬜ | **04: 高级工具调用 (Smart Tooling)** | extras, Dynamic Arguments, Schema Adherence |
+| ✅ | [**04: 高级工具调用 (Smart Tooling)**](./tutorials/04_Smart_Tooling.md) | Context Injection, Schema Adherence |
 | ⬜ | **05: Agent 中间件 (Middleware)** | PII Redaction, Human-in-the-loop, Retries |
 | ⬜ | **06: 记忆管理与会话上下文** | Session Persistence, Summarization Middleware |
 | ⬜ | **07: 进阶：LangGraph 异步图构建** | StateGraph, Nodes & Edges, Cycles |
