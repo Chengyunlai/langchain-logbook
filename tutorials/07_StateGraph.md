@@ -1,10 +1,4 @@
----
-title: "第 07 章：核心编排 (StateGraph 状态机)"
-description: "LangChain Logbook content: 第 07 章：核心编排 (StateGraph 状态机)"
-pubDatetime: 2026-03-27T00:00:00.000Z
-featured: false
-tags: ["tutorial"]
----
+# 第 07 章：核心编排 (StateGraph 状态机)
 
 ## 0. 本章知识脉络 (Chapter Overview)
 
