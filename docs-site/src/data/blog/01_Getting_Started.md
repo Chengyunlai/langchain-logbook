@@ -104,34 +104,73 @@ print(result["messages"][-1].content)
 
 在 Web 或桌面端应用中，**流式传输 (Streaming)** 是标配。掌握 `astream` 的核心范式：
 
-#### **核心逻辑：通过 `+` 运算符聚合碎片 (Aggregation)**
-`AIMessageChunk` 具备一个神奇的特性：它们可以通过 `+` 自动聚合。这省去了手动维护状态的麻烦。
+#### **核心思想：理解 astream 的“心智模型”**
+
+很多新手会困惑：为什么要写那么多 `if` 判断？为什么要用 `+` 聚合？我们可以把 Agent 的运行想象成一场**多方参与的实时广播**。
+
+1. **为什么判断 `part["type"] == "messages"`?**
+   `astream` 是全能的，它不仅推送消息，还会推送状态更新（updates）、全量快照（values）等。通过判断 `type`，我们相当于在收音机上切到了“语音频道”，过滤掉了数据信号。
+
+2. **为什么判断 `metadata.get("langgraph_node") == "model"`?**
+   在一个复杂的 Agent 体系中，可能有多个节点在说话（比如：一个节点在反思，一个节点在调用工具，一个节点在最终回复）。
+   - **痛点**：在 Web UI 中，用户通常**只想看到最终的 AI 回复**，而不想看到中间的“内心戏”或工具运行的原始日志。
+   - **解法**：通过 `langgraph_node` 过滤，我们只把来自 `model` 节点的文本显示在终端或前端。
+
+3. **为什么使用 `+` 聚合 (AIMessageChunk)?**
+   LLM 生成内容是像“挤牙膏”一样一个字一个字出来的。
+   - **碎片 (Chunks)**：为了让用户感觉响应快，我们需要实时分发这些碎片。
+   - **完整包 (Full Message)**：但在程序结束时，我们需要一个完整的、带元数据的消息对象存入数据库或记忆中。
+   - **LangChain 魔法**：`AIMessageChunk` 重载了 `+` 运算符。你不需要手动拼接字符串，直接 `chunk1 + chunk2`，它会自动帮你把文本、Token 统计、工具调用 ID 全部完美合并。
+
+#### **工业级流处理模版 (Boilerplate)**
+
+这套模版是 2026 年处理 Agent 输出的标准姿势。建议直接复用：
 
 ```python
-# 工业级流处理模版 (Boilerplate)
+# full_response 是我们程序需要的“最终成品”
 full_response = None
 
 async for part in agent.astream(input_dict, stream_mode="messages", version="v2"):
     if part["type"] == "messages":
         chunk, metadata = part["data"]
         
-        # 1. 实时显示给用户
+        # 1. 业务逻辑：判断发件人，只有 model 节点的文本才展示给前端
+        # 如果你有自定义节点名，可以在这里修改判断逻辑
         if metadata.get("langgraph_node") == "model" and chunk.content:
+            # 实时推送到 UI
             print(chunk.content, end="", flush=True)
             
-        # 2. 自动聚合为完整消息，供后续逻辑（如存入数据库）使用
-        full_response = chunk if full_response is None else full_response + chunk
+        # 2. 状态逻辑：积累碎片
+        # 只要是 model 发出的，我们就往成品里堆叠
+        if metadata.get("langgraph_node") == "model":
+            full_response = chunk if full_response is None else full_response + chunk
 
-print(f"\n\n最终完整回复: {full_response.content}")
+# 运行结束，可以把成品存入数据库或上下文
+print(f"\n\n[系统通知] 消息处理完毕，总消耗 Token: {full_response.usage_metadata}")
 ```
 
-#### **三大 Stream 模式选型矩阵**
+---
 
-| 方法 | 返回内容 | 适用场景 |
-| :--- | :--- | :--- |
-| **`stream_mode="messages"`** | **Token 碎片** | **首选**：实现打字机效果，响应最快。 |
-| **`stream_mode="updates"`** | **节点增量** | 观察哪个节点（如 model, tools）运行完了，常用于调试日志。 |
-| **`stream_mode="values"`** | **全量快照** | 每次状态更新都返回整个对话列表，适合简单的本地 CLI 交互。 |
+## 5. 举一反三：自定义你的 Prompt 管道
+
+### 1. 组织输入的“三层结构”
+在真实程序中，不要每次都手动写元组列表。通常采用以下心智模型：
+
+- **System 層**：定义人设、工具使用规范（通常硬编码或从配置读取）。
+- **History 層**：从数据库读取之前的对话，转化为 `HumanMessage`/`AIMessage`。
+- **User 層**：当前的实时输入。
+
+```python
+def prepare_inputs(user_query: str, chat_history: list):
+    # 将业务数据转化为 Agent 理解的“全量协议”
+    return {
+        "messages": [
+            ("system", "你是一个资深专家..."),
+            *chat_history,
+            ("user", user_query)
+        ]
+    }
+```
 
 - **深度参考**：
 关于流切四态的选型矩阵，详见 [附录 A5：揭开流切四态切分仪之谜](../APPENDIX.md#a5-揭开流切四态切分仪之谜-stream_mode-matrix)。
