@@ -20,7 +20,9 @@ from langchain.chat_models import init_chat_model
 # 统一实例化逻辑：隐藏厂商差异，返回标准化的 chat_model 对象
 llm = init_chat_model(
     model="deepseek-chat", # 模型名称
-    model_provider="openai" # 底层协议驱动
+    model_provider="deepseek", # 底层协议驱动
+    base_url="https://api.deepseek.com",
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
 )
 ```
 
