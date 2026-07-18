@@ -1,0 +1,135 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Socials from "@/components/Socials.astro";
+import LinkButton from "@/components/LinkButton.astro";
+import Card from "@/components/Card.astro";
+import getLearningPosts from "@/utils/getLearningPosts";
+import IconArrowRight from "@/assets/icons/IconArrowRight.svg";
+import { SITE } from "@/config";
+import { SOCIALS } from "@/constants";
+
+const posts = await getCollection("blog");
+
+const learningPosts = getLearningPosts(posts);
+const featuredPosts = learningPosts.filter(({ data }) => data.featured);
+const startingPosts = learningPosts.filter(
+  ({ data }) => data.learningStage === "enhanced-model"
+);
+const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+---
+
+<Layout>
+  <Header />
+  <main
+    id="main-content"
+    data-layout="index"
+    data-home-url={homeUrl}
+    class="app-layout"
+  >
+    <section id="hero" class:list={["pt-8 pb-6", "border-b border-border"]}>
+      <h1 class="my-4 inline-block text-4xl font-bold sm:my-8 sm:text-5xl">
+        {SITE.title}
+      </h1>
+      <p>
+        {SITE.desc}
+      </p>
+      <p class="mt-2">
+        欢迎来到 2026 年最新的 LangChain
+        实战项目。本项目致力于以“教科书级”的严谨性，带你征服大模型时代最前沿的智能体工程。
+      </p>
+      <p class="mt-4">
+        直接点击下方的
+        <LinkButton
+          class="font-bold underline decoration-dashed underline-offset-4 hover:text-accent"
+          href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/introduction/`}
+        >
+          课程看板 (Introduction)
+        </LinkButton> 开始你的航海之旅。
+      </p>
+
+      <div class="mt-6 rounded-lg border border-accent/20 bg-accent/5 p-4">
+        <h3 class="text-lg font-bold text-accent">关于本项目</h3>
+        <p class="mt-1 text-sm opacity-80">
+          一套连续演进、离线可运行、由契约验证的 LangChain / LangGraph Agent
+          工程中文课程，并通过 Mini DeerFlow
+          展示从模型调用到可交付运行时的完整路径。
+          <LinkButton
+            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/about/`}
+            class="ml-1 text-accent underline underline-offset-2"
+          >
+            了解更多 →
+          </LinkButton>
+        </p>
+      </div>
+
+      {
+        // only display if at least one social link is enabled
+        SOCIALS.length > 0 && (
+          <div class="mt-4 flex max-sm:flex-col sm:items-center">
+            <div class="me-2 mb-1 whitespace-nowrap sm:mb-0">Social Links:</div>
+            <Socials />
+          </div>
+        )
+      }
+    </section>
+
+    {
+      featuredPosts.length > 0 && (
+        <section
+          id="featured"
+          class:list={[
+            "pt-12 pb-6",
+            { "border-b border-border": startingPosts.length > 0 },
+          ]}
+        >
+          <h2 class="text-2xl font-semibold tracking-wide">课程总览</h2>
+          <ul>
+            {featuredPosts.map(data => (
+              <Card variant="h3" {...data} />
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      startingPosts.length > 0 && (
+        <section id="start-learning" class="pt-12 pb-6">
+          <h2 class="text-2xl font-semibold tracking-wide">从第 01 章开始</h2>
+          <p class="mt-2 opacity-80">
+            沿同一个研究交付任务，先完成第一部，再进入受控 Agent 与可恢复
+            Graph。
+          </p>
+          <ul>
+            {startingPosts.map(data => (
+              <Card variant="h3" {...data} />
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <div class="my-8 text-center">
+      <LinkButton
+        href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/`}
+      >
+        查看完整学习路线
+        <IconArrowRight class="inline-block rtl:-rotate-180" />
+      </LinkButton>
+    </div>
+  </main>
+  <Footer />
+</Layout>
+
+<script>
+  document.addEventListener("astro:page-load", () => {
+    const indexLayout = document.querySelector<HTMLElement>("#main-content");
+    const homeUrl = indexLayout?.dataset?.homeUrl;
+    if (indexLayout?.dataset?.layout && homeUrl) {
+      sessionStorage.setItem("backUrl", homeUrl);
+    }
+  });
+</script>

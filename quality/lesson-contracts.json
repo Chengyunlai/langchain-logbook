@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "description": "01–11 章必须保留的可执行实验。Markdown 与 Notebook 同时删除实验也会被质量门禁发现。",
+  "chapters": {
+    "01_Getting_Started": {
+      "required_sync_ids": [
+        "ch01-offline-model",
+        "ch01-stream-envelope",
+        "ch01-stream-failure"
+      ]
+    },
+    "02_Structured_Output": {
+      "required_sync_ids": [
+        "ch02-model-structured-output",
+        "ch02-task-plan",
+        "ch02-artifact-boundary",
+        "ch02-subagent-failure",
+        "ch02-outcome-triad"
+      ]
+    },
+    "03_RAG_2.0": {
+      "required_sync_ids": [
+        "ch03-idempotent-index",
+        "ch03-search-with-source",
+        "ch03-retriever-tool",
+        "ch03-vector-filter",
+        "ch03-recall-evaluation",
+        "ch03-empty-retrieval-failure"
+      ]
+    },
+    "04_Smart_Tooling": {
+      "required_sync_ids": [
+        "ch04-lead-agent-loop",
+        "ch04-v2-agent-stream",
+        "ch04-tool-registry",
+        "ch04-tool-runtime-workspace",
+        "ch04-command-artifact",
+        "ch04-loop-limit-failure"
+      ]
+    },
+    "05_Agent_Middleware": {
+      "required_sync_ids": [
+        "ch05-safe-context",
+        "ch05-checkpoint-safe-state",
+        "ch05-secret-state-failure",
+        "ch05-store-cross-thread",
+        "ch05-store-user-isolation",
+        "ch05-thread-state-isolation",
+        "ch05-three-boundaries"
+      ]
+    },
+    "06_Observability_Persistence": {
+      "required_sync_ids": [
+        "ch06-lifecycle-order",
+        "ch06-order-failure",
+        "ch06-governance-chain",
+        "ch06-call-limit-failure",
+        "ch06-model-routing",
+        "ch06-tool-error",
+        "ch06-permission-failure",
+        "ch06-async-symmetry",
+        "ch06-summarization",
+        "ch06-hitl-rejection",
+        "ch06-listener-signature-failure"
+      ]
+    },
+    "07_StateGraph": {
+      "required_sync_ids": [
+        "ch07-explicit-react",
+        "ch07-stream-updates",
+        "ch07-loop-limit-failure"
+      ]
+    },
+    "08_Engineering_Defense": {
+      "required_sync_ids": [
+        "ch08-research-workflow",
+        "ch08-command-route",
+        "ch08-send-stream",
+        "ch08-subgraph-xray",
+        "ch08-functional-policies",
+        "ch08-missing-reducer-failure"
+      ]
+    },
+    "09_Multi_Agent_Eval": {
+      "required_sync_ids": [
+        "ch09-memory-checkpoints",
+        "ch09-sqlite-restart",
+        "ch09-checkpoint-history",
+        "ch09-time-travel",
+        "ch09-state-migration",
+        "ch09-thread-id-failure"
+      ]
+    },
+    "10_Human_In_The_Loop": {
+      "required_sync_ids": [
+        "ch10-approve-restart",
+        "ch10-edit-reject",
+        "ch10-multiple-interrupt-events",
+        "ch10-side-effect-before-interrupt-failure",
+        "ch10-time-travel-idempotency",
+        "ch10-concurrent-intent",
+        "ch10-idempotency-conflict-failure"
+      ]
+    },
+    "11_Multi_Agent_Patterns": {
+      "required_sync_ids": [
+        "ch11-command-router",
+        "ch11-send-router",
+        "ch11-handoff",
+        "ch11-subgraph-boundary",
+        "ch11-isolated-specialists",
+        "ch11-task-tool",
+        "ch11-lead-agent-supervisor",
+        "ch11-context-pollution-failure",
+        "ch11-concurrency-limit",
+        "ch11-timeout-partial-failure",
+        "ch11-output-budget-failure",
+        "ch11-delegation-ledger-event"
+      ]
+    }
+  }
+}

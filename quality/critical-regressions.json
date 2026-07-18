@@ -1,0 +1,58 @@
+[
+  {
+    "id": "security.prompt-injection-store",
+    "category": "prompt_injection",
+    "severity": "critical",
+    "guarantee": "Prompt-like 自由文本不能绕过长期 Store 的字段和值白名单。",
+    "test_nodeid": "tests/test_mini_deerflow_context_engineering.py::ContextEngineeringTests::test_store_preferences_cross_threads_but_remain_user_isolated"
+  },
+  {
+    "id": "security.tool-authorization",
+    "category": "tool_authorization",
+    "severity": "critical",
+    "guarantee": "缺少应用授权时，破坏性工具在 handler 执行前被拒绝。",
+    "test_nodeid": "tests/test_mini_deerflow_middleware.py::MiddlewareIntegrationTests::test_tool_permission_denial_short_circuits_execution"
+  },
+  {
+    "id": "security.path-traversal",
+    "category": "path_traversal",
+    "severity": "critical",
+    "guarantee": "线程工作区拒绝父目录和 symlink traversal，并保持用户隔离。",
+    "test_nodeid": "tests/test_mini_deerflow_sandbox_extensions.py::LocalSandboxProviderTests::test_thread_workspaces_are_isolated_durable_and_path_safe"
+  },
+  {
+    "id": "reliability.duplicate-effect",
+    "category": "duplicate_effect",
+    "severity": "critical",
+    "guarantee": "time travel 重放不会重复记录同一个本地副作用意图。",
+    "test_nodeid": "tests/test_mini_deerflow_persistence_hitl.py::PersistentApprovalWorkflowTests::test_time_travel_replay_keeps_the_local_effect_intent_exactly_once"
+  },
+  {
+    "id": "security.token-budget",
+    "category": "token_budget",
+    "severity": "critical",
+    "guarantee": "模型调用预算耗尽时在下一次 handler 调用前停止。",
+    "test_nodeid": "tests/test_mini_deerflow_middleware.py::MiddlewareIntegrationTests::test_model_call_limit_stops_before_the_model_handler"
+  },
+  {
+    "id": "reliability.durable-recovery",
+    "category": "durable_recovery",
+    "severity": "critical",
+    "guarantee": "服务重建后 Checkpointer、Store 与产品 Runtime 记录仍可恢复。",
+    "test_nodeid": "tests/test_mini_deerflow_runtime_gateway.py::LocalRunManagerTests::test_application_state_store_and_runtime_records_survive_service_rebuild"
+  },
+  {
+    "id": "security.runtime-ownership",
+    "category": "tool_authorization",
+    "severity": "critical",
+    "guarantee": "产品 Thread/Run 查询始终执行 authenticated user ownership。",
+    "test_nodeid": "tests/test_mini_deerflow_runtime_gateway.py::SqliteRuntimeRepositoryTests::test_threads_runs_and_events_survive_restart_and_enforce_ownership"
+  },
+  {
+    "id": "security.error-redaction",
+    "category": "prompt_injection",
+    "severity": "critical",
+    "guarantee": "Graph exception 原文中的 Secret 和宿主路径不能进入运行记录或 SSE。",
+    "test_nodeid": "tests/test_mini_deerflow_runtime_gateway.py::LocalRunManagerTests::test_graph_failure_is_redacted_and_persisted_with_end"
+  }
+]

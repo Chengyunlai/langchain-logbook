@@ -1,0 +1,9 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "python_version": "3.12",
+  "dependencies": ["."],
+  "graphs": {
+    "mini_deerflow": "mini_deerflow.app:make_graph"
+  },
+  "env": ".env"
+}

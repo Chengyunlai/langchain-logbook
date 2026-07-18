@@ -1,0 +1,185 @@
+{
+  "stages": [
+    {
+      "id": "orientation",
+      "label": "序章",
+      "title": "接手研究交付任务",
+      "description": "先看清最终要交付的研究 Agent、学习者在项目中的角色，以及系统为何必须经过四次能力升级。",
+      "audience": "第一次阅读本书的所有读者",
+      "entryCondition": "会阅读基础 Python；不要求已经掌握 LangChain 或 LangGraph。",
+      "kind": "main",
+      "entries": [
+        {
+          "sourcePath": "README.md",
+          "question": "你将接手什么系统，最终要把它升级成什么样的研究交付 Agent？",
+          "goal": "明确全书唯一项目、四部能力路线，以及 LangChain、LangGraph 与 DeerFlow 在项目中的位置。"
+        }
+      ]
+    },
+    {
+      "id": "enhanced-model",
+      "label": "第一部",
+      "title": "让模型进入程序",
+      "description": "从一个只能回答问题的模型开始，依次建立消息与事件边界、业务 Schema 和带来源的知识能力。",
+      "audience": "第一次系统学习 LangChain",
+      "entryCondition": "读完序章，知道本阶段交付的是研究 Agent 的输入、输出与知识基础。",
+      "kind": "main",
+      "entries": [
+        {
+          "sourcePath": "tutorials/01_Getting_Started.md",
+          "question": "一次模型调用、固定 Runnable 管道与 Agent 循环究竟有什么区别？",
+          "goal": "区分直接模型调用、Runnable 管道和 Agent 循环，并能正确读取 v2 流式事件。"
+        },
+        {
+          "sourcePath": "tutorials/02_Structured_Output.md",
+          "question": "怎样让概率性的模型输出可靠进入数据库、接口和业务代码？",
+          "goal": "用 Pydantic Schema 把模型输出变成可验证、可演进的业务对象。"
+        },
+        {
+          "sourcePath": "tutorials/03_RAG_2.0.md",
+          "question": "模型不知道私有或最新知识时，怎样检索正确上下文并保留引用？",
+          "goal": "把知识索引、检索与引用组合成 Agent 可调用的 RAG 能力。"
+        }
+      ]
+    },
+    {
+      "id": "agent-wrapper",
+      "label": "第二部",
+      "title": "让 Agent 成为受控运行时",
+      "description": "让模型自主选择工具，再厘清运行时事实的所有权，并把权限、失败和调用预算纳入统一治理。",
+      "audience": "已经会调用模型，准备构建第一个 Agent",
+      "entryCondition": "完成第一部；当前系统已有稳定契约和知识能力，但还不能自主完成研究任务。",
+      "kind": "main",
+      "entries": [
+        {
+          "sourcePath": "tutorials/04_Smart_Tooling.md",
+          "question": "怎样让模型安全选择工具，并形成可观察的 model → tool → model 循环？",
+          "goal": "用工具契约与 create_agent 构建第一个可观察、可测试的 Lead Agent。"
+        },
+        {
+          "sourcePath": "tutorials/05_Agent_Middleware.md",
+          "question": "身份、线程事实、长期偏好和 Secret 分别应该由哪种上下文边界拥有？",
+          "goal": "按生命周期与控制权区分 Runtime Context、Graph State、Store 和 Secret。"
+        },
+        {
+          "sourcePath": "tutorials/06_Observability_Persistence.md",
+          "question": "权限、PII、调用上限与失败处理应该怎样统一进入 Agent 生命周期？",
+          "goal": "用 AgentMiddleware 统一治理 Prompt、模型、工具、PII、调用上限与失败。"
+        }
+      ]
+    },
+    {
+      "id": "langgraph",
+      "label": "第三部",
+      "title": "把业务流程写成可恢复的图",
+      "description": "当通用工具循环无法表达研究流程时，把状态、分支、并行、恢复和人工审批写成可检查的图。",
+      "audience": "已经理解 Agent 循环，准备控制复杂业务流程",
+      "entryCondition": "完成第二部；当前 Lead Agent 可治理，但复杂流程仍隐藏在模型决策和提示词中。",
+      "kind": "main",
+      "entries": [
+        {
+          "sourcePath": "tutorials/07_StateGraph.md",
+          "question": "什么时候标准 Agent 循环不够用，必须把状态与转移显式写成 Graph？",
+          "goal": "理解 State、Reducer、Node 与 Edge，并判断何时应该显式设计 Graph。"
+        },
+        {
+          "sourcePath": "tutorials/08_Engineering_Defense.md",
+          "question": "怎样把条件、循环、动态并行和子流程表达成可测试的业务拓扑？",
+          "goal": "用 Command、Send、Subgraph 与 Reducer 表达条件、循环和动态并行。"
+        },
+        {
+          "sourcePath": "tutorials/09_Multi_Agent_Eval.md",
+          "question": "Graph 进程退出后，如何依靠 Thread 与持久化快照恢复执行现场？",
+          "goal": "用 Checkpointer 持久保存 checkpoint，并让同一 Thread 上的 Graph 能够跨进程恢复。"
+        },
+        {
+          "sourcePath": "tutorials/10_Human_In_The_Loop.md",
+          "question": "怎样让审批暂停数小时后仍可恢复，同时避免重放造成重复副作用？",
+          "goal": "用 interrupt/resume 实现持久审批，并保护重放场景中的副作用。"
+        }
+      ]
+    },
+    {
+      "id": "agent-engineering",
+      "label": "第四部",
+      "title": "把单图扩展为可交付的 Agent 系统",
+      "description": "从单图进入 Subagent、Sandbox、Runtime、评测和交付闭环，最后沿同样边界阅读真实 DeerFlow。",
+      "audience": "准备把 Agent 从 Demo 推进为长期运行的业务系统",
+      "entryCondition": "完成第三部；当前 Graph 可恢复、可审批，接下来解决长上下文、能力隔离和产品交付。",
+      "kind": "main",
+      "entries": [
+        {
+          "sourcePath": "tutorials/11_Multi_Agent_Patterns.md",
+          "question": "多 Agent 协作时，谁保留控制权、共享哪些上下文、何时并行？",
+          "goal": "根据控制权选择 Router、Handoff、Supervisor 或 Subagent-as-tool，并隔离上下文。"
+        },
+        {
+          "sourcePath": "mini_deerflow/ARCHITECTURE.md",
+          "question": "课程中的 Graph 能力怎样落入一个真实应用的模块和依赖关系？",
+          "goal": "先看懂 Mini DeerFlow 的组合根、数据边界、能力边界与交付边界。"
+        },
+        {
+          "sourcePath": "mini_deerflow/LEAD_AGENT_CORE.md",
+          "question": "怎样让 Lead Agent 在多轮、进程重建和上下文增长后仍保持一致？",
+          "goal": "把 State、Tools、Middleware、Checkpointer 与 Streaming 组合成可恢复的 Lead Agent。"
+        },
+        {
+          "sourcePath": "mini_deerflow/SANDBOX_EXTENSIONS.md",
+          "question": "Subagent、文件、命令和远端工具怎样获得能力而不越过权限边界？",
+          "goal": "为 Subagent、文件、MCP 与 Skills 建立工作区隔离和最小授权边界。"
+        },
+        {
+          "sourcePath": "mini_deerflow/RUNTIME_GATEWAY.md",
+          "question": "Graph 执行怎样变成客户端可创建、取消、重连和恢复的长任务服务？",
+          "goal": "区分产品 Thread、Run、Event 与 Graph Checkpoint，并通过 API/SSE 交付长任务。"
+        },
+        {
+          "sourcePath": "mini_deerflow/EVALUATION_OBSERVABILITY.md",
+          "question": "除了最终文本，怎样验证 Agent 的执行轨迹、预算、安全与单次失败原因？",
+          "goal": "用测试、结果/轨迹/预算评测与 Trace 证明 Agent 的质量和安全边界。"
+        },
+        {
+          "sourcePath": "mini_deerflow/CAPSTONE.md",
+          "question": "怎样把课程中分散验证的能力装配成一个可恢复、可审批、可评测的业务闭环？",
+          "goal": "完成检索、并行委派、草稿、审批、恢复、幂等发布与评测组成的长任务闭环。"
+        },
+        {
+          "sourcePath": "mini_deerflow/DEERFLOW_GUIDE.md",
+          "question": "面对大型 DeerFlow 仓库，怎样沿调用链阅读而不是按目录漫游？",
+          "goal": "沿组合根、状态、Middleware、Subagent 与 Gateway 调用链阅读真实 DeerFlow。"
+        }
+      ]
+    },
+    {
+      "id": "reference",
+      "label": "按需参考",
+      "title": "维护与协议资料",
+      "description": "这些内容不属于线性前置课程。遇到协议细节、依赖升级或站点发布问题时再查阅。",
+      "audience": "课程维护者或正在排查具体问题的读者",
+      "entryCondition": "不需要按顺序阅读；遇到对应问题时进入。",
+      "kind": "reference",
+      "entries": [
+        {
+          "sourcePath": "APPENDIX.md",
+          "question": "消息、工具调用或底层协议的具体细节是什么？",
+          "goal": "查询消息、工具调用与底层协议细节，不必在第 01 章前通读。"
+        },
+        {
+          "sourcePath": "docs/version-policy.md",
+          "question": "怎样升级依赖而不破坏课程的可复现性？",
+          "goal": "理解兼容范围、锁定版本与依赖升级门禁。"
+        },
+        {
+          "sourcePath": "docs/release.md",
+          "question": "怎样发布、验证并在失败时回滚文档站？",
+          "goal": "执行文档站发布、线上验证与回滚，不属于 Agent 学习主线。"
+        },
+        {
+          "sourcePath": "docs/getting-started-pycharm.md",
+          "question": "第一次在 PyCharm 打开项目时，怎样配置环境、运行示例和开始学习？",
+          "goal": "在 PyCharm 中复用 uv 环境，运行离线示例、测试与 Notebook，并找到课程入口。"
+        }
+      ]
+    }
+  ]
+}

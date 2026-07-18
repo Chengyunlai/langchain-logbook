@@ -1,0 +1,207 @@
+---
+import type { GetStaticPaths } from "astro";
+import type { CollectionEntry } from "astro:content";
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import { getPath } from "@/utils/getPath";
+import curriculum from "../../../curriculum.json";
+import { SITE } from "@/config";
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = await getCollection("blog", ({ data }) => !data.draft);
+  return paginate(posts, { pageSize: Math.max(posts.length, 1) });
+}) satisfies GetStaticPaths;
+
+type CurriculumEntry = (typeof curriculum.stages)[number]["entries"][number];
+type LearningPost = CurriculumEntry & {
+  post: CollectionEntry<"blog">;
+  position: number;
+};
+
+const { page } = Astro.props;
+const postsBySource = new Map(
+  page.data.map(post => [post.data.sourcePath, post] as const)
+);
+
+let position = 0;
+const stages = curriculum.stages.map(stage => ({
+  ...stage,
+  entries: stage.entries.map(entry => {
+    const post = postsBySource.get(entry.sourcePath);
+    if (!post) {
+      throw new Error(
+        `Curriculum source is not published: ${entry.sourcePath}`
+      );
+    }
+    const learningPost: LearningPost = { ...entry, post, position };
+    position += 1;
+    return learningPost;
+  }),
+}));
+
+const listedSources = new Set(
+  curriculum.stages.flatMap(stage =>
+    stage.entries.map(entry => entry.sourcePath)
+  )
+);
+const unlistedPosts = page.data.filter(
+  post => !post.data.sourcePath || !listedSources.has(post.data.sourcePath)
+);
+if (unlistedPosts.length > 0) {
+  throw new Error(
+    `Published posts missing from curriculum: ${unlistedPosts
+      .map(post => post.data.sourcePath ?? post.id)
+      .join(", ")}`
+  );
+}
+
+const mainStages = stages.filter(stage => stage.kind === "main");
+const referenceStage = stages.find(stage => stage.kind === "reference");
+---
+
+<Layout title={`学习路线 | ${SITE.title}`}>
+  <Header />
+  <Breadcrumb />
+
+  <main id="main-content" class="app-layout pb-12">
+    <header class="border-b border-border pb-8">
+      <h1 class="text-3xl font-bold text-balance sm:text-4xl">
+        按这条路线学习
+      </h1>
+      <p class="mt-4 max-w-2xl text-lg leading-8 text-pretty">
+        这不是按发布日期排列的文章列表。你会沿同一个研究交付任务，依次让
+        <strong>模型进入程序</strong>、让 <strong>Agent 成为受控运行时</strong
+        >、 把流程写成 <strong>可恢复的图</strong>，最后完成类 DeerFlow 系统。
+      </p>
+      <p class="mt-3 max-w-2xl leading-7 opacity-80">
+        第一次阅读请从序章开始。每一部都以前一部的可运行系统为输入；发布手册和附录只在遇到对应问题时查阅。
+      </p>
+    </header>
+
+    <nav aria-label="全书分部" class="border-b border-border py-6">
+      <p class="mb-3 font-semibold">全书主线</p>
+      <ol class="flex flex-wrap items-center gap-x-2 gap-y-3 text-sm">
+        {
+          mainStages.map((stage, index) => (
+            <li class="flex items-center gap-2">
+              {index > 0 && (
+                <span aria-hidden="true" class="opacity-40">
+                  →
+                </span>
+              )}
+              <a
+                href={`#${stage.id}`}
+                class="rounded-full bg-muted px-3 py-1.5 font-medium hover:text-accent focus-visible:text-accent"
+              >
+                {stage.label} · {stage.title}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+
+    <div class="mt-4">
+      {
+        mainStages.map(stage => (
+          <section
+            id={stage.id}
+            class="scroll-mt-6 border-b border-border py-10"
+          >
+            <header class="mb-7">
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span class="font-semibold text-accent">{stage.label}</span>
+                <h2 class="text-2xl font-bold text-balance">{stage.title}</h2>
+              </div>
+              <p class="mt-3 max-w-2xl leading-7 text-pretty">
+                {stage.description}
+              </p>
+              <p class="mt-2 text-sm opacity-75">
+                <strong>适合谁：</strong>
+                {stage.audience}
+              </p>
+              <p class="mt-1 text-sm opacity-75">
+                <strong>进入条件：</strong>
+                {stage.entryCondition}
+              </p>
+            </header>
+
+            <ol class="space-y-2">
+              {stage.entries.map(entry => (
+                <li>
+                  <a
+                    href={getPath(entry.post.id, entry.post.filePath)}
+                    class="group grid gap-2 rounded-xl px-3 py-4 transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 sm:grid-cols-[3rem_1fr] sm:px-4"
+                  >
+                    <span
+                      aria-hidden="true"
+                      class="flex size-10 items-center justify-center rounded-full bg-accent font-bold text-background"
+                    >
+                      {String(entry.position).padStart(2, "0")}
+                    </span>
+                    <span>
+                      <span class="block text-lg font-semibold text-accent decoration-dashed underline-offset-4 group-hover:underline">
+                        {entry.post.data.title}
+                      </span>
+                      <span class="mt-1 block leading-7 opacity-85">
+                        <strong>先回答：</strong>
+                        {entry.question}
+                      </span>
+                      <span class="mt-1 block leading-7 opacity-85">
+                        <strong>学完你能：</strong>
+                        {entry.goal}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ))
+      }
+    </div>
+
+    {
+      referenceStage && (
+        <section id={referenceStage.id} class="scroll-mt-6 pt-10">
+          <header class="mb-6">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span class="font-semibold text-accent">
+                {referenceStage.label}
+              </span>
+              <h2 class="text-2xl font-bold text-balance">
+                {referenceStage.title}
+              </h2>
+            </div>
+            <p class="mt-3 max-w-2xl leading-7 text-pretty">
+              {referenceStage.description}
+            </p>
+          </header>
+
+          <ul class="divide-y divide-border border-y border-border">
+            {referenceStage.entries.map(entry => (
+              <li>
+                <a
+                  href={getPath(entry.post.id, entry.post.filePath)}
+                  class="group block py-5 hover:text-accent focus-visible:text-accent"
+                >
+                  <span class="font-semibold decoration-dashed underline-offset-4 group-hover:underline">
+                    {entry.post.data.title}
+                  </span>
+                  <span class="mt-1 block text-sm leading-6 text-foreground opacity-80">
+                    {entry.goal}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+  </main>
+
+  <Footer />
+</Layout>

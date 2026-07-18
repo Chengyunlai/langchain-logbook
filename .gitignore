@@ -1,0 +1,63 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.egg
+.installed.cfg
+.pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+.env
+.python-version
+
+# MkDocs / Documentation
+site/
+docs-site/src/content/docs/tutorials
+docs-site/src/content/docs/APPENDIX.md
+docs-site/src/content/docs/index.md
+docs-site/public/notebooks/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+# IPython
+profile_default/
+ipython_config.py
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+.cache
+htmlcov/
+
+# Databases & Cache
+**/chroma_db/
+.capstone-demo/
+*.sql
+*.sqlite[3]
+*.db
+vector_store/
+
+# Astro injected docs
+docs-site/src/content/docs/tutorials
+docs-site/src/content/docs/APPENDIX.md
+docs-site/src/content/docs/index.md
+
+# Logs
+*.log
+logs/
+
+# UV
+.uv/
