@@ -99,6 +99,8 @@ print(result["messages"][-1].content)
 | `model.bind_tools` | 生成 tool call | 参数授权与工具执行 | 观察或定制路由 |
 | `create_agent` | 标准工具循环 | 业务拓扑与产品运行时 | 工具型 Agent |
 
+下图要回答的问题是：`create_agent` 如何在模型和工具之间维护一次完整的消息循环？
+
 <!-- diagram:id=01-agent-tool-loop -->
 ```mermaid
 sequenceDiagram
@@ -116,7 +118,83 @@ sequenceDiagram
     A-->>U: AgentState messages
 ```
 
-工具调用必须先有包含 `tool_calls` 的 `AIMessage`，执行后再写入匹配 `tool_call_id` 的 `ToolMessage`。后续的恢复、Handoff 和 Subagent 都依赖这套消息顺序。
+**图的文本替代**：用户消息进入 `create_agent` Graph；模型先返回包含工具请求的 `AIMessage`，工具执行节点写入匹配的 `ToolMessage`，模型读取更新后的消息历史，再生成最终 `AIMessage`。
+
+### 2.5 这张图描述的是哪一种 Agent
+
+它描述的是 `create_agent` 提供的标准工具循环，不代表所有 Agent 都必须采用同一套业务流程。它适合“模型决定是否调用工具，读取工具结果后继续回答”这类开放式任务。
+
+调用方只需要向 `agent.invoke()` 提交初始消息。`create_agent` 生成的 Graph 负责调用模型、判断是否存在 `tool_calls`、执行工具，并把结果重新交给模型。
+
+模型本身不会执行 Python 函数。它只返回“希望调用哪个工具、传入什么参数”；Graph 中的工具执行节点完成参数校验和函数调用，再把结果包装成 `ToolMessage`。
+
+一次工具循环会留下四条关键消息：
+
+1. `HumanMessage`：用户问题；
+2. `AIMessage(tool_calls=...)`：模型提出工具调用请求；
+3. `ToolMessage`：工具执行结果；
+4. `AIMessage`：模型读取结果后给出的最终回答。
+
+工具请求的 `id` 必须与结果的 `tool_call_id` 一致。这个关联让模型知道每条工具结果属于哪次调用，也是恢复执行、并行工具和 Subagent 协作能够正确拼接消息的基础。
+
+下面使用项目内的确定性离线模型，完整运行一次 `create_agent` 工具循环。离线模型固定返回两次决策，因此实验关注的是消息协议，而不是模型措辞是否稳定。
+
+```python sync=ch01-create-agent-tool-loop
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from mini_deerflow.models import create_offline_model
+
+
+@tool
+def get_weather(city: str) -> str:
+    """查询指定城市的天气。"""
+    return f"{city}：晴，25°C"
+
+
+scripted_model = create_offline_model(
+    [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "成都"},
+                    "id": "call-weather-1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="成都今天晴，25°C，适合出行。"),
+    ]
+)
+
+weather_agent = create_agent(
+    model=scripted_model,
+    tools=[get_weather],
+)
+weather_result = weather_agent.invoke(
+    {"messages": [("user", "成都今天天气如何？")]}
+)
+
+weather_messages = weather_result["messages"]
+assert [type(message) for message in weather_messages] == [
+    HumanMessage,
+    AIMessage,
+    ToolMessage,
+    AIMessage,
+]
+assert weather_messages[1].tool_calls[0]["id"] == "call-weather-1"
+assert weather_messages[2].tool_call_id == "call-weather-1"
+
+for message in weather_messages:
+    print(type(message).__name__, message.content)
+```
+
+运行后可以看到 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage`。第二条 `AIMessage` 的正文可以为空，因为这一轮的有效输出是工具调用请求；第四条消息才是交给用户的最终回答。
+
+`bind_tools` 只完成“让模型表达工具意图”这一步，工具执行仍由应用负责。`create_agent` 则把整个标准循环封装成 compiled graph。如果流程还包含固定审批、动态并行或跨进程恢复，应在外层继续设计显式 `StateGraph`。
 
 ## 3. 建立可替换的模型与消息入口
 
