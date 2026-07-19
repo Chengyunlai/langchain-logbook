@@ -60,6 +60,8 @@ const layoutProps = {
   title: `${title} | ${SITE.title}`,
   author,
   description,
+  keywords: [...SITE.keywords, ...tags],
+  pageType: "article" as const,
   pubDatetime,
   modDatetime,
   canonicalURL,

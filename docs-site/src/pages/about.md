@@ -1,6 +1,7 @@
 ---
 layout: ../layouts/AboutLayout.astro
 title: "关于 LangChain Logbook"
+description: "了解 LangChain Logbook 中文 Agent 工程课程的定位、学习产物、设计原则与本地运行入口。"
 ---
 
 LangChain Logbook 是一套面向工程实践的 LangChain / LangGraph 中文课程，也是一套可以离线运行、测试和持续演进的 Mini DeerFlow 实验环境。

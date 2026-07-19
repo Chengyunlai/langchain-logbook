@@ -178,6 +178,11 @@
           "sourcePath": "docs/getting-started-pycharm.md",
           "question": "第一次在 PyCharm 打开项目时，怎样配置环境、运行示例和开始学习？",
           "goal": "在 PyCharm 中复用 uv 环境，运行离线示例、测试与 Notebook，并找到课程入口。"
+        },
+        {
+          "sourcePath": "docs/seo.md",
+          "question": "怎样让搜索引擎抓取、理解并持续收录课程页面？",
+          "goal": "配置站点验证、提交 sitemap，并用自动化契约保护 canonical、元数据和结构化数据。"
         }
       ]
     }

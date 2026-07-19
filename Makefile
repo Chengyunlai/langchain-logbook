@@ -107,6 +107,7 @@ check-docs: check-uv ## Build the documentation site and check generated links
 	@cd docs-site && npm ci && SITE_BASE_PATH=$(SITE_BASE) SITE_URL=$(SITE_URL) REPOSITORY_URL=$(REPOSITORY_URL) npm run build
 	@$(UV_RUN) python scripts/check_site_links.py --site docs-site/dist --base $(SITE_BASE)
 	@$(UV_RUN) python scripts/check_site_contracts.py --site docs-site/dist --base $(SITE_BASE) --repo-root . --repository-url $(REPOSITORY_URL)
+	@$(UV_RUN) python scripts/check_site_seo.py --site docs-site/dist --site-url $(SITE_URL)
 
 .PHONY: check
 check: check-lock check-workflows test check-docs ## Run the complete local quality gate

@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_CHECKER = PROJECT_ROOT / "scripts" / "validate_tutorials.py"
 LINK_CHECKER = PROJECT_ROOT / "scripts" / "check_site_links.py"
 SITE_CONTRACT_CHECKER = PROJECT_ROOT / "scripts" / "check_site_contracts.py"
+SEO_CHECKER = PROJECT_ROOT / "scripts" / "check_site_seo.py"
 
 
 def _notebook(
@@ -437,6 +438,240 @@ class SiteReleaseContractCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("pagefind-base", result.stdout)
+
+
+class SiteSeoCliTests(unittest.TestCase):
+    site_url = "https://example.com/langchain-logbook/"
+
+    def run_checker(self, site: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(SEO_CHECKER),
+                "--site",
+                str(site),
+                "--site-url",
+                self.site_url,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def page(
+        self,
+        *,
+        canonical: str,
+        page_type: str,
+        robots: str = "index, follow",
+    ) -> str:
+        structured_type = "BlogPosting" if page_type == "article" else "WebPage"
+        structured_data = {
+            "@context": "https://schema.org",
+            "@graph": [
+                {
+                    "@type": "WebSite",
+                    "url": self.site_url,
+                    "potentialAction": {
+                        "@type": "SearchAction",
+                        "target": self.site_url + "search/?q={search_term_string}",
+                        "query-input": "required name=search_term_string",
+                    },
+                },
+                {"@type": structured_type, "url": canonical},
+            ],
+        }
+        return (
+            "<html><head>"
+            f'<link rel="canonical" href="{canonical}">'
+            '<meta name="description" content="Agent engineering course">'
+            f'<meta name="robots" content="{robots}">'
+            '<meta property="og:title" content="LangChain Logbook">'
+            '<meta property="og:description" content="Agent engineering course">'
+            f'<meta property="og:url" content="{canonical}">'
+            f'<meta property="og:type" content="{page_type}">'
+            '<meta property="og:image" content="https://example.com/og.png">'
+            '<meta name="twitter:card" content="summary_large_image">'
+            '<meta name="twitter:title" content="LangChain Logbook">'
+            '<meta name="twitter:description" content="Agent engineering course">'
+            '<meta name="twitter:image" content="https://example.com/og.png">'
+            '<script type="application/ld+json">'
+            + json.dumps(structured_data)
+            + "</script></head><body></body></html>"
+        )
+
+    def write_valid_site(self, root: Path) -> Path:
+        site = root / "dist"
+        article = site / "posts" / "introduction"
+        search = site / "search"
+        article.mkdir(parents=True)
+        search.mkdir(parents=True)
+        (site / "index.html").write_text(
+            self.page(canonical=self.site_url, page_type="website"),
+            encoding="utf-8",
+        )
+        (article / "index.html").write_text(
+            self.page(
+                canonical=self.site_url + "posts/introduction/",
+                page_type="article",
+            ),
+            encoding="utf-8",
+        )
+        (search / "index.html").write_text(
+            self.page(
+                canonical=self.site_url + "search/",
+                page_type="website",
+                robots="noindex, follow",
+            ),
+            encoding="utf-8",
+        )
+        (site / "404.html").write_text(
+            '<html><head><meta name="robots" content="noindex, follow"></head></html>',
+            encoding="utf-8",
+        )
+        (site / "robots.txt").write_text(
+            "User-agent: *\nAllow: /\n\n"
+            f"Sitemap: {self.site_url}sitemap-index.xml\n",
+            encoding="utf-8",
+        )
+        (site / "sitemap-index.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<sitemap><loc>{self.site_url}sitemap-0.xml</loc></sitemap>"
+            "</sitemapindex>",
+            encoding="utf-8",
+        )
+        (site / "sitemap-0.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<url><loc>{self.site_url}</loc></url>"
+            f"<url><loc>{self.site_url}posts/introduction/</loc></url>"
+            "</urlset>",
+            encoding="utf-8",
+        )
+        (site / "llms.txt").write_text(
+            f"# LangChain Logbook\n\n- {self.site_url}\n"
+            f"- {self.site_url}sitemap-index.xml\n",
+            encoding="utf-8",
+        )
+        return site
+
+    def test_accepts_complete_seo_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_reports_missing_canonical(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            index = site / "index.html"
+            index.write_text(
+                index.read_text(encoding="utf-8").replace(
+                    f'<link rel="canonical" href="{self.site_url}">', ""
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:canonical", result.stdout)
+
+    def test_reports_article_without_blogposting_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            article = site / "posts" / "introduction" / "index.html"
+            article.write_text(
+                article.read_text(encoding="utf-8").replace(
+                    '"@type": "BlogPosting"', '"@type": "WebPage"'
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:structured-data", result.stdout)
+
+    def test_reports_indexable_search_and_404_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            search = site / "search" / "index.html"
+            search.write_text(
+                search.read_text(encoding="utf-8").replace(
+                    "noindex, follow", "index, follow"
+                ),
+                encoding="utf-8",
+            )
+            (site / "404.html").write_text(
+                '<html><head><meta name="robots" content="index, follow"></head></html>',
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:robots", result.stdout)
+
+    def test_reports_wrong_robots_sitemap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            (site / "robots.txt").write_text(
+                "User-agent: *\nAllow: /\n\nSitemap: https://wrong.example/sitemap.xml\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:robots-sitemap", result.stdout)
+
+    def test_reports_noindex_page_in_sitemap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            sitemap = site / "sitemap-0.xml"
+            sitemap.write_text(
+                sitemap.read_text(encoding="utf-8").replace(
+                    "</urlset>",
+                    f"<url><loc>{self.site_url}search/</loc></url></urlset>",
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:sitemap", result.stdout)
+
+    def test_reports_404_page_in_sitemap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            sitemap = site / "sitemap-0.xml"
+            sitemap.write_text(
+                sitemap.read_text(encoding="utf-8").replace(
+                    "</urlset>",
+                    f"<url><loc>{self.site_url}404.html</loc></url></urlset>",
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:sitemap", result.stdout)
+
+    def test_reports_missing_llms_discovery_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site = self.write_valid_site(Path(directory))
+            (site / "llms.txt").unlink()
+
+            result = self.run_checker(site)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("seo:llms", result.stdout)
 
 if __name__ == "__main__":
     unittest.main()

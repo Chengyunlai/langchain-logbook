@@ -177,6 +177,7 @@ processFile(
   path.join(SRC_DIR, "docs/getting-started-pycharm.md"),
   "getting-started-pycharm.md"
 );
+processFile(path.join(SRC_DIR, "docs/seo.md"), "seo.md");
 processFile(path.join(SRC_DIR, "docs/version-policy.md"), "version-policy.md");
 processFile(path.join(SRC_DIR, "docs/release.md"), "release.md");
 

@@ -10,9 +10,16 @@ const backUrl = SITE.showBackButton ? `${Astro.url.pathname}` : "/";
 const pagefindBundlePath = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/pagefind/`;
 ---
 
-<Layout title={`Search | ${SITE.title}`}>
+<Layout
+  title={`搜索 | ${SITE.title}`}
+  description="搜索 LangChain、LangGraph、Agent、RAG、状态图和 Mini DeerFlow 中文课程内容。"
+  robots="noindex, follow"
+>
   <Header />
-  <Main pageTitle="Search" pageDesc="Search any article ...">
+  <Main
+    pageTitle="搜索"
+    pageDesc="搜索课程章节、工程专题与 Mini DeerFlow 文档。"
+  >
     <div
       id="pagefind-search"
       transition:persist

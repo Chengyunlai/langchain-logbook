@@ -1,7 +1,10 @@
 ---
-import { Font } from "astro:assets";
 import { ClientRouter } from "astro:transitions";
-import { PUBLIC_GOOGLE_SITE_VERIFICATION } from "astro:env/client";
+import {
+  PUBLIC_BAIDU_SITE_VERIFICATION,
+  PUBLIC_BING_SITE_VERIFICATION,
+  PUBLIC_GOOGLE_SITE_VERIFICATION,
+} from "astro:env/client";
 import { SITE } from "@/config";
 import "@/styles/global.css";
 
@@ -11,41 +14,94 @@ type Props = {
   profile?: string;
   description?: string;
   ogImage?: string;
-  canonicalURL?: string;
+  canonicalURL?: string | URL;
+  keywords?: readonly string[];
+  robots?: "index, follow" | "noindex, follow";
+  pageType?: "article" | "website";
   pubDatetime?: Date;
   modDatetime?: Date | null;
   scrollSmooth?: boolean;
 };
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const currentPath =
+  Astro.url.pathname === basePath ? `${basePath}/` : Astro.url.pathname;
+const defaultOgImage = SITE.ogImage
+  ? `${basePath}/${SITE.ogImage}`
+  : `${basePath}/og.png`;
 
 const {
   title = SITE.title,
   author = SITE.author,
   profile = SITE.profile,
   description = SITE.desc,
-  ogImage = SITE.ogImage ? `/${SITE.ogImage}` : "/og.png",
-  canonicalURL = new URL(Astro.url.pathname, Astro.url),
+  ogImage = defaultOgImage,
+  canonicalURL,
+  keywords = SITE.keywords,
+  robots = "index, follow",
+  pageType = "website",
   pubDatetime,
   modDatetime,
   scrollSmooth = false,
 } = Astro.props;
 
-const socialImageURL = new URL(ogImage, Astro.url);
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const resolvedCanonicalURL = canonicalURL
+  ? new URL(canonicalURL, SITE.website)
+  : new URL(currentPath, SITE.website);
+const socialImageURL = new URL(ogImage, SITE.website);
+const searchURL = new URL("search/", SITE.website).href;
+const websiteId = new URL("#website", SITE.website).href;
+const webpageId = `${resolvedCanonicalURL.href}#webpage`;
+const uniqueKeywords = [...new Set(keywords.filter(Boolean))];
+
+const websiteData = {
+  "@type": "WebSite",
+  "@id": websiteId,
+  url: SITE.website,
+  name: SITE.title,
+  description: SITE.desc,
+  inLanguage: SITE.lang,
+  potentialAction: {
+    "@type": "SearchAction",
+    target: `${searchURL}?q={search_term_string}`,
+    "query-input": "required name=search_term_string",
+  },
+};
+
+const pageData =
+  pageType === "article"
+    ? {
+        "@type": "BlogPosting",
+        "@id": webpageId,
+        url: resolvedCanonicalURL.href,
+        mainEntityOfPage: resolvedCanonicalURL.href,
+        headline: title,
+        description,
+        image: socialImageURL.href,
+        ...(pubDatetime && { datePublished: pubDatetime.toISOString() }),
+        ...(modDatetime && { dateModified: modDatetime.toISOString() }),
+        keywords: uniqueKeywords,
+        inLanguage: SITE.lang,
+        isPartOf: { "@id": websiteId },
+        author: {
+          "@type": "Person",
+          name: author,
+          ...(profile && { url: profile }),
+        },
+      }
+    : {
+        "@type": "WebPage",
+        "@id": webpageId,
+        url: resolvedCanonicalURL.href,
+        name: title,
+        description,
+        inLanguage: SITE.lang,
+        isPartOf: { "@id": websiteId },
+      };
 
 const structuredData = {
   "@context": "https://schema.org",
-  "@type": "BlogPosting",
-  headline: `${title}`,
-  image: `${socialImageURL}`,
-  datePublished: `${pubDatetime?.toISOString()}`,
-  ...(modDatetime && { dateModified: modDatetime.toISOString() }),
-  author: [
-    {
-      "@type": "Person",
-      name: `${author}`,
-      ...(profile && { url: profile }),
-    },
-  ],
+  "@graph": [websiteData, pageData],
 };
 ---
 
@@ -59,35 +115,40 @@ const structuredData = {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href={`${basePath}/favicon.svg`} />
-    <link rel="canonical" href={canonicalURL} />
+    <link rel="canonical" href={resolvedCanonicalURL} />
+    <link rel="alternate" hreflang="zh-CN" href={resolvedCanonicalURL} />
+    <link rel="alternate" hreflang="x-default" href={resolvedCanonicalURL} />
     <meta name="generator" content={Astro.generator} />
-
-    <!-- Load Font -->
-    <Font
-      cssVariable="--font-google-sans-code"
-      preload={[{ subset: "latin", weight: 400, style: "normal" }]}
-    />
 
     <!-- General Meta Tags -->
     <title>{title}</title>
     <meta name="title" content={title} />
     <meta name="description" content={description} />
     <meta name="author" content={author} />
-    <link rel="sitemap" href={`${basePath}/sitemap-index.xml`} />
+    <meta name="keywords" content={uniqueKeywords.join(", ")} />
+    <meta name="robots" content={robots} />
+    <link rel="sitemap" href={new URL("sitemap-index.xml", SITE.website)} />
 
     <!-- Open Graph / Facebook -->
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:url" content={resolvedCanonicalURL} />
+    <meta property="og:type" content={pageType} />
+    <meta property="og:site_name" content={SITE.title} />
+    <meta property="og:locale" content={SITE.locale} />
     <meta property="og:image" content={socialImageURL} />
+    <meta property="og:image:alt" content={`${title} - ${SITE.title}`} />
 
     <!-- Article Published/Modified time -->
     {
       pubDatetime && (
-        <meta
-          property="article:published_time"
-          content={pubDatetime.toISOString()}
-        />
+        <>
+          <meta
+            property="article:published_time"
+            content={pubDatetime.toISOString()}
+          />
+          <meta property="article:author" content={profile || author} />
+        </>
       )
     }
     {
@@ -98,13 +159,20 @@ const structuredData = {
         />
       )
     }
+    {
+      pageType === "article" &&
+        uniqueKeywords.map(keyword => (
+          <meta property="article:tag" content={keyword} />
+        ))
+    }
 
     <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content={canonicalURL} />
-    <meta property="twitter:title" content={title} />
-    <meta property="twitter:description" content={description} />
-    <meta property="twitter:image" content={socialImageURL} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={resolvedCanonicalURL} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImageURL} />
+    <meta name="twitter:image:alt" content={`${title} - ${SITE.title}`} />
 
     <!-- Google JSON-LD Structured data -->
     <script
@@ -132,6 +200,19 @@ const structuredData = {
         <meta
           name="google-site-verification"
           content={PUBLIC_GOOGLE_SITE_VERIFICATION}
+        />
+      )
+    }
+    {
+      PUBLIC_BING_SITE_VERIFICATION && (
+        <meta name="msvalidate.01" content={PUBLIC_BING_SITE_VERIFICATION} />
+      )
+    }
+    {
+      PUBLIC_BAIDU_SITE_VERIFICATION && (
+        <meta
+          name="baidu-site-verification"
+          content={PUBLIC_BAIDU_SITE_VERIFICATION}
         />
       )
     }

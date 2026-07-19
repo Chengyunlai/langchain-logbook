@@ -16,7 +16,7 @@ contentType: "main"
 
 课程以仓库锁定版本为准。核心实验可以离线运行，Markdown、Notebook、测试和文档站共同验证同一套实现。
 
-[在线阅读](https://chengyunlai.github.io/langchain-logbook/) · [课程改造任务](https://github.com/Chengyunlai/langchain-logbook/blob/main/TODO.md) · [版本策略](/langchain-logbook/posts/version-policy/)
+[在线阅读](https://chengyunlai.github.io/langchain-logbook/) · [课程改造任务](https://github.com/Chengyunlai/langchain-logbook/blob/main/TODO.md) · [版本策略](/langchain-logbook/posts/version-policy/) · [SEO 与搜索收录](/langchain-logbook/posts/seo/)
 
 ## 第一次在本地打开
 
