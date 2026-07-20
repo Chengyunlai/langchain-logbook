@@ -4,6 +4,7 @@
   "chapters": {
     "01_Getting_Started": {
       "required_sync_ids": [
+        "ch01-custom-stream-boundary",
         "ch01-offline-model",
         "ch01-stream-envelope",
         "ch01-stream-failure"

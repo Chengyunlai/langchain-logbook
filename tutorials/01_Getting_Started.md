@@ -331,6 +331,117 @@ assert "v2" in str(stream_shape_error)
 
 根因不是异步语法，而是消费者依赖了旧版或特定 stream mode 的形状。修复时先解析 envelope，再按 `event.type` 缩小 payload 类型。
 
+### 5.1 综合观测实验：给天气 Tool 增加 custom 事件
+
+`stream_mode` 只决定调用者观察哪些事件，不改变 Agent 的 `model → tool → model` 决策。`messages` 和 `updates` 由运行时自动产生；工具需要报告稳定的业务进度时，可以通过注入的 `ToolRuntime.stream_writer()` 主动发送 `custom` 事件。
+
+下面仍然使用第 02 节的离线天气 Agent，但把工具执行开始和完成显式写入 custom 通道。当前锁定版本的 `GenericFakeChatModel` 在逐 Token streaming 时不会保留只有 tool call、没有正文的 `AIMessage` 调用意图；如果离线工具循环同时订阅 `messages`，模型节点将失去这次 tool call。为了不把 Fake Model 限制伪装成 Agent 协议，实验明确拆成两个调用：天气工具循环观察 `updates + custom`，另一个纯文本 Agent 观察 `messages`。真实供应商模型可以在同一次工具循环中订阅三种模式：
+
+```python
+real_agent.stream(
+    input_data,
+    stream_mode=["messages", "updates", "custom"],
+    version="v2",
+)
+```
+
+```python sync=ch01-custom-stream-boundary
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_core.messages import AIMessage
+
+from mini_deerflow.models import create_offline_model
+
+
+@tool
+def get_weather_with_progress(city: str, runtime: ToolRuntime) -> str:
+    """查询指定城市的天气，并报告工具执行进度。"""
+    runtime.stream_writer(
+        {"event": "weather_lookup_started", "city": city}
+    )
+    result = f"{city}：晴，25°C"
+    runtime.stream_writer(
+        {"event": "weather_lookup_completed", "city": city}
+    )
+    return result
+
+
+progress_model = create_offline_model(
+    [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather_with_progress",
+                    "args": {"city": "成都"},
+                    "id": "call-weather-progress-1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="成都今天晴，25°C，适合出行。"),
+    ]
+)
+progress_agent = create_agent(
+    model=progress_model,
+    tools=[get_weather_with_progress],
+)
+
+tool_parts = list(
+    progress_agent.stream(
+        {"messages": [("user", "成都今天天气如何？")]},
+        stream_mode=["updates", "custom"],
+        version="v2",
+    )
+)
+
+message_agent = create_agent(
+    model=create_offline_model(["天气查询已完成。"]),
+    tools=[],
+)
+message_parts = list(
+    message_agent.stream(
+        {"messages": [("user", "天气工具执行完了吗？")]},
+        stream_mode=["messages"],
+        version="v2",
+    )
+)
+
+observed_parts = [*tool_parts, *message_parts]
+observed_types = {part["type"] for part in observed_parts}
+assert {"messages", "updates", "custom"} <= observed_types
+
+custom_events = [
+    part["data"]
+    for part in observed_parts
+    if part["type"] == "custom"
+]
+assert custom_events == [
+    {"event": "weather_lookup_started", "city": "成都"},
+    {"event": "weather_lookup_completed", "city": "成都"},
+]
+
+message_text = "".join(
+    chunk.content
+    for part in message_parts
+    if part["type"] == "messages"
+    for chunk, _metadata in [part["data"]]
+)
+assert message_text == "天气查询已完成。"
+
+for part in observed_parts:
+    if part["type"] == "messages":
+        chunk, metadata = part["data"]
+        if chunk.content:
+            print("message:", metadata.get("langgraph_node"), chunk.content)
+    elif part["type"] == "updates":
+        print("update:", list(part["data"]))
+    elif part["type"] == "custom":
+        print("custom:", part["data"])
+```
+
+运行时重点观察：`custom` 事件发生在工具函数内部，而 `updates` 要等相应 Graph 节点产生状态更新；`messages` 来自模型输出。它们都只是在描述执行，没有改变模型是否调用工具。这个单元是第一章 Notebook 的最后一个可执行实验，后面只保留工程调用、练习、验收与清理说明。
+
 ## 6. 调试顺序与工程边界
 
 ### 6.1 模型连不上时先分层定位
