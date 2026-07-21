@@ -124,6 +124,22 @@ def check_contracts(
             )
 
     for html in sorted(site.rglob("*.html")):
+        html_text = html.read_text(encoding="utf-8")
+        if any(
+            marker in html_text
+            for marker in (
+                "<!-- lesson-contract:v2 -->",
+                "<!-- lesson-lab:",
+                "<!-- /lesson-lab -->",
+            )
+        ):
+            findings.append(
+                Finding(
+                    "internal-lesson-marker",
+                    html.relative_to(site),
+                    "internal lesson-contract metadata must be removed before publication",
+                )
+            )
         for href in _parse_html(html).hrefs:
             source = _repository_source(href, repository_url=repository_url)
             if source is not None and not _source_exists(repo_root, source):

@@ -12,7 +12,7 @@ learningGoal: "理解 State、Reducer、Node 与 Edge，并判断何时应该显
 contentType: "main"
 ---
 
-<!-- lesson-contract:v2 -->
+
 
 > **课程位置**：Graph 编排层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
@@ -46,7 +46,7 @@ flowchart LR
 
 先把模型和工具放在一边。研究请求暂时只是普通字符串，节点也是普通 Python 函数。这样运行结果若不符合预测，我们只需理解 Graph，不必同时猜测模型行为。
 
-<!-- lesson-lab:id=ch07-state-node-patch layer=concept kind=baseline concept=state-node-patch -->
+
 ### 让一个节点只返回它负责的局部更新
 
 **运行前先预测**：`write_outline` 返回值中没有 `topic`，最终 State 还会保留输入主题吗？
@@ -92,11 +92,11 @@ print("[after]", outline_result)
 **发生了什么**：State 是一次图运行中的共享事实。节点读取当前快照，返回 patch（局部更新）；LangGraph 把 patch 合入 State，所以没被更新的 `topic` 仍然存在。
 
 **动手修改**：让节点再返回 `topic="被覆盖"`。运行前先判断这是修改输入对象，还是提交一个覆盖该字段的 patch。
-<!-- /lesson-lab -->
+
 
 不要把数据库连接、API Key 或模型对象塞进 State。State 会参与序列化、checkpoint 和 trace；运行依赖属于 Runtime Context，跨线程偏好属于 Store，权威业务事务仍属于数据库。
 
-<!-- lesson-lab:id=ch07-serial-edge layer=concept kind=baseline concept=serial-edge -->
+
 ### 用两条固定边保证先规划、后总结
 
 **运行前先预测**：`summarize` 能否读到 `plan` 刚写入的 `query`？最终 State 会包含哪些字段？
@@ -152,11 +152,11 @@ print("[after]", serial_result)
 **发生了什么**：Node（节点）拥有一步工作，Edge（边）拥有步骤之间的可达关系。`plan → summarize` 跨过两个 step；后一个节点读到的是前一步 patch 合并后的 State。
 
 **动手修改**：删除 `plan → summarize`，改成 `START` 同时连接两个节点。先预测 `summarize` 会读到什么，再运行观察。
-<!-- /lesson-lab -->
+
 
 固定边表达“必定接着做什么”。若后继取决于 State，需要一个只负责判断的 router。router 不返回 patch，也不写数据库；它只把已经存在的事实映射成下一站。
 
-<!-- lesson-lab:id=ch07-conditional-edge layer=concept kind=contrast concept=conditional-edge -->
+
 ### 让纯 router 在拒绝与执行之间选择
 
 **运行前先预测**：空白请求会进入 `research`，还是直接进入 `reject`？router 会不会改写 `status`？
@@ -215,7 +215,7 @@ for objective in ("解释 reducer", "   "):
 **发生了什么**：条件边读取 `validate` 已写入的 `status`，选择后继节点。State 的修改仍由节点完成；router 保持纯净，才不会在调试、恢复或可视化时偷偷产生副作用。
 
 **动手修改**：增加 `needs_clarification` 状态和第三条分支。不要在 router 中直接写 `answer`，而是新增一个拥有该 patch 的节点。
-<!-- /lesson-lab -->
+
 
 ## 3. 第二段路：先让并行合并失败，再讨论 Reducer
 
@@ -234,7 +234,7 @@ flowchart LR
 
 **图的文本替代**：plan 完成后，文档搜索与网页搜索并行。两份 `results` patch 必须先在 step 边界合并，summarize 才能读取完整证据。
 
-<!-- lesson-lab:id=ch07-parallel-conflict layer=concept kind=failure concept=reducer pair=parallel-results -->
+
 ### 让两个并行节点同时写同一个字段
 
 **运行前先预测**：`results` 会保留 docs、保留 web、自动拼接，还是拒绝这次更新？
@@ -300,11 +300,11 @@ InvalidUpdateError: results received multiple updates in one step
 **发生了什么**：这不是线程安全偶发错误，而是 State schema 没回答“多个更新如何成为一个值”。LangGraph 拒绝替业务猜测覆盖顺序。这个字段级合并函数就叫 Reducer（归并器）。
 
 **动手修改**：先不要加 reducer，只交换两个节点的注册顺序。预测它是否会让错误可靠消失，并用运行结果验证。
-<!-- /lesson-lab -->
+
 
 对于“搜索结果只追加、不修改旧项”的字段，最小答案是列表相加。`Annotated` 把字段类型和 reducer 绑定起来；每个并行 patch 仍是局部列表，step 边界再调用合并函数。
 
-<!-- lesson-lab:id=ch07-parallel-reducer layer=concept kind=repair concept=reducer pair=parallel-results -->
+
 ### 用 `operator.add` 汇合只追加的搜索结果
 
 **运行前先预测**：输入中的空列表和两个并行 patch 合并后，`results` 有几个元素？
@@ -357,11 +357,11 @@ print("[after] results =", sorted(append_result["results"]))
 **发生了什么**：`operator.add` 给“只追加日志或证据”提供了明确语义。它解决的是同一 step 的合并，不负责去重、替换、排序或验证业务身份。
 
 **动手修改**：把初始 `results` 改成 `['cached:checkpoint']`。先预测最终长度，再确认 reducer 也会合并输入 State 与新 patch。
-<!-- /lesson-lab -->
+
 
 列表类型相同，不代表业务语义相同。任务表中的同一个任务会从 `pending` 变成 `running`、`done`。若继续机械追加，State 会同时声称它处于多个状态。
 
-<!-- lesson-lab:id=ch07-task-list-duplicates layer=concept kind=failure concept=reducer pair=task-list-identity -->
+
 ### 看见 `operator.add` 制造重复任务
 
 **运行前先预测**：两个节点更新不同任务后，列表长度是 2 还是 4？同一个 ID 会出现几次？
@@ -421,11 +421,11 @@ task_count = 4
 **发生了什么**：代码没有异常，但业务状态错了。`operator.add` 忠实完成了“追加”，只是任务表真正需要的是“同 ID 替换，新 ID 追加”。静默错误比异常更需要先写可观察输出。
 
 **动手修改**：把其中一个 patch 的 ID 改为 `pdf`。预测哪些项应追加、哪些项应替换，再写出你的合并规则。
-<!-- /lesson-lab -->
+
 
 自定义 reducer 接收旧值与本次更新，返回合并后的新值。它不是工具函数细节，而是 State 的领域协议：任务身份一旦从 `id` 改成复合键，旧 checkpoint 的解释也会随之改变。
 
-<!-- lesson-lab:id=ch07-task-list-merge layer=concept kind=repair concept=reducer pair=task-list-identity -->
+
 ### 写一个按任务 ID 替换的 Reducer
 
 **运行前先预测**：保留初始顺序时，两个 `done` patch 会替换原位置，还是移动到列表末尾？
@@ -494,7 +494,7 @@ unique_ids = 2
 **发生了什么**：reducer 用 `id` 建立 identity，更新原位置并保留稳定顺序。此规则适合“当前任务表”，不适合必须保留全部历史的审计日志。
 
 **动手修改**：让两个并行节点同时更新 `docs` 为不同状态。你必须明确选择“固定优先级、拒绝冲突或保存版本”，不要依赖节点注册顺序碰运气。
-<!-- /lesson-lab -->
+
 
 ## 4. 第三段路：拆开 `create_agent` 已替你完成的循环
 
@@ -502,7 +502,7 @@ unique_ids = 2
 
 `create_agent` 仍是标准工具循环的首选。我们手写一次，是为了知道 ToolMessage 为什么必须回到模型、条件边检查了什么，以及以后把确定性业务阶段放到循环外时应该接在哪里。
 
-<!-- lesson-lab:id=ch07-explicit-react layer=concept kind=baseline concept=explicit-react -->
+
 ### 从零连接 model、tools 与条件循环
 
 **运行前先预测**：模型第一次返回 tool call 后，工具结果会直接成为最终回答吗？节点轨迹会经过几步？
@@ -590,9 +590,9 @@ final_answer = 根据工具结果，答案是 42。
 **发生了什么**：第一次 model patch 追加带 tool call 的 AIMessage；tools 节点执行函数并追加配对的 ToolMessage；条件边再回到 model，第二次模型调用才生成面向用户的答案。
 
 **动手修改**：把 `tools → model` 改成 `tools → END`。预测最终消息类型与内容，解释为什么原始工具输出不等于最终回答。
-<!-- /lesson-lab -->
 
-<!-- lesson-lab:id=ch07-stream-modes layer=concept kind=contrast concept=stream-modes -->
+
+
 ### 对照 `updates` 与 `values` 看同一次执行
 
 **运行前先预测**：`updates` 每次包含局部 patch 还是完整 State？`values` 会不会包含之前节点写入的字段？
@@ -650,11 +650,11 @@ values count=2 trace=['one', 'two']
 Gateway 以后会把二者投影成稳定 SSE，而不是直接泄露 Python 对象。
 
 **动手修改**：只订阅 `updates`，尝试仅靠最后一个 chunk 还原完整 State。记录你还缺哪些历史信息。
-<!-- /lesson-lab -->
+
 
 任何循环都需要终止条件。Prompt 中写“最多三次”不是程序保证；Graph 的 recursion limit 能阻止失控，但它只知道执行步数，不知道业务为何应该停止。
 
-<!-- lesson-lab:id=ch07-recursion-limit layer=concept kind=failure concept=recursion-limit pair=loop-budget -->
+
 ### 让无条件循环撞上 recursion limit
 
 **运行前先预测**：图被终止前，`work` 节点至少执行一次吗？异常发生后还能否从返回值读取最终 State？
@@ -706,9 +706,9 @@ GraphRecursionError: graph exceeded recursion_limit=3
 **发生了什么**：recursion limit 是运行时保险丝。它终止了执行，却没有产出“为什么结束”的业务状态；调用方只得到异常。真实系统还需要可解释、可测试的预算字段。
 
 **动手修改**：把 limit 改成 1 和 5，记录节点实际执行次数。不要把观察到的数值误当成所有复杂 Graph 的业务轮次。
-<!-- /lesson-lab -->
 
-<!-- lesson-lab:id=ch07-loop-budget layer=concept kind=repair concept=recursion-limit pair=loop-budget -->
+
+
 ### 把业务预算写进 State 并正常结束
 
 **运行前先预测**：预算为 3 时，route 在第几次 patch 合并后选择 END？最终结果是异常还是带原因的 State？
@@ -760,13 +760,13 @@ stop_reason = budget_exhausted
 **发生了什么**：业务预算负责“何时以及为何停止”，recursion limit 仍保留为更外层保险丝。两者不是二选一：前者产生领域结果，后者防止错误拓扑失控。
 
 **动手修改**：让预算由“尝试次数”改成“累计成本”。指出哪个字段属于 State，哪个价格表或权限依赖应由 Runtime Context 提供。
-<!-- /lesson-lab -->
+
 
 ## 5. 工程迁移：把机制放回 Mini DeerFlow
 
 现在才导入项目代码。概念层已经回答 Graph 如何运行；工程层要回答谁拥有类型、如何保存、怎样限制工具更新，以及与 DeerFlow 的哪条调用链对应。
 
-<!-- lesson-lab:id=ch07-mini-deerflow-migration layer=migration kind=contrast concept=explicit-react -->
+
 ### 对照 Mini DeerFlow 的显式 ReAct 与领域 Reducer
 
 **运行前先预测**：工程工厂的节点轨迹是否仍是 `model → tools → model`？同路径 Artifact 再次写入时是追加还是替换？
@@ -829,7 +829,7 @@ middleware_trace = ['permission:before_model', 'artifact:after_model']
 **发生了什么**：工厂保留同一条 ReAct 拓扑，但增加类型化事件、公共工具契约和测试入口。
 
 `artifacts` 按工作区路径替换冲突，`middleware_trace` 才是 append-only；工程代码没有给所有列表套同一个 reducer。
-<!-- /lesson-lab -->
+
 
 概念实验刻意省略了四类工程边界，Mini DeerFlow 必须补上：
 

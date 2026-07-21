@@ -661,6 +661,21 @@ class SiteReleaseContractCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("pagefind-base", result.stdout)
 
+    def test_reports_internal_lesson_markers_in_published_html(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site, repository = self.write_site(Path(directory))
+            index = site / "index.html"
+            index.write_text(
+                index.read_text(encoding="utf-8")
+                + "<!-- lesson-lab:id=demo layer=concept kind=baseline concept=state -->",
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site, repository)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("internal-lesson-marker", result.stdout)
+
 
 class SiteSeoCliTests(unittest.TestCase):
     site_url = "https://example.com/langchain-logbook/"
