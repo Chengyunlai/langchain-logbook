@@ -176,17 +176,29 @@
     },
     "11_Multi_Agent_Patterns": {
       "required_sync_ids": [
+        "ch11-context-pollution-failure",
+        "ch11-bounded-delegation-repair",
+        "ch11-parent-context-leak-failure",
+        "ch11-context-projection-repair",
         "ch11-command-router",
         "ch11-send-router",
         "ch11-handoff",
         "ch11-subgraph-boundary",
+        "ch11-ephemeral-specialist",
+        "ch11-unbounded-concurrency-failure",
+        "ch11-concurrency-limit",
+        "ch11-gather-partial-failure",
+        "ch11-timeout-partial-failure",
+        "ch11-output-budget-failure",
+        "ch11-output-budget-repair",
+        "ch11-bounded-delegation-record",
         "ch11-isolated-specialists",
         "ch11-task-tool",
         "ch11-lead-agent-supervisor",
-        "ch11-context-pollution-failure",
-        "ch11-concurrency-limit",
-        "ch11-timeout-partial-failure",
-        "ch11-output-budget-failure",
+        "ch11-mini-context-projection",
+        "ch11-mini-concurrency-limit",
+        "ch11-mini-partial-failure",
+        "ch11-mini-output-budget",
         "ch11-delegation-ledger-event"
       ]
     }

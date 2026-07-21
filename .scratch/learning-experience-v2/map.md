@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–10 章已完成，下一步从“Lead 上下文污染”重写第 11 章 Subagent 委派与隔离。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章已完成，下一步按组合根阅读顺序改造工程架构总览与后续专题。
 
 ## Not yet specified
 

@@ -48,4 +48,7 @@ Blocked by: 05, 06
 - 第 10 章已完成 14 个 lesson lab：阻塞 worker/durable interrupt、审批决定协议、interrupt 前副作用失败/后移修复、time travel 重复/幂等 operation ID、多个 interrupt 顺序，以及六个 Mini DeerFlow/SQLite 审批迁移实验。
 - Notebook 执行发现并修复五处临时 SQLite 生命周期错误：所有 ledger 统计都在 `TemporaryDirectory` 退出前读取，课程不再依赖已删除数据库文件。
 - 第 10 章 Web、已执行 Notebook、14 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证。
-- 下一步处理第 11 章 Subagent、委派、上下文隔离、并发和稳定失败协议；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
+- 第 11 章已完成 24 个 lesson lab：Lead 原始结果污染/有界委派、父 Context 深拷贝泄漏/allowlist 投影、Command/Send Router、Handoff、Subgraph 边界、临时 specialist、无界并发/Semaphore、裸 gather/稳定部分失败、无界输出/preview+digest，以及 Delegation Record。
+- 第 11 章的八个 Mini DeerFlow 迁移实验覆盖 built-in specialist、task tool、真实 Lead model→tool→model 循环、context policy、并发、异常/timeout、输出预算和 DelegationLedger。`tool_call_schema` 与内部 `args_schema` 的 runtime 注入差异也由执行结果校准。
+- 第 11 章 Web、已执行 Notebook、24 组稳定 stdout、concept/migration 边界、发布 HTML 与全量质量门禁均已验证；全量基线保持 172 passed、1 external integration skipped。
+- 下一步按组合根阅读顺序处理工程架构总览、Lead Agent Core、Sandbox/Extensions、Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
