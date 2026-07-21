@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章、架构总览、Lead Core 与 Sandbox/Extensions 已完成，下一步从“Graph 能运行但客户端无法管理长任务”重写 Runtime/Gateway。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章和四篇工程主线已完成，下一步从“运行到终态不等于交付正确”重写 Evaluation/Observability。
 
 ## Not yet specified
 

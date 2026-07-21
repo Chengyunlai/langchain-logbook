@@ -57,4 +57,6 @@ Blocked by: 05, 06
 - Lead Agent Core 的 Streaming 部分新增真实 v2 updates 执行记录：17 个事件、2 次 model update、1 次 tools update、严格 JSON 投影与真实 Mermaid 节点，用动态轨迹解释 model→tool→model，而不是只展示 API 名称。
 - Sandbox/Extensions 已按单一能力链重排：Artifact 文件落点 → user/thread workspace → ToolRuntime 写工具 → Subagent capability handle → MCP discovery/allowlist → Skill metadata/body 渐进披露，不再把四个扩展名词并列倾倒。
 - Sandbox 专题新增四组完整运行记录：workspace 生命周期与拒绝审计；Lead 写文件同时形成文件、ArtifactRef 与 ToolMessage；Subagent 只继承 sandbox_id 且 Secret 不泄漏；fake MCP server 暴露两个工具但应用只授权一个。Skill 也打印正文加载前后差异。
-- 下一步处理 Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
+- Runtime/Gateway 已补上从上一专题到产品运行时的连续边界，并新增五步源码首读路线，避免从 FastAPI router 或数据库表随机漫游。
+- Runtime 专题新增真实端到端实验：公开组合根 → 产品 Thread → pending Run → 后台 Graph → success → 19 条持久事件 → after_sequence 重放 → ownership not-found → checkpoint State。输出同时证明 Runtime Repository 没有冒充 Graph State。
+- 下一步处理 Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。

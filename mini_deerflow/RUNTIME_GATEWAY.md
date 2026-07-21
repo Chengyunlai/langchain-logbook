@@ -9,6 +9,10 @@
 
 前面的课程已经能构建 Agent、保存 Graph State、暂停审批、隔离 Subagent 和工作区。但“可以调用一个 compiled graph”还不等于“可以把 Agent 作为业务服务交付”。
 
+上一篇的 Lead/Sandbox 都发生在 Agent Harness 内部。现在把浏览器放到它前面：浏览器发出请求后可能立刻断线，另一个进程稍后恢复服务，用户还会查询、取消或批准任务。Graph 本身不会替产品回答这些问题。
+
+因此本专题不从 FastAPI 路由开始。学习顺序固定为：先区分持久事实，再建立 Thread/Run/Event repository，随后让 RunManager 驱动 Graph，最后才把持久事件投影成 SSE 和 HTTP。
+
 真实客户端还会问：对话线程由谁创建？一次执行为什么有单独 Run ID？浏览器断线后任务是否继续？如何取消？重连从哪个事件继续？服务进程重启后哪些事实还在？
 
 本专题实现一个缩小但不造假的产品运行时：SQLite 保存 Thread/Run/Event，后台 worker 执行 LangGraph，FastAPI 只适配 HTTP，SSE 事件先持久化再发送。学习目标不是复制 Agent Server，而是亲手建立这些边界，然后知道什么时候应直接采用 Agent Server，什么时候自建 Gateway 才有价值。
@@ -113,6 +117,18 @@ Graph/Agent Harness ──X──→ FastAPI
 
 `GraphRuntime` 只要求 `stream()` 和 `get_state()`，所以 RunManager 测试不需要启动 HTTP，也不需要真实模型。反过来，Agent tool/middleware 不 import FastAPI Request；认证身份由 adapter 验证后，通过应用控制的 Context 进入 Graph。
 
+### 3.1 第一次阅读只追一条请求
+
+先不要逐表阅读 repository。按下面顺序跟一条“创建并等待 Run”的调用：
+
+1. `MiniDeerFlowGateway.start_run()`：把认证 user_id 与请求 DTO 分开传入；
+2. `LocalRunManager.start_message()`：创建 pending Run，并立即提交后台 worker；
+3. `LocalRunManager._execute()`：claim、写 metadata、消费 Graph stream、写终态；
+4. `SqliteRuntimeRepository.append_event()`：在事务中分配 sequence；
+5. `MiniDeerFlowGateway.iter_run_events()`：只读取已持久化事件并编码 SSE。
+
+读完这条链，再回头看 FastAPI router。你会发现 router 只做身份解析、DTO 验证、错误映射和 StreamingResponse，不拥有 Run 状态机。
+
 ## 4. TDD 纵切面一：Repository 先固定所有权与状态机
 
 ### 4.1 产品 Thread 不等于 checkpoint thread
@@ -208,6 +224,104 @@ worker 的顺序是：
 7. 在一个 Repository 事务中写 terminal status、可选 `interrupt/error` 与强制 `end`。
 
 “先写 status 还是先写 end”是协议选择。本项目在同一个 `BEGIN IMMEDIATE` 事务中先更新状态，再追加可选终端业务事件和 `end`；提交后它们同时可见，避免崩溃留下“终态但没有 end”。订阅端只把持久化的 end 当正常终止；若旧数据或手工修改破坏该不变量，Gateway 抛出 runtime conflict，而不是静默伪装成完整流。
+
+### 5.1.1 运行一条完整的 pending → success → replay
+
+下面使用真实 Mini DeerFlow Graph、真实后台 worker 和 SQLite event journal，但不启动 HTTP server：
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from mini_deerflow.app import build_application
+from mini_deerflow.config import ApplicationSettings
+from mini_deerflow.runtime import (
+    LocalRunManager,
+    RuntimeNotFoundError,
+    SqliteRuntimeRepository,
+)
+
+
+with TemporaryDirectory() as directory:
+    application = build_application(
+        ApplicationSettings.offline(workspace_root=directory)
+    )
+    repository = SqliteRuntimeRepository(Path(directory) / "runtime.sqlite")
+    manager = LocalRunManager(
+        repository,
+        application.graph,
+        context_factory=lambda run: application.context_for(
+            request_id=run.run_id,
+            user_id=run.user_id,
+        ),
+    )
+    thread = manager.create_thread(
+        user_id="learner",
+        thread_id="thread-runtime-demo",
+    )
+    created = manager.start_message(
+        user_id="learner",
+        thread_id=thread.thread_id,
+        message="解释可重放 SSE",
+        stream_modes=("updates",),
+        on_disconnect="continue",
+        run_id="run-runtime-demo",
+    )
+    completed = manager.wait(
+        created.run_id,
+        user_id="learner",
+        timeout=3,
+    )
+    events = manager.list_events(created.run_id, user_id="learner")
+    replayed = manager.list_events(
+        created.run_id,
+        user_id="learner",
+        after_sequence=events[0].sequence,
+    )
+    state = manager.get_thread_state(thread.thread_id, user_id="learner")
+    try:
+        repository.get_run(created.run_id, user_id="other-user")
+    except RuntimeNotFoundError as error:
+        ownership_error = type(error).__name__
+    manager.close()
+
+    print("created_status =", created.status.value)
+    print("completed_status =", completed.status.value)
+    print(
+        "event_type_order =",
+        list(dict.fromkeys(event.event for event in events)),
+    )
+    print("update_count =", sum(event.event == "updates" for event in events))
+    print(
+        "event_ids_are_monotonic =",
+        [event.event_id for event in events]
+        == [f"run-runtime-demo:{index}" for index in range(1, len(events) + 1)],
+    )
+    print("replay_starts_after =", replayed[0].event_id)
+    print("last_event =", events[-1].event)
+    print("ownership_error =", ownership_error)
+    print("state_has_messages =", "messages" in state.values)
+```
+
+```text
+created_status = pending
+completed_status = success
+event_type_order = ['metadata', 'updates', 'end']
+update_count = 17
+event_ids_are_monotonic = True
+replay_starts_after = run-runtime-demo:2
+last_event = end
+ownership_error = RuntimeNotFoundError
+state_has_messages = True
+```
+
+第一行来自 `start_message()` 的立即返回；第二行来自后台 future 的终态。17 个 updates 是本章 Graph 的 model、tools 和 Middleware 更新，不是 17 个 HTTP response。
+
+`after_sequence=1` 让重放从 `run-runtime-demo:2` 开始。other-user 得到 not found，而不是知道该 Run 确实属于别人；最后一行则证明产品 Runtime 没有替代 Graph checkpoint。
+
+**动手修改一**：把 after_sequence 改成最后一个事件的 sequence。确认重放为空，而 Run 本身仍是 success。
+
+**动手修改二**：删除 `manager.close()`，观察测试进程为何可能继续持有 worker。说明资源生命周期应由哪一层负责。
 
 ### 5.2 v2 stream mode 的统一 envelope
 
