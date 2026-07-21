@@ -37,12 +37,19 @@
     },
     "03_RAG_2.0": {
       "required_sync_ids": [
-        "ch03-idempotent-index",
-        "ch03-search-with-source",
-        "ch03-retriever-tool",
-        "ch03-vector-filter",
+        "ch03-stuff-all-failure",
+        "ch03-top-k-repair",
+        "ch03-naive-split-source-failure",
+        "ch03-document-split-repair",
+        "ch03-bm25-retriever",
+        "ch03-source-format-failure",
+        "ch03-source-format-repair",
+        "ch03-runnable-rag",
+        "ch03-forced-nearest-failure",
+        "ch03-explicit-empty-repair",
         "ch03-recall-evaluation",
-        "ch03-empty-retrieval-failure"
+        "ch03-mini-deerflow-local-index",
+        "ch03-mini-deerflow-vector-index"
       ]
     },
     "04_Smart_Tooling": {

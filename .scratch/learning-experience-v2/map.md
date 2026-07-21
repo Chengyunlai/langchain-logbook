@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–02 章已完成，下一步从透明文档、切分与来源边界重写第 03 章 RAG。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–03 章已完成，下一步从 tool intent、手动 ToolMessage 到 `create_agent` 重写第 04 章。
 
 ## Not yet specified
 

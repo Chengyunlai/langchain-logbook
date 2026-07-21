@@ -75,7 +75,7 @@ flowchart LR
 | --- | --- | --- |
 | [第 01 章](./tutorials/01_Getting_Started.md) | 模型、Runnable 与 Agent 看起来都像“调用模型”，事件也无法稳定消费 | 模型工厂、消息入口、v2 流式事件 adapter |
 | [第 02 章](./tutorials/02_Structured_Output.md) | 自然语言计划不能被路由、持久化或验证 | `TaskPlan`、`ArtifactRef`、显式失败结果 |
-| [第 03 章](./tutorials/03_RAG_2.0.md) | 计划结构正确，事实却可能过时且没有来源 | 幂等知识索引、检索评测、带来源的检索工具 |
+| [第 03 章](./tutorials/03_RAG_2.0.md) | 计划结构正确，事实却可能过时且没有来源 | 带来源 Retriever、空召回协议、recall@k 与可替换知识索引 |
 
 第一部结束时，系统已经知道如何接收任务、描述任务并查询资料，但仍要由应用代码决定何时检索。第 04 章会让模型第一次自主选择工具。
 
