@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章和四篇工程主线已完成，下一步从“运行到终态不等于交付正确”重写 Evaluation/Observability。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章和五篇工程主线已完成，下一步把已验证接缝装配成可恢复研究交付 Capstone。
 
 ## Not yet specified
 

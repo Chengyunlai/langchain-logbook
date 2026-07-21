@@ -59,4 +59,6 @@ Blocked by: 05, 06
 - Sandbox 专题新增四组完整运行记录：workspace 生命周期与拒绝审计；Lead 写文件同时形成文件、ArtifactRef 与 ToolMessage；Subagent 只继承 sandbox_id 且 Secret 不泄漏；fake MCP server 暴露两个工具但应用只授权一个。Skill 也打印正文加载前后差异。
 - Runtime/Gateway 已补上从上一专题到产品运行时的连续边界，并新增五步源码首读路线，避免从 FastAPI router 或数据库表随机漫游。
 - Runtime 专题新增真实端到端实验：公开组合根 → 产品 Thread → pending Run → 后台 Graph → success → 19 条持久事件 → after_sequence 重放 → ownership not-found → checkpoint State。输出同时证明 Runtime Repository 没有冒充 Graph State。
-- 下一步处理 Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
+- Evaluation/Observability 已明确承接 Runtime success：先投影 Observation，再分别判断 Outcome、Trajectory、Budget，之后才接入 Trace 与可选 LangSmith adapter。
+- 评测专题新增两组确定性实验：相同正确文本因禁止工具路径或调用超限得到不同 metric；baseline/candidate 同为 50% 通过率，但关键恢复案例新增失败触发发布阻断。离线真实 Agent 评测保持 outcome/trajectory/budget 全绿。
+- 下一步处理 Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。

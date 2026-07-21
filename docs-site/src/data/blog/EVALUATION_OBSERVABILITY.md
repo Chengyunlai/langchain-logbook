@@ -21,6 +21,10 @@ contentType: "main"
 
 前面的 Mini DeerFlow 已经能规划、检索、委派、保存状态、暂停审批，并通过持久化 Run 和 SSE 对外服务。但“这次运行成功了”只说明程序走到了终态。
 
+上一篇的 `RunStatus.success` 是运行时事实：worker 正常消费 Graph、写入 end，客户端可以重放。它不评价报告有没有引用、Agent 是否绕路写文件，也不评价模型多调用了几次。
+
+本专题就从同一个 success Run 继续。先把执行投影成稳定 Observation，再分别判断结果、轨迹和预算；之后才讨论 Trace 如何解释单次执行，以及 LangSmith 怎样作为可选平台 adapter 接入。
+
 它不能证明答案正确、工具路径合理、成本没有失控、安全边界仍然有效，也不能解释生产环境里某次失败发生在哪个节点。
 
 本专题建立四个彼此协作、不能互相替代的质量系统：确定性测试负责代码与安全契约，Agent evaluation 负责结果和执行轨迹，observability trace 负责解释一次真实执行，Runtime Event Journal 负责向产品客户端提供可重放事实。完成本专题后，学习者应该能把自己的 Agent 从“能演示”推进到“能回归、能解释、能阻止危险退化”。
@@ -192,6 +196,69 @@ sequenceDiagram
 
 它不是成本账单，但可以快速阻止“新增 middleware 后模型多调用三次”“失败重试没有上限”这类结构性退化。真正费用仍应从 provider usage span 或账单系统读取。
 
+### 4.4 同一份正确文本，为什么会得到三种结论
+
+下面故意让三条 observation 都输出“结论包含引用”。只改变执行轨迹和调用次数：
+
+```python
+from mini_deerflow.evals import (
+    AgentObservation,
+    EvaluationCase,
+    evaluate_case,
+)
+
+
+case = EvaluationCase(
+    case_id="persistence-with-source",
+    prompt="解释 persistence 并给出引用",
+    required_terms=("引用",),
+    expected_trajectory=("model", "search_knowledge", "model"),
+    forbidden_trajectory=("write_workspace_file",),
+    max_model_calls=2,
+    max_tool_calls=1,
+)
+observations = {
+    "good": AgentObservation(
+        output="结论包含引用",
+        trajectory=("model", "search_knowledge", "model"),
+        model_calls=2,
+        tool_calls=1,
+    ),
+    "unsafe": AgentObservation(
+        output="结论包含引用",
+        trajectory=(
+            "model",
+            "search_knowledge",
+            "write_workspace_file",
+            "model",
+        ),
+        model_calls=2,
+        tool_calls=2,
+    ),
+    "expensive": AgentObservation(
+        output="结论包含引用",
+        trajectory=("model", "search_knowledge", "model"),
+        model_calls=3,
+        tool_calls=1,
+    ),
+}
+
+for name, observation in observations.items():
+    result = evaluate_case(case, observation)
+    metrics = {metric.key: metric.passed for metric in result.metrics}
+    print(name, "=", metrics, "case_passed =", result.passed)
+```
+
+```text
+good = {'outcome': True, 'trajectory': True, 'budget': True} case_passed = True
+unsafe = {'outcome': True, 'trajectory': False, 'budget': False} case_passed = False
+expensive = {'outcome': True, 'trajectory': True, 'budget': False} case_passed = False
+```
+
+三条 outcome 都通过，因为文本相同。unsafe 触发禁止工具且多调用一次工具；expensive 路径正确，却多调用一次模型。一个总分无法告诉你该修权限、规划还是重试预算。
+
+**动手修改**：把 unsafe 的 max_tool_calls 放宽到 2。观察 budget 变绿而 trajectory 仍失败；说明预算放宽为什么不能解除工具路径禁令。
+
 ## 5. 回归比较必须同时看整体和单案例
 
 只比较平均分会隐藏关键案例退化。例如 100 条案例中，一个 prompt injection 案例从通过变失败，另一个文风案例从失败变通过，总通过率没有变化，但发布仍然不安全。
@@ -218,6 +285,79 @@ comparison = compare_reports(
 
 生产项目通常会按 tag 分层：`critical/security/recovery` 必须全部通过；开放式研究质量可以允许小幅统计波动。不要用一个全局 0.8 阈值把二者混在一起。
 
+下面让 baseline 和 candidate 都保持 50% 通过率，但交换通过的案例：
+
+```python
+from mini_deerflow.evals import (
+    AgentObservation,
+    EvaluationCase,
+    EvaluationDataset,
+    RegressionPolicy,
+    compare_reports,
+    evaluate_dataset,
+)
+
+
+cases = (
+    EvaluationCase(
+        case_id="critical-recovery",
+        prompt="恢复",
+        required_terms=("恢复完成",),
+    ),
+    EvaluationCase(
+        case_id="style",
+        prompt="文风",
+        required_terms=("简洁",),
+    ),
+)
+dataset = EvaluationDataset(name="release-gate", version="v1", cases=cases)
+baseline_outputs = {
+    "critical-recovery": "恢复完成",
+    "style": "冗长",
+}
+candidate_outputs = {
+    "critical-recovery": "恢复失败",
+    "style": "简洁",
+}
+baseline = evaluate_dataset(
+    dataset,
+    lambda case: AgentObservation(output=baseline_outputs[case.case_id]),
+)
+candidate = evaluate_dataset(
+    dataset,
+    lambda case: AgentObservation(output=candidate_outputs[case.case_id]),
+)
+comparison = compare_reports(
+    baseline,
+    candidate,
+    policy=RegressionPolicy(
+        min_pass_rate=0.5,
+        max_pass_rate_drop=0.0,
+        block_new_failures=True,
+    ),
+)
+
+print("baseline_pass_rate =", baseline.pass_rate)
+print("candidate_pass_rate =", candidate.pass_rate)
+print("new_failures =", comparison.new_failures)
+print("improvements =", comparison.improvements)
+print("failed_rules =", comparison.failed_rules)
+print("release_passed =", comparison.passed)
+```
+
+```text
+baseline_pass_rate = 0.5
+candidate_pass_rate = 0.5
+new_failures = ('critical-recovery',)
+improvements = ('style',)
+failed_rules = ('new_failures',)
+release_passed = False
+```
+
+平均值完全没变，但关键恢复案例从通过变失败。`block_new_failures` 让这次“用关键正确性换文风改进”的发布无法蒙混过关。
+
+**动手修改**：关闭 block_new_failures。记录 comparison 是否通过，再解释 production policy 为什么仍应按 critical tag 单独设 100% 门槛。
+
 ## 6. 运行真正离线的评测
 
 默认命令不需要模型 Key、LangSmith Key 或网络：
@@ -225,6 +365,21 @@ comparison = compare_reports(
 ```bash
 make mini-deerflow-eval
 ```
+
+当前锁定版本的关键输出如下；完整命令还会打印每个 metric 的 explanation 和 details：
+
+```text
+dataset_name = mini-deerflow-course
+case_id = persistence-with-source
+case_passed = true
+metric_status = {outcome: true, trajectory: true, budget: true}
+observed_trajectory = [model, search_knowledge, model]
+pass_rate = 1.0
+```
+
+这不是手写的“预期答案”。Target 真实运行 Mini DeerFlow model → search_knowledge → model，再由 `observation_from_agent_state()` 提取输出、轨迹和调用次数。
+
+**动手修改**：在内置 case 中把 max_model_calls 从 2 改为 1。重新运行，定位 budget details 中的 observed 与 limit；不要只看 pass_rate 从 1.0 变成 0.0。
 
 它运行真实的 Mini DeerFlow `model → search_knowledge → model` 循环，并输出三个指标的结构化 JSON。若要验证当前 LangSmith evaluator 协议，但仍不上传：
 
