@@ -21,6 +21,10 @@ contentType: "main"
 
 前面的章节已经分别验证模型、Schema、检索、Lead、Graph、恢复、审批、Subagent、Sandbox、Runtime 和评测。本篇把这些公共接缝装配成同一条研究交付纵切面。
 
+上一篇已经区分 Run success 与交付质量。本篇把两者放到同一任务里：Graph 和 Subagent 先形成草稿，draft quality gate 决定能否进入审批；审批恢复后还有 pre-publish gate，正式写入后再做最终评测。
+
+因此你不会再学新的“Capstone 框架”。所有类都应能在前文找到来源；如果 assembly 中出现第二套 Executor、Sandbox、Checkpointer 或 evaluator，就说明装配已经越界。
+
 最终业务需求是：用户提交研究目标，Lead 检索本地知识，research/coding specialist 并行形成证据与实现建议；报告先写入线程草稿区，服务重建后由用户批准、编辑或拒绝；批准只记录一次副作用意图，并用结果、轨迹和预算评测证明交付质量。
 
 ## 1. 验收先于实现
@@ -60,6 +64,19 @@ Approval Graph 把 interrupt 写入 SQLite checkpoint。恢复后，系统把发
 **读图顺序**：先沿左上请求进入 Application，再分别追踪检索、委派和工作区三条能力线，最后从 Approval Graph 向 Checkpointer、Ledger、正式报告与评测顺序阅读。
 
 `capstone.py` 是 assembly，不是新 Agent 框架。它不重新实现模型、工具、Subagent、Sandbox、Checkpointer 或 evaluator，只决定本业务纵切面按什么顺序调用已有公共接口。
+
+### 2.1 第一次阅读 capstone.py 的六个停靠点
+
+不要从第一行逐句读到最后。先用下面六个停靠点建立主链：
+
+1. `CapstoneRequest`：report_path 在任何 workspace/effect 出现前验证；
+2. `application.invoke()`：真实 Lead model → search → model；
+3. `executor.dispatch_many()`：research/coding 并发且只接收安全 context；
+4. draft write + draft evaluation：大正文先落 workspace，不合格就停在审批前；
+5. 两次 `open_sqlite_checkpointer()`：interrupt 与 resume 之间真实关闭并重开；
+6. pre-publish evaluation → ledger → final write → final evaluation：先验收，再记账和交付。
+
+读完这六处，再查看各 helper 的 Schema 细节。这样你追踪的是一条业务事务，而不是重新浏览所有模块。
 
 ## 3. 从空目录逐步建立项目
 
@@ -200,6 +217,88 @@ make mini-deerflow-capstone
   "evaluation": {"pass_rate": 1.0}
 }
 ```
+
+上面的摘要适合快速检查。下面的实验把 approve、同 request 重放和 reject 放在同一个临时工作区，并打印每条验收证据：
+
+```python
+import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from mini_deerflow.capstone import CapstoneRequest, run_capstone_scenario
+from mini_deerflow.graph import ApprovalDecision
+
+
+with TemporaryDirectory() as directory:
+    request = CapstoneRequest(
+        request_id="capstone-lab",
+        thread_id="thread-capstone-lab",
+        user_id="learner",
+        objective="研究 LangGraph persistence，并交付带引用的实现建议",
+        report_path="reports/persistence.md",
+    )
+    first = asyncio.run(
+        run_capstone_scenario(request, workspace_root=directory)
+    )
+    replay = asyncio.run(
+        run_capstone_scenario(request, workspace_root=directory)
+    )
+    reject = asyncio.run(
+        run_capstone_scenario(
+            CapstoneRequest(
+                request_id="capstone-reject",
+                thread_id="thread-capstone-reject",
+                user_id="learner",
+                objective="研究安全恢复",
+                report_path="reports/rejected.md",
+            ),
+            workspace_root=directory,
+            decision=ApprovalDecision(
+                decision="reject",
+                reason="引用不足",
+            ),
+        )
+    )
+    trajectory = first.evaluation.results[0].metrics[1].details["observed"]
+    report = Path(first.artifact_path).read_text(encoding="utf-8")
+
+    print("first_status =", first.status)
+    print("subagent_statuses =", first.subagent_statuses)
+    print("checkpoint_reopened =", first.checkpoint_reopened)
+    print("first_effect =", first.effect_status, first.effect_count)
+    print("replay_effect =", replay.effect_status, replay.effect_count)
+    print("trajectory =", trajectory)
+    print(
+        "report_sections_present =",
+        all(term in report for term in ("研究摘要", "代码建议", "引用")),
+    )
+    print("reject_status =", reject.status)
+    print("reject_effect_count =", reject.effect_count)
+    print("reject_has_final_artifact =", reject.artifact_path is not None)
+    print("reject_draft_exists =", Path(reject.draft_path).is_file())
+```
+
+```text
+first_status = completed
+subagent_statuses = ('completed', 'completed')
+checkpoint_reopened = True
+first_effect = recorded 1
+replay_effect = already_recorded 1
+trajectory = ['model', 'search_knowledge', 'model', 'subagent:research', 'subagent:coding', 'interrupt:risk', 'resume:approve', 'write_workspace_file']
+report_sections_present = True
+reject_status = rejected
+reject_effect_count = 0
+reject_has_final_artifact = False
+reject_draft_exists = True
+```
+
+先比较 first_effect 与 replay_effect：第二次完整执行仍经过研究、草稿和审批，但稳定 request ID 让 ledger 返回 already_recorded，记录总数保持 1。
+
+再看 reject 四行：拒绝不是异常。草稿仍是可恢复事实，正式 Artifact 和 effect intent 都没有产生；这与“删除所有痕迹”或“先记账再拒绝”都不同。
+
+**动手修改一**：把 approve 改成 edit，并只修改发布 path。确认 draft path 不变、final path 改变、effect count 仍为 1。
+
+**动手修改二**：在 trajectory 中删除 interrupt:risk，再单独运行 trajectory evaluator。说明 outcome 为什么仍可能通过，而发布仍应被阻止。
 
 不要只看 `status`。应同时检查：
 
