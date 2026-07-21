@@ -225,6 +225,46 @@ class TutorialCheckerCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_allows_agent_input_antipattern_only_inside_v2_failure_lab(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_v2_pair(root)
+            markdown_path = root / "tutorials" / "01_Demo.md"
+            notebook_path = root / "tutorials" / "01_Demo.ipynb"
+            failure_code = 'agent.invoke({"input": "wrong"})\nprint("conflict")'
+
+            markdown = markdown_path.read_text(encoding="utf-8").replace(
+                "print('conflict')", failure_code
+            )
+            markdown_path.write_text(markdown, encoding="utf-8")
+            notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+            failure_cell = next(
+                cell
+                for cell in notebook["cells"]
+                if cell.get("metadata", {}).get("langchain_logbook_sync")
+                == "demo-failure"
+            )
+            failure_cell["source"] = [failure_code]
+            notebook_path.write_text(
+                json.dumps(notebook, ensure_ascii=False), encoding="utf-8"
+            )
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("agent-input-key", result.stdout)
+
+    def test_reports_agent_input_antipattern_outside_failure_lab(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code = 'agent.invoke({"input": "wrong"})'
+            self.write_pair(root, markdown_code=code, notebook=_notebook(code=code))
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("agent-input-key", result.stdout)
+
     def test_reports_v2_pairing_and_concept_import_violations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

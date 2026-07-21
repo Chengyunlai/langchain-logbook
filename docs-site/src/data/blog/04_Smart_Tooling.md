@@ -1,5 +1,5 @@
 ---
-title: "第 04 章：工具契约与 `create_agent`——构建第一个 Lead Agent"
+title: "第 04 章：从工具意图到第一个完整 Agent 循环"
 description: "用工具契约与 create_agent 构建第一个可观察、可测试的 Lead Agent。"
 pubDatetime: 2026-03-30T00:00:00.000Z
 featured: false
@@ -12,207 +12,734 @@ learningGoal: "用工具契约与 create_agent 构建第一个可观察、可测
 contentType: "main"
 ---
 
-> - 验证环境：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
-> - 校准日期：2026-07-13
-> - API 状态：`@tool`、`ToolRuntime`、`create_agent` 与 v2 streaming 为 current
-> - 本章工件：`mini_deerflow.tools`、`mini_deerflow.agents.create_lead_agent`
 
-## 1. 系统快照：知识工具已经存在，调用时机仍被写死
 
-第一部交付了可观察模型、研究计划和 `search_knowledge` 工具。当前应用仍按固定顺序调用检索器，再把结果交给模型；遇到无需检索的问题，它也会照常查询。
+> **课程位置**：Agent 封装层第 1 章
+> **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
+> **本章工件**：Tool Schema、ToolMessage、`create_agent`、ToolRuntime 与 Mini DeerFlow Lead Agent
 
-研究助手需要第一次获得有限的行动权：模型可以选择是否调用工具，但只能看到经过批准的工具 Schema。身份、工作区和权限继续由应用在运行时提供，不能由模型编造。
+## 1. 上一刻系统：程序会检索，模型还不能选择动作
 
-本章会同时观察两条注入路线。Runnable 路线把隐藏参数补入手写管道，便于看清机制；Mini DeerFlow 使用 `create_agent + context + ToolRuntime`，把同一原则落入标准 Agent runtime。
+前三章已经建立四项能力：模型调用可观察，自然语言请求可验证，资料可检索，source 能进入生成 Context。
 
-## 2. 一次受控工具调用经历什么
+但第 03 章的 RAG 管道始终执行 `retrieve → model`。无论问题是“查官方资料”还是“2 × 7 等于多少”，应用代码都先检索一次。
 
-模型产生 tool call 后，参数先经过 Schema 校验；运行时再补入模型无权决定的事实；工具结果最终以 `ToolMessage` 或 State patch 回到 Agent 循环。
+现在给模型有限行动权：它可以从应用批准的工具中选择一项并填写参数。模型不能注册新工具，不能自己提供用户身份，也不能绕过参数校验。
 
-<!-- diagram:id=04-tool-contract-flow -->
 ```mermaid
-graph TD
-    A["研究请求"] --> B["Lead Agent"]
-    B -- "生成 Tool Call" --> C{"Pydantic 校验层"}
-    C -- "非法" --> B
-    C -- "合法" --> D["运行时注入层"]
-    D -- "补齐隐藏参数" --> E["工具执行节点"]
-    E --> F["结果反思与状态写回"]
+sequenceDiagram
+    participant U as User
+    participant M as Model
+    participant A as Agent runtime
+    participant T as Tool
+
+    U->>M: HumanMessage
+    M-->>A: AIMessage(tool_calls)
+    A->>T: 校验参数并执行
+    T-->>A: ToolMessage(tool_call_id)
+    A->>M: 原消息 + ToolMessage
+    M-->>U: Final AIMessage
 ```
 
-**图的文本替代**：Agent 产生 Tool Call 后先经过 Pydantic 校验；非法参数回到修正路径，合法参数再由运行时补齐隐藏上下文，工具执行结果最后写回消息或状态。
+**图的文本替代**：模型先用 AIMessage 表达工具意图。Agent runtime 校验并执行工具，再把结果包装成与 call ID 配对的 ToolMessage。模型看到完整消息历史后才生成最终回答。
 
-## 3. 工具契约与运行时注入
+## 2. 第一处失败：普通整数类型没有表达业务上限
 
-### 3.1 用 Pydantic v2 约束模型可填写的参数
+Python 函数签名能说明 `limit` 是整数，却不能自动知道检索最多只允许三条。若工具直接接受 100，模型一次调用就可能放大延迟、成本和 Context 污染。
 
-Docstring 说明工具何时适用，Pydantic Schema 定义字段、类型和数值范围。显式 `args_schema` 会生成稳定、可检查的 JSON Schema，但运行时仍要处理模型产生的非法参数。
 
-代码如下：
-  ```python
-  from langchain_core.tools import tool
-  from pydantic import BaseModel, Field
+### 让模型可见 Schema 接受任意正负整数
 
-  class SearchArgs(BaseModel):
-      query: str = Field(description="搜索关键词")
-      limit: int = Field(default=5, description="结果数量", ge=1, le=10)
+**运行前先预测**：只声明 `limit: int` 时，生成的 JSON Schema 会包含 maximum 吗？传入 100 会不会被拒绝？
 
-  @tool(args_schema=SearchArgs)
-  def smart_search(query: str, limit: int = 5):
-      """一个增强型搜索工具，具有严格的数值约束。"""
-      return f"Searching for {query} (Limit: {limit})"
-  ```
-`Field.description` 会进入模型看到的 JSON Schema；`ge=1, le=10` 在执行前拒绝越界参数。重试策略属于 Agent 或 Middleware，工具函数不应递归调用模型自救。
+```python sync=ch04-unbounded-tool-args-failure
+from langchain.tools import tool
 
-### 3.2 隐藏参数不等于完成授权
-
-模型可以决定查询词，不能决定 `user_id`、工作区根目录和权限集合。`InjectedToolArg` 能把字段从模型可见 Schema 中隐藏；服务端鉴权、最小权限和 Sandbox 仍是独立安全边界。
-
-隐藏参数示例：
-  ```python
-  from typing import Annotated
-  from langchain_core.tools import tool, InjectedToolArg
-
-  @tool
-  def secure_delete(
-      item_id: str,
-      user_id: Annotated[str, InjectedToolArg] # 对 LLM 隐藏
-  ):
-      """删除指定文件。注意：模型只需提供 item_id 即可。"""
-      return f"用户 {user_id} 发起了删除项 {item_id} 的请求。"
-  ```
-
-### 3.3 两条注入路线解决不同层级的问题
-
-> **请先建立一个边界感**：
-> - 如果你在自己拼 `llm | inject_user_id | tool_router.map()`，优先使用 `@chain + config`。
-> - 如果你在使用 `create_agent(...)`，优先使用 `context + ToolRuntime`。
-> - 两者都成立，但它们发生在不同的执行层。
-
-#### 路线 A：手写 Runnable 管道
-
-当你仍在 Runnable / Chain 层时，链路是：
-> 1. **第一站 (LLM)**：模型只生成它该知道的参数，比如 `file_name` 和 `action`。
-> 2. **第二站 (RunnableConfig)**：调用 `invoke(...)` / `astream(...)` 时，把 `user_id` 放进运行时 `config`。
-> 3. **第三站 (`@chain`)**：自定义的中间逻辑读取 `config`，把 `user_id` 补到 `tool_call["args"]` 中。
-> 4. **第四站 (工具执行)**：工具函数拿到完整参数，但 LLM 从头到尾都没有见过 `user_id`。
-
-`InjectedToolArg` 的隐藏效果体现在提供给模型的 `tool_call_schema`，而不是工具内部使用的完整 `args_schema`。手写管道能明确展示参数由谁补入，但也要求应用自己维护路由和执行循环。
-
-```python
-from copy import deepcopy
-from langchain_core.messages import AIMessage
-from langchain_core.runnables import chain, RunnableLambda
-
-@chain
-def inject_user_id(ai_msg: AIMessage, config: dict):
-    actual_user_id = config.get("configurable", {}).get("user_id", "guest_001")
-    tool_calls = []
-    for tool_call in ai_msg.tool_calls:
-        new_call = deepcopy(tool_call)
-        new_call["args"]["user_id"] = actual_user_id
-        tool_calls.append(new_call)
-    return tool_calls
-
-tool_map = {"file_operator": file_operator}
-tool_router = RunnableLambda(
-    lambda tool_call: tool_map[tool_call["name"]].invoke(tool_call["args"])
-)
-
-secure_tool_chain = inject_user_id | tool_router.map()
-```
-
-#### 路线 B：`create_agent` 的 Runtime Context
-
-使用 `create_agent(...)` 后，链路变为：
-> 1. **第一站 (LLM)**：模型仍然只生成它该知道的参数。
-> 2. **第二站 (Agent Context)**：调用 `agent.astream(...)` 时，把 `user_id` 放进 `context=...`。
-> 3. **第三站 (ToolRuntime)**：工具执行时，通过 `runtime.context.user_id` 读取身份信息。
-> 4. **第四站 (工具执行)**：工具拿到完整运行时上下文，但模型依然看不到隐藏参数。
-
-`create_agent` 背后已经是 Graph runtime。`context` 与 `ToolRuntime` 是配对的原生注入入口，应用不必重新实现工具路由器。
-
-```python
-from dataclasses import dataclass
-from langchain.agents import create_agent
-from langchain.tools import ToolRuntime
-
-@dataclass
-class FileRuntimeContext:
-    user_id: str
 
 @tool
-def file_operator_agent(file_name: str, action: str, runtime: ToolRuntime):
-    user_id = runtime.context.user_id
-    return f"当前用户 {user_id} 正在尝试 {action} {file_name}"
+def unsafe_search(query: str, limit: int = 1) -> str:
+    """检索课程资料。"""
 
-file_agent = create_agent(
-    model=llm,
-    tools=[file_operator_agent],
-    context_schema=FileRuntimeContext,
+    return f"query={query};limit={limit}"
+
+
+schema = unsafe_search.tool_call_schema.model_json_schema()
+limit_schema = schema["properties"]["limit"]
+result = unsafe_search.invoke({"query": "checkpoint", "limit": 100})
+
+print("visible_fields =", sorted(schema["properties"]))
+print("limit_type =", limit_schema["type"])
+print("maximum_present =", "maximum" in limit_schema)
+print("limit_100_result =", result)
+```
+
+**观察结果**：
+
+```text output=ch04-unbounded-tool-args-failure
+visible_fields = ['limit', 'query']
+limit_type = integer
+maximum_present = False
+limit_100_result = query=checkpoint;limit=100
+```
+
+**发生了什么**：`@tool` 推导出了字段名和 Python 类型，却没有业务范围。模型能看到并填写 `limit`，工具也照常执行了 100。
+
+Docstring 只能提示模型，不是确定性校验。参数边界必须进入 Schema，并在工具执行前拒绝非法值。
+
+**动手修改**：在 docstring 中写“最多 3 条”，但保持 Schema 不变。再次调用 100，解释自然语言提示为何不能替代边界校验。
+
+
+
+### 用 Pydantic args_schema 固化范围
+
+**运行前先预测**：`ge=1, le=3` 会同时进入模型可见 JSON Schema 和运行时校验吗？
+
+```python sync=ch04-bounded-tool-schema-repair
+from langchain.tools import tool
+from pydantic import BaseModel, Field, ValidationError
+
+
+class SearchArgs(BaseModel):
+    query: str = Field(min_length=1, description="需要检索的问题")
+    limit: int = Field(default=1, ge=1, le=3, description="最多返回的证据数")
+
+
+@tool(args_schema=SearchArgs)
+def bounded_search(query: str, limit: int = 1) -> str:
+    """检索课程资料并保留来源。"""
+
+    return f"query={query};limit={limit}"
+
+
+schema = bounded_search.tool_call_schema.model_json_schema()
+limit_schema = schema["properties"]["limit"]
+try:
+    bounded_search.invoke({"query": "checkpoint", "limit": 100})
+except ValidationError as error:
+    error_type = error.errors()[0]["type"]
+else:
+    raise AssertionError("越界 limit 必须在工具执行前失败")
+
+print("visible_fields =", sorted(schema["properties"]))
+print("minimum =", limit_schema["minimum"])
+print("maximum =", limit_schema["maximum"])
+print("invalid_limit_error =", error_type)
+```
+
+**观察结果**：
+
+```text output=ch04-bounded-tool-schema-repair
+visible_fields = ['limit', 'query']
+minimum = 1
+maximum = 3
+invalid_limit_error = less_than_equal
+```
+
+**发生了什么**：同一份 Schema 同时告诉模型字段约束，并在执行边界做确定性验证。字段 description 影响模型选择，`ge/le` 决定什么输入可以执行。
+
+Schema 无法完成授权。即使参数形状合法，当前用户是否能检索某个知识域仍要由 Runtime Context 与 Middleware 判断。
+
+**动手修改**：让 query 只包含空格。观察 `min_length=1` 为何仍会通过，再增加去空格后的领域校验。
+
+
+## 3. `bind_tools` 只让模型表达意图
+
+第 01 章已经看到：模型返回 `tool_calls` 不等于工具被执行。本节把这个结论放进真实消息协议，并亲手完成缺失的两步。
+
+
+### 绑定工具后只得到 AIMessage
+
+**运行前先预测**：调用绑定工具的模型后，执行日志会增加一条记录吗？返回值是工具结果还是 AIMessage？
+
+```python sync=ch04-bind-tools-intent
+from typing import Any, Sequence
+
+from langchain.tools import tool
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import BaseTool
+
+
+execution_log = []
+
+
+@tool
+def lookup_fact(query: str) -> str:
+    """检索一条带来源事实。"""
+
+    execution_log.append(query)
+    return "checkpoint 需要 thread_id [official/persistence.md]"
+
+
+class IntentFakeModel(GenericFakeChatModel):
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | BaseTool | Any],
+        *,
+        tool_choice=None,
+        **kwargs: Any,
+    ):
+        del tools, tool_choice, kwargs
+        return self
+
+
+model = IntentFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "lookup_fact",
+                        "args": {"query": "checkpoint thread_id"},
+                        "id": "lookup-1",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        ]
+    )
+)
+bound_model = model.bind_tools([lookup_fact])
+intent = bound_model.invoke([HumanMessage("如何恢复 checkpoint？")])
+
+print("result_type =", type(intent).__name__)
+print("tool_call_name =", intent.tool_calls[0]["name"])
+print("tool_call_id =", intent.tool_calls[0]["id"])
+print("execution_log =", execution_log)
+```
+
+**观察结果**：
+
+```text output=ch04-bind-tools-intent
+result_type = AIMessage
+tool_call_name = lookup_fact
+tool_call_id = lookup-1
+execution_log = []
+```
+
+**发生了什么**：`bind_tools` 把工具 Schema 交给模型，使其能生成结构化 tool call。执行日志仍为空，因为没有任何组件负责 dispatch。
+
+**动手修改**：把 tool call 名称改成不存在的工具。列出应用在执行前必须验证的三项事实：名称、参数与权限。
+
+
+## 4. 第二处失败：执行了函数，却没有把结果写回消息协议
+
+手写路由器可以调用函数，但模型的下一次输入必须包含 `ToolMessage`。否则消息历史里只有一个未完成的 tool call，结果与 call ID 无法对应。
+
+
+### 直接执行 args，留下孤立 tool call
+
+**运行前先预测**：工具函数返回字符串后，如果消息列表仍只有 HumanMessage 与 AIMessage，模型能否从消息历史读取结果？
+
+```python sync=ch04-orphan-tool-result-failure
+from langchain.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+
+@tool
+def search_once(query: str) -> str:
+    """检索一条带来源事实。"""
+
+    return "checkpoint 需要 thread_id [official/persistence.md]"
+
+
+human = HumanMessage("如何恢复 checkpoint？")
+intent = AIMessage(
+    content="",
+    tool_calls=[
+        {
+            "name": "search_once",
+            "args": {"query": "checkpoint thread_id"},
+            "id": "search-1",
+            "type": "tool_call",
+        }
+    ],
+)
+messages = [human, intent]
+raw_result = search_once.invoke(intent.tool_calls[0]["args"])
+
+print("raw_result =", raw_result)
+print("message_types =", [type(message).__name__ for message in messages])
+print("tool_messages =", sum(isinstance(message, ToolMessage) for message in messages))
+print("orphan_tool_call_id =", intent.tool_calls[0]["id"])
+```
+
+**观察结果**：
+
+```text output=ch04-orphan-tool-result-failure
+raw_result = checkpoint 需要 thread_id [official/persistence.md]
+message_types = ['HumanMessage', 'AIMessage']
+tool_messages = 0
+orphan_tool_call_id = search-1
+```
+
+**发生了什么**：Python 局部变量拿到了结果，消息协议却不知道。把 `raw_result` 随便拼到下一条 HumanMessage，会丢失角色和 call ID，也无法处理并行工具调用。
+
+**动手修改**：同时产生两个 tool call，只保留一个无标签结果字符串。尝试判断它属于哪个 call，并记录为什么位置顺序不是可靠身份。
+
+
+
+### 构造 ToolMessage 并完成一次手动循环
+
+**运行前先预测**：ToolMessage 的 `tool_call_id` 与 AIMessage call ID 一致后，完整消息序列会是什么？
+
+```python sync=ch04-manual-tool-message-repair
+from langchain.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+
+@tool
+def search_once_fixed(query: str) -> str:
+    """检索一条带来源事实。"""
+
+    return "checkpoint 需要 thread_id [official/persistence.md]"
+
+
+human = HumanMessage("如何恢复 checkpoint？")
+intent = AIMessage(
+    content="",
+    tool_calls=[
+        {
+            "name": "search_once_fixed",
+            "args": {"query": "checkpoint thread_id"},
+            "id": "search-1",
+            "type": "tool_call",
+        }
+    ],
+)
+tool_call = intent.tool_calls[0]
+raw_result = search_once_fixed.invoke(tool_call["args"])
+tool_message = ToolMessage(
+    content=raw_result,
+    tool_call_id=tool_call["id"],
+    name=tool_call["name"],
+)
+final = AIMessage(
+    content="恢复时继续使用同一个 thread_id。 [official/persistence.md]"
+)
+messages = [human, intent, tool_message, final]
+
+print("message_types =", [type(message).__name__ for message in messages])
+print("call_id_matches =", tool_message.tool_call_id == tool_call["id"])
+print("tool_name =", tool_message.name)
+print("final_answer =", final.content)
+```
+
+**观察结果**：
+
+```text output=ch04-manual-tool-message-repair
+message_types = ['HumanMessage', 'AIMessage', 'ToolMessage', 'AIMessage']
+call_id_matches = True
+tool_name = search_once_fixed
+final_answer = 恢复时继续使用同一个 thread_id。 [official/persistence.md]
+```
+
+**发生了什么**：一次 ReAct 工具循环最小消息序列已经显式出现。真实第二次模型调用应接收前三条消息；这里固定 final，是为了先隔离消息协议，不把模型行为混进来。
+
+手写循环还要处理未知工具、参数错误、多个 tool call、重试、停止条件和 streaming。通用部分正是 `create_agent` 要接管的工作。
+
+**动手修改**：给 ToolMessage 故意填错 call ID。写一个检查函数，在第二次模型调用前拒绝未配对与重复配对。
+
+
+## 5. `create_agent` 自动运行同一协议
+
+`create_agent` 来自 LangChain，但返回的是由 LangGraph runtime 支撑的 compiled graph。它不与 LangGraph 对立，而是把通用 `model → tools → model` 拓扑封装成高层入口。
+
+
+### 第一次运行完整 `model → tool → model`
+
+**运行前先预测**：只调用一次 `agent.invoke`，结果消息里会不会自动出现 ToolMessage？
+
+```python sync=ch04-create-agent-loop
+from typing import Any, Sequence
+
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import BaseTool
+
+
+@tool
+def search_agent_fact(query: str) -> str:
+    """检索 Agent runtime 的官方事实。"""
+
+    return "create_agent 构建在 LangGraph runtime 之上。 [official/agents.md]"
+
+
+class AgentLoopFakeModel(GenericFakeChatModel):
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | BaseTool | Any],
+        *,
+        tool_choice=None,
+        **kwargs: Any,
+    ):
+        del tools, tool_choice, kwargs
+        return self
+
+
+model = AgentLoopFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "search_agent_fact",
+                        "args": {"query": "create_agent LangGraph"},
+                        "id": "agent-search-1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="create_agent 使用 LangGraph runtime。"),
+        ]
+    )
+)
+agent = create_agent(model, tools=[search_agent_fact])
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "create_agent 与 LangGraph 是什么关系？"}]}
+)
+tool_message = next(
+    message for message in result["messages"] if isinstance(message, ToolMessage)
 )
 
-from mini_deerflow.streaming import normalize_stream_part
-
-async for part in file_agent.astream(
-    {"messages": [("user", "请读取 secret.txt")]},
-    context=FileRuntimeContext(user_id="admin_9527"),
-    stream_mode="messages",
-    version="v2",
-):
-    event = normalize_stream_part(part)
-    if event.type == "messages":
-        chunk, metadata = event.data
-        if metadata.get("langgraph_node") == "tools":
-            print(chunk.content)
+print("message_types =", [type(message).__name__ for message in result["messages"]])
+print("tool_call_id =", tool_message.tool_call_id)
+print("tool_result =", tool_message.content)
+print("final_answer =", result["messages"][-1].content)
 ```
 
----
+**观察结果**：
 
-## 4. 先在最小实验中看清责任
-
-打开 [04_Smart_Tooling.ipynb](/langchain-logbook/notebooks/04_Smart_Tooling.ipynb)，依次完成下面四个实验：
-你需要完成以下任务：
-1. **Schema 打印挑战**：运行代码并观察 `secure_delete.tool_call_schema.model_json_schema()`，验证 `user_id` 是否真的没有暴露给模型。
-2. **非法参数验证**：手动把 Tool Call 参数改为越界值，观察校验错误怎样回到 Agent。
-3. **Runnable 注入实验**：在不手动向工具传参的情况下，通过 `config={"configurable": {...}}` 跑通 `inject_user_id | tool_router.map()`，看清参数是如何被显式补进 `tool_call["args"]` 的。
-4. **Agent 注入实验**：通过 `agent.astream(..., context=FileRuntimeContext(...))` 传入模拟的 `user_id`，观察 `ToolRuntime` 如何在 `create_agent` 路线下读取运行时上下文。
-
-## 5. 把检索工具装进第一个 Mini DeerFlow Lead Agent
-
-到这里，前三章已经交付模型 adapter、结构化领域契约和检索工具。本节第一次把它们装入标准 Agent 工具循环。它是后续课程持续演进的 Lead Agent，不是学完即丢弃的示例。
-
-工具表和 Agent 工厂的唯一事实源是 `tutorial:04-tool-registry` 与 `tutorial:04-lead-agent-factory` region；离线模型脚本和演示知识移到 `mini_deerflow.fixtures`，不会与生产构造逻辑混在一起。
-
-### 5.1 `bind_tools` 与 `create_agent` 的控制权差异
-
-<!-- diagram:id=04-bind-tools-vs-agent -->
-```mermaid
-flowchart TD
-    U["HumanMessage"] --> M["Model with tool schemas"]
-    M --> D{"模型是否产生 tool_calls?"}
-    D -- "否" --> F["Final AIMessage"]
-    D -- "是" --> V["参数 Schema 验证"]
-    V --> X["Tool executor"]
-    X --> TM["ToolMessage"]
-    TM --> M
-
-    BT["bind_tools"] -. "只负责 M 能生成 tool_calls" .-> M
-    CA["create_agent"] -. "拥有 D/V/X/loop" .-> D
+```text output=ch04-create-agent-loop
+message_types = ['HumanMessage', 'AIMessage', 'ToolMessage', 'AIMessage']
+tool_call_id = agent-search-1
+tool_result = create_agent 构建在 LangGraph runtime 之上。 [official/agents.md]
+final_answer = create_agent 使用 LangGraph runtime。
 ```
 
-**图的文本替代**：绑定工具只让模型能够生成 tool calls；`create_agent` 还负责判断是否调用、参数校验、工具执行、构造 ToolMessage 和再次调用模型的循环。
+**发生了什么**：Agent 检测 tool call、查找同名工具、验证参数、执行、构造 ToolMessage，并把更新后的消息再次交给模型。没有 tool call 的 AIMessage 成为终态。
 
-如果你只调用 `bind_tools`，应用必须自己验证、执行、构造 ToolMessage 并决定是否再次调用模型。`create_agent` 提供这条通用循环，并暴露 middleware、context、state、checkpointer 和 store 等扩展点。只有当业务需要循环外的固定阶段、并行分支或审批拓扑时，才在外层增加 StateGraph。
+fake model 按脚本返回两条 AIMessage，它不证明模型会正确选工具；它让消息轨迹和工具副作用成为确定性测试对象。
 
-### 5.2 离线运行完整工具循环
+**动手修改**：让第二条 AIMessage 继续调用同一工具，再准备第三条最终回答。预测消息序列和模型调用次数。
 
-```python sync=ch04-lead-agent-loop
+
+## 6. 用 v2 updates 观察 Graph 节点，而不是只看终态
+
+Agent 的 `invoke` 返回最终 State。学习控制流时还需要 `stream`：`updates` 模式展示每一步哪个节点产生了局部更新。
+
+
+### 观察 model、tools、model 三步更新
+
+**运行前先预测**：完整工具循环会产生几个 v2 envelope？每个 `data` 的顶层 key 是什么？
+
+```python sync=ch04-create-agent-stream
+from typing import Any, Sequence
+
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.tools import BaseTool
+
+
+@tool
+def stream_search(query: str) -> str:
+    """检索一条资料。"""
+
+    return "checkpoint thread_id"
+
+
+class StreamFakeModel(GenericFakeChatModel):
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | BaseTool | Any],
+        *,
+        tool_choice=None,
+        **kwargs: Any,
+    ):
+        del tools, tool_choice, kwargs
+        return self
+
+
+stream_model = StreamFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "stream_search",
+                        "args": {"query": "checkpoint"},
+                        "id": "stream-1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="完成"),
+        ]
+    )
+)
+stream_agent = create_agent(stream_model, tools=[stream_search])
+parts = list(
+    stream_agent.stream(
+        {"messages": [{"role": "user", "content": "检索 checkpoint"}]},
+        stream_mode=["updates"],
+        version="v2",
+    )
+)
+
+print("event_types =", [part["type"] for part in parts])
+print("namespaces =", [part["ns"] for part in parts])
+print("updated_nodes =", [next(iter(part["data"])) for part in parts])
+```
+
+**观察结果**：
+
+```text output=ch04-create-agent-stream
+event_types = ['updates', 'updates', 'updates']
+namespaces = [(), (), ()]
+updated_nodes = ['model', 'tools', 'model']
+```
+
+**发生了什么**：`create_agent` 的高层入口仍暴露 LangGraph 节点更新。终态回答相同，轨迹却能揭示是否调用了工具、调用几次以及在哪一步停止。
+
+`messages` stream 适合 token/message UI；`updates` 适合状态变化和 trajectory test。浏览器不应直接依赖原始 Graph 字典，Gateway 后面会投影成领域事件。
+
+**动手修改**：让模型直接回答、不产生 tool call。比较 `updated_nodes`，并说明为何最终文本测试看不出“是否绕过检索”。
+
+
+## 7. 第三处失败：让模型填写用户身份等于允许冒充
+
+工具参数分两类：query、path、operation 等可由模型选择；user ID、权限、工作区根目录和数据库连接由应用拥有。
+
+
+### 把 user_id 暴露给模型
+
+**运行前先预测**：`user_id` 出现在普通函数参数时，会不会进入 tool_call_schema？调用方能否填入 `admin`？
+
+```python sync=ch04-model-spoofs-runtime-failure
+from langchain.tools import tool
+
+
+@tool
+def unsafe_read(path: str, user_id: str) -> str:
+    """以当前用户身份读取文件。"""
+
+    return f"user={user_id};path={path}"
+
+
+schema = unsafe_read.tool_call_schema.model_json_schema()
+spoofed = unsafe_read.invoke({"path": "notes.txt", "user_id": "admin"})
+
+print("visible_fields =", sorted(schema["properties"]))
+print("model_can_set_user_id =", "user_id" in schema["properties"])
+print("spoofed_result =", spoofed)
+```
+
+**观察结果**：
+
+```text output=ch04-model-spoofs-runtime-failure
+visible_fields = ['path', 'user_id']
+model_can_set_user_id = True
+spoofed_result = user=admin;path=notes.txt
+```
+
+**发生了什么**：类型和 Schema 都合法，身份所有权却错了。模型输出属于不可信候选数据，不能成为认证事实。
+
+**动手修改**：把 `permission="write"` 也放进模型参数。列出仅靠 Pydantic 仍无法阻止的越权组合。
+
+
+
+### 用 context_schema 与 ToolRuntime 注入身份
+
+**运行前先预测**：工具函数含 `runtime` 参数时，模型可见 Schema 会不会出现 runtime 或 user_id？
+
+```python sync=ch04-tool-runtime-repair
+from dataclasses import dataclass
+from typing import Any, Sequence
+
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import BaseTool
+
+
+@dataclass
+class RuntimeContext:
+    user_id: str
+
+
+@tool
+def safe_read(path: str, runtime: ToolRuntime[RuntimeContext]) -> str:
+    """使用应用提供的当前身份读取相对路径。"""
+
+    return f"user={runtime.context.user_id};path={path}"
+
+
+class RuntimeFakeModel(GenericFakeChatModel):
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | BaseTool | Any],
+        *,
+        tool_choice=None,
+        **kwargs: Any,
+    ):
+        del tools, tool_choice, kwargs
+        return self
+
+
+runtime_model = RuntimeFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "safe_read",
+                        "args": {"path": "notes.txt"},
+                        "id": "read-1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="读取完成"),
+        ]
+    )
+)
+runtime_agent = create_agent(
+    runtime_model,
+    tools=[safe_read],
+    context_schema=RuntimeContext,
+)
+runtime_result = runtime_agent.invoke(
+    {"messages": [{"role": "user", "content": "读取 notes.txt"}]},
+    context=RuntimeContext(user_id="learner-1"),
+)
+tool_message = next(
+    message for message in runtime_result["messages"] if isinstance(message, ToolMessage)
+)
+
+print("visible_fields =", sorted(safe_read.tool_call_schema.model_fields))
+print("tool_result =", tool_message.content)
+print("model_supplied_user_id =", False)
+```
+
+**观察结果**：
+
+```text output=ch04-tool-runtime-repair
+visible_fields = ['path']
+tool_result = user=learner-1;path=notes.txt
+model_supplied_user_id = False
+```
+
+**发生了什么**：模型只填写 path。应用在 `invoke(..., context=...)` 提供身份，Agent runtime 再把 `ToolRuntime` 注入工具。
+
+隐藏字段不等于完成授权。`learner-1` 是否允许读取该路径，仍需权限检查与 Sandbox。下一章会系统区分 Runtime Context、Graph State、Store 和业务数据库。
+
+**动手修改**：在 context 增加 `permissions: frozenset[str]`，让工具拒绝缺少 `workspace:read` 的调用。确认 permissions 仍不进入模型 Schema。
+
+
+## 8. 第四处失败：错误输入字段也可能“成功”
+
+默认 Agent State 的入口是 `messages`。若调用方误用旧教程里的 `input`，额外字段可能被忽略；scripted model 仍返回回答，看起来成功，实际从未收到用户消息。
+
+
+### 用 input 调用，结果里没有 HumanMessage
+
+**运行前先预测**：fake model 固定返回“脚本化回答”时，错误输入字段能否被“最后有文本”这种断言发现？
+
+```python sync=ch04-wrong-input-key-failure
+from langchain.agents import create_agent
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage
+
+
+model = GenericFakeChatModel(messages=iter([AIMessage(content="脚本化回答")]))
+agent = create_agent(model, tools=[])
+result = agent.invoke({"input": "请检索 durable execution"})
+
+print("final_text =", result["messages"][-1].content)
+print("message_types =", [type(message).__name__ for message in result["messages"]])
+print("human_message_present =", any(
+    isinstance(message, HumanMessage) for message in result["messages"]
+))
+```
+
+**观察结果**：
+
+```text output=ch04-wrong-input-key-failure
+final_text = 脚本化回答
+message_types = ['AIMessage']
+human_message_present = False
+```
+
+**发生了什么**：只断言最终文本非空会得到假阳性。这是 State 输入 Schema 错误，不是 Prompt 问题。
+
+**动手修改**：让 fake model 返回一段很像正确答案的文本。解释为何内容越像正确，协议级回归测试越重要。
+
+
+
+### 用 messages 并验证用户消息未丢失
+
+**运行前先预测**：字典形式的 role/content 输入会被规范化成哪种 Message 类型？
+
+```python sync=ch04-messages-input-repair
+from langchain.agents import create_agent
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage
+
+
+model = GenericFakeChatModel(messages=iter([AIMessage(content="离线回答")]))
+agent = create_agent(model, tools=[])
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "请检索 durable execution"}]}
+)
+
+first_message = result["messages"][0]
+print("message_types =", [type(message).__name__ for message in result["messages"]])
+print("first_is_human =", isinstance(first_message, HumanMessage))
+print("human_content =", first_message.content)
+print("final_text =", result["messages"][-1].content)
+```
+
+**观察结果**：
+
+```text output=ch04-messages-input-repair
+message_types = ['HumanMessage', 'AIMessage']
+first_is_human = True
+human_content = 请检索 durable execution
+final_text = 离线回答
+```
+
+**发生了什么**：Agent 将标准输入规范化为 HumanMessage，后续 State、checkpoint 和评测都能依赖同一消息协议。
+
+**动手修改**：在 messages 前增加 SystemMessage。记录哪些系统指令应由 `system_prompt` 组合根拥有，而不应接受客户端任意注入。
+
+
+## 9. 工程迁移：把原生循环装进 Mini DeerFlow
+
+概念层已经亲手完成 tool schema、tool call、ToolMessage、`create_agent`、stream 和 Runtime Context。现在再看 Mini DeerFlow，重点不再是“它能跑”，而是项目额外固定了哪些接缝。
+
+### 9.1 Lead Agent 工厂复用同一消息循环
+
+
+### 运行带 source 的知识工具循环
+
+**运行前先预测**：Mini DeerFlow 结果是否仍是 HumanMessage、AIMessage、ToolMessage、AIMessage，还是另一套私有协议？
+
+```python sync=ch04-mini-deerflow-lead-loop
 from langchain_core.messages import AIMessage, ToolMessage
 
 from mini_deerflow.agents import create_lead_agent
 from mini_deerflow.knowledge import KnowledgeDocument, LocalKnowledgeIndex
 from mini_deerflow.models import create_offline_model
+
 
 knowledge_index = LocalKnowledgeIndex()
 knowledge_index.upsert(
@@ -237,70 +764,100 @@ scripted_model = create_offline_model(
                 }
             ],
         ),
-        AIMessage(content="create_agent 使用 LangGraph runtime，并保留高层工具循环。"),
+        AIMessage(content="create_agent 使用 LangGraph runtime。"),
     ]
 )
-lead_agent = create_lead_agent(model=scripted_model, knowledge_index=knowledge_index)
+lead_agent = create_lead_agent(
+    model=scripted_model,
+    knowledge_index=knowledge_index,
+)
 result = lead_agent.invoke(
-    {"messages": [{"role": "user", "content": "create_agent 和 LangGraph 是什么关系？"}]}
+    {"messages": [{"role": "user", "content": "create_agent 与 LangGraph 是什么关系？"}]}
 )
-tool_message = next(message for message in result["messages"] if isinstance(message, ToolMessage))
-assert "official/agents.md" in tool_message.content
-assert result["messages"][-1].content.startswith("create_agent 使用 LangGraph")
+tool_message = next(
+    message for message in result["messages"] if isinstance(message, ToolMessage)
+)
+
+print("message_types =", [type(message).__name__ for message in result["messages"]])
+print("citation_present =", "official/agents.md" in tool_message.content)
+print("final_answer =", result["messages"][-1].content)
 ```
 
-这个 fake model 不是根据 Prompt 临场决定工具，而是按 fixture 先发出一个 tool call、再返回最终回答。因此测试能够稳定观察完整 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage` 序列。
+**观察结果**：
 
-### 5.3 观察 v2 updates，而不是只看最终文本
-
-```python sync=ch04-v2-agent-stream
-from mini_deerflow.agents import create_lead_agent
-from mini_deerflow.streaming import normalize_stream_part
-
-streaming_agent = create_lead_agent()
-raw_parts = list(
-    streaming_agent.stream(
-        {"messages": [{"role": "user", "content": "create_agent 是什么？"}]},
-        stream_mode=["updates"],
-        version="v2",
-    )
-)
-events = [normalize_stream_part(part) for part in raw_parts]
-updated_nodes = [next(iter(event.data)) for event in events]
-assert updated_nodes == ["model", "tools", "model"]
-updated_nodes
+```text output=ch04-mini-deerflow-lead-loop
+message_types = ['HumanMessage', 'AIMessage', 'ToolMessage', 'AIMessage']
+citation_present = True
+final_answer = create_agent 使用 LangGraph runtime。
 ```
 
-`updates` 展示每个 graph step 更新了哪个节点；`messages` 更适合 token/message 展示。后续 Gateway 可以把二者转换成不同 SSE domain event，但不应让浏览器直接依赖 LangGraph 内部字典。
+**发生了什么**：项目没有重造 Agent 消息协议。`create_lead_agent` 组合 system prompt、ThreadState、Runtime Context、工具、Middleware、checkpointer 与 Store，底层循环仍是刚才的原生 `create_agent`。
 
-### 5.4 一个 registry 同时提供计算与检索
 
-```python sync=ch04-tool-registry
+### 9.2 Registry 是能力与权限的组合边界
+
+
+### 检查工具名称、Schema 与权限 metadata
+
+**运行前先预测**：registry 是否只有检索工具？工作区根目录会不会出现在 read tool 的模型可见字段？
+
+```python sync=ch04-mini-deerflow-tool-registry
+from mini_deerflow.knowledge import LocalKnowledgeIndex
 from mini_deerflow.tools import build_tool_registry
 
-registry = {tool.name: tool for tool in build_tool_registry(LocalKnowledgeIndex())}
+
+registry = {
+    tool.name: tool
+    for tool in build_tool_registry(LocalKnowledgeIndex())
+}
 calculation = registry["calculator"].invoke(
     {"operation": "multiply", "left": 6, "right": 7}
 )
-assert calculation == "42.0"
-assert {"calculator", "search_knowledge"}.issubset(registry)
+
+print("tool_names =", sorted(registry))
+print("calculation =", calculation)
+print("search_permission =", registry["search_knowledge"].metadata["required_permission"])
+print("read_visible_fields =", sorted(
+    registry["read_workspace_file"].tool_call_schema.model_fields
+))
 ```
 
-calculator 是确定性工具，search 是知识工具；两者都通过 Schema 暴露给模型，但失败策略不同。除零属于可预期输入错误，应该返回模型可修正的结构化结果；索引连接异常则可能需要 retry/fallback middleware。
+**观察结果**：
 
-### 5.5 `ToolRuntime` 注入只读工作区
+```text output=ch04-mini-deerflow-tool-registry
+tool_names = ['calculator', 'read_workspace_file', 'record_artifact', 'search_knowledge']
+calculation = 42.0
+search_permission = knowledge:read
+read_visible_fields = ['path']
+```
 
-```python sync=ch04-tool-runtime-workspace
+**发生了什么**：Registry 集中声明当前 Agent 能看到的能力，并为治理层提供权限 metadata。连接对象、workspace root 与用户身份不进入 tool schema。
+
+不同用户、阶段和 Subagent 不应默认获得完整 registry。第 06 章会让 Middleware 在统一 hook 中消费这些 metadata。
+
+
+### 9.3 Runtime Context 为工作区工具提供应用事实
+
+
+### 模型只提交相对路径
+
+**运行前先预测**：模型 tool call 没有 workspace root，工具能否读取应用指定目录里的文件？
+
+```python sync=ch04-mini-deerflow-workspace-runtime
 from pathlib import Path
 import tempfile
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
+from mini_deerflow.agents import create_lead_agent
 from mini_deerflow.config import LeadAgentContext
+from mini_deerflow.knowledge import LocalKnowledgeIndex
+from mini_deerflow.models import create_offline_model
+
 
 with tempfile.TemporaryDirectory() as workspace:
     Path(workspace, "notes.txt").write_text("只读工作区证据", encoding="utf-8")
-    workspace_model = create_offline_model(
+    model = create_offline_model(
         [
             AIMessage(
                 content="",
@@ -316,62 +873,90 @@ with tempfile.TemporaryDirectory() as workspace:
             AIMessage(content="已读取文件。"),
         ]
     )
-    workspace_agent = create_lead_agent(
-        model=workspace_model,
+    agent = create_lead_agent(
+        model=model,
         knowledge_index=LocalKnowledgeIndex(),
     )
-    workspace_result = workspace_agent.invoke(
+    result = agent.invoke(
         {"messages": [{"role": "user", "content": "读取 notes.txt"}]},
-        context=LeadAgentContext(user_id="learner", workspace_root=workspace),
+        context=LeadAgentContext(
+            user_id="learner",
+            workspace_root=workspace,
+        ),
     )
 
-workspace_tool_message = next(
-    message for message in workspace_result["messages"] if isinstance(message, ToolMessage)
+tool_message = next(
+    message for message in result["messages"] if isinstance(message, ToolMessage)
 )
-assert "只读工作区证据" in workspace_tool_message.content
-assert "workspace_root" not in registry["read_workspace_file"].tool_call_schema.model_fields
+print("tool_result_contains_evidence =", "只读工作区证据" in tool_message.content)
+print("tool_call_args =", result["messages"][1].tool_calls[0]["args"])
 ```
 
-模型只生成相对 `path`，`workspace_root` 和 `user_id` 从 Runtime Context 注入。这里仍只是只读路径护栏；符号链接、挂载、资源限额和进程隔离属于 Sandbox 章节。
+**观察结果**：
 
-### 5.6 工具用 `Command` 更新 Artifact State
-
-```python sync=ch04-command-artifact
-artifact_model = create_offline_model(
-    [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "record_artifact",
-                    "args": {
-                        "path": "reports/answer.md",
-                        "media_type": "text/markdown",
-                    },
-                    "id": "artifact-1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="产物已经登记。"),
-    ]
-)
-artifact_agent = create_lead_agent(
-    model=artifact_model,
-    knowledge_index=LocalKnowledgeIndex(),
-)
-artifact_result = artifact_agent.invoke(
-    {"messages": [{"role": "user", "content": "登记报告"}]}
-)
-assert artifact_result["artifacts"][0].path == "reports/answer.md"
+```text output=ch04-mini-deerflow-workspace-runtime
+tool_result_contains_evidence = True
+tool_call_args = {'path': 'notes.txt'}
 ```
 
-`record_artifact` 返回 `Command(update=...)`，同时补上与 tool call 配对的 ToolMessage。这里的 Artifact reducer 是最小列表追加；第 05–08 章会继续解释 State 生命周期、并行 reducer 和持久化。
+**发生了什么**：模型只生成相对 path，Runtime Context 提供 user 与 workspace root。当前实现只有最小路径护栏；符号链接、挂载、资源限额和进程隔离会在 Sandbox 专题真实失败后补齐。
 
-### 5.7 失败实验：无界工具循环必须停止
 
-```python sync=ch04-loop-limit-failure
+### 9.4 项目事件隔离 LangGraph 原始 envelope
+
+
+### 把 updates 投影成稳定 StreamEvent
+
+**运行前先预测**：adapter 会改变节点顺序吗？事件 data 还会不会包含 Message 对象？
+
+```python sync=ch04-mini-deerflow-v2-stream
+from mini_deerflow.agents import create_lead_agent
+from mini_deerflow.streaming import normalize_stream_part
+
+
+agent = create_lead_agent()
+raw_parts = list(
+    agent.stream(
+        {"messages": [{"role": "user", "content": "create_agent 是什么？"}]},
+        stream_mode=["updates"],
+        version="v2",
+    )
+)
+events = [normalize_stream_part(part) for part in raw_parts]
+
+print("event_types =", [event.type for event in events])
+print("updated_nodes =", [next(iter(event.data)) for event in events])
+print("json_safe_data =", all(
+    isinstance(event.as_dict()["data"], dict) for event in events
+))
+```
+
+**观察结果**：
+
+```text output=ch04-mini-deerflow-v2-stream
+event_types = ['updates', 'updates', 'updates']
+updated_nodes = ['model', 'tools', 'model']
+json_safe_data = True
+```
+
+**发生了什么**：Mini DeerFlow 保留节点轨迹，同时把 Message、Pydantic 与 dataclass 显式投影为 JSON-safe 数据。Gateway 不需要把 LangGraph 内部对象直接暴露给浏览器。
+
+
+### 9.5 Recursion limit 是最后护栏，不是业务预算
+
+
+### 让无界 tool call 在 Graph 层停止
+
+**运行前先预测**：模型持续发出 calculator call，`recursion_limit=3` 会返回最终答案，还是抛出明确错误？
+
+```python sync=ch04-mini-deerflow-recursion-limit
+from langchain_core.messages import AIMessage
 from langgraph.errors import GraphRecursionError
+
+from mini_deerflow.agents import create_lead_agent
+from mini_deerflow.knowledge import LocalKnowledgeIndex
+from mini_deerflow.models import create_offline_model
+
 
 looping_model = create_offline_model(
     [
@@ -389,103 +974,108 @@ looping_model = create_offline_model(
         for index in range(10)
     ]
 )
-looping_agent = create_lead_agent(
+agent = create_lead_agent(
     model=looping_model,
     knowledge_index=LocalKnowledgeIndex(),
 )
 try:
-    looping_agent.invoke(
+    agent.invoke(
         {"messages": [{"role": "user", "content": "不停计算"}]},
         config={"recursion_limit": 3},
     )
 except GraphRecursionError as error:
-    loop_error = error
+    stopped = True
+    error_type = type(error).__name__
 else:
-    raise AssertionError("无界工具循环必须触发 recursion limit")
+    stopped = False
+    error_type = "none"
 
-assert "recursion" in str(loop_error).lower()
+print("stopped =", stopped)
+print("error_type =", error_type)
+print("final_answer_available =", False)
 ```
 
-Graph recursion limit 是最后护栏，不等于业务层调用预算。后续 Middleware 会按模型调用数、工具调用数和 token 成本更早终止，并返回对用户可解释的结果。
+**观察结果**：
 
-## 6. 失败实验：错误输入为何可能“成功但没回答问题”
-
-### 6.1 错误版本
-
-```text
-agent.invoke({"input": "请检索 durable execution"})
+```text output=ch04-mini-deerflow-recursion-limit
+stopped = True
+error_type = GraphRecursionError
+final_answer_available = False
 ```
 
-### 6.2 可观察现象
+**发生了什么**：Graph recursion limit 防止进程无限循环，但错误对业务用户并不友好。第 06 章会增加模型/工具调用预算与结构化终止；第 07 章再从 Graph 拓扑解释 recursion step。
 
-当前默认 AgentState 的输入字段是 `messages`。额外的 `input` 字段可能被忽略，fake model 仍可能返回脚本化回答，因而调用表面成功，但 state 中没有用户的 HumanMessage。真实模型则可能只看到 system prompt，产生与请求无关的回答。
 
-### 6.3 根因、修复和防回归
+| 原生概念 | Mini DeerFlow 增加的工程边界 |
+| --- | --- |
+| `@tool` + args_schema | 集中 registry、权限 metadata、统一工具集合 |
+| `create_agent` | ThreadState、Context、Middleware、Store、checkpointer 注入点 |
+| `ToolRuntime` | 应用拥有的 user/workspace 事实 |
+| v2 updates | JSON-safe `StreamEvent` adapter |
+| recursion limit | 与后续业务调用预算分层 |
 
-这是状态 Schema 错误，不是 Prompt 错误。修复为：
+`record_artifact` 已存在于项目 registry，但本章不把 `Command(update=...)` 当作新手第一次需要掌握的概念。第 08 章会在学习 State、Node 与路由之后，从零解释 Command 如何同时更新 State 与控制流，再回看 Artifact 工具。
 
-```text
-agent.invoke({"messages": [{"role": "user", "content": "..."}]})
-```
+## 10. 工具设计的五个工程问题
 
-防回归测试应检查结果第一条消息是 `HumanMessage` 且内容未丢失，而不是只断言最后一条消息非空。`tests/test_mini_deerflow_lead_agent.py` 同时检查用户消息、ToolMessage 引用和最终 AIMessage。
+每增加一个工具，都要明确：
 
-### 6.4 工具失败属于数据还是异常
+1. **何时使用**：名称、docstring 与字段 description 是否具体；
+2. **谁能填写**：模型参数与 Runtime Context 是否分开；
+3. **谁能调用**：registry 和 Middleware 如何执行最小权限；
+4. **失败如何表达**：校验错误、业务拒绝、外部超时和程序 bug 是否分层；
+5. **副作用如何控制**：是否需要幂等键、审批、Sandbox、补偿或审计。
 
-工具参数验证错误应在执行前反馈给 Agent；可重试的外部超时可以由 tool error middleware 处理；权限拒绝通常应形成结构化业务结果；程序 bug 则不应无限重试。把所有异常都转成一句“工具失败”会丢掉可恢复性和安全语义，第 06 章会把策略放入 Middleware。
+只读检索通常可以直接执行。写文件、发消息、扣款和删除资源不能因为“已经包装成 @tool”就变得安全。
 
-## 7. 工具设计的工程边界
+## 11. 练习：从一个工具扩展到自己的 Agent
 
-- **描述是协议的一部分**：名称、docstring 和字段 description 共同影响模型何时调用工具。
-- **隐藏参数不进入 Schema**：用户身份、权限、数据库连接由 `ToolRuntime`/Context 提供，不能让模型生成。
-- **副作用分级**：只读检索可以直接执行；写文件、发消息、删除资源需要幂等键、审批或 Sandbox。
-- **返回结果可消费**：模型需要简洁文本和 source，应用可能还需要 Artifact/Command；不要只返回不可解析的日志。
-- **registry 是权限边界**：不同用户、阶段或 Subagent 不应默认获得全部工具。
+### 练习 A：计算器契约
 
-当前 `build_tool_registry()` 包含知识检索、计算器、只读 workspace 文件和 Artifact 登记四项能力。`record_artifact` 用 `Command(update=...)` 更新本次 Agent State 中的引用，但它不负责真正写文件，也不等价于持久化；写入、审批与 Sandbox 仍在后续章节加入。
+给 Mini DeerFlow `calculator` 增加取模操作。定义除数为零的结构化失败，准备 scripted tool call，并断言对应 ToolMessage 的 name、call ID 和 content。
 
-## 8. 动手练习与即时反馈
+### 练习 B：并行 call 配对
 
-### 练习 A：单点修改
+手动构造一个含两个 tool call 的 AIMessage，分别执行并生成 ToolMessage。打乱结果顺序，证明配对依赖 call ID 而不是列表位置。
 
-给现有 `calculator` 增加取模操作，并给离线模型增加对应 tool call fixture。除正常结果外，还要定义除数为零时的结构化失败并断言 `ToolMessage.name`。
+### 练习 C：权限 Context
 
-### 练习 B：边界判断
+给 `RuntimeContext` 增加 permissions，并让工具拒绝无权限调用。确认模型 Schema 仍只有业务参数。
 
-判断下列能力属于 Tool、Middleware 还是外围 StateGraph：搜索知识、所有工具调用统一计数、报告发布前审批。解释谁拥有控制权。
+### 练习 D：轨迹测试
 
-### 练习 C：项目扩展
+为“无需检索”和“必须检索”各写一个 fixture，断言 v2 updates 的节点序列分别是 `model` 与 `model → tools → model`。
 
-扩展现有只读 workspace 工具：增加允许的文件后缀和最大字节数限制。继续拒绝 `../` 路径，并证明工具 Schema 中没有 workspace 根目录。
+### 延迟回忆
 
-### 延迟回忆题
+合上讲义回答：`bind_tools` 没有负责哪几步？ToolMessage 为什么需要 call ID？`create_agent` 与 LangGraph 是什么关系？Runtime Context 为什么不能由模型填写？
 
-为什么 `create_agent` 与 LangGraph 并不对立？`bind_tools` 没有负责哪三件事？v2 updates 的节点序列为什么能成为 trajectory test 的基础？
+## 12. 下一刻系统：Agent 可以行动，事实所有权开始混乱
 
-## 9. 本章交付：Lead Agent 可以行动，事实边界开始混乱
+本章结束后，研究助手第一次拥有标准工具循环。它可以在批准的 registry 中选择检索或计算，工具结果进入 ToolMessage，v2 updates 暴露执行轨迹。
+
+新的问题随之出现：user ID、工作区、当前计划、跨线程偏好和数据库连接都被口语化地称为“上下文”。如果全部塞进 messages 或 Graph State，持久化、权限与复用会迅速失控。
+
+下一章不另起一个 Agent，而是在现有 Lead Agent 上为 Runtime Context、Graph State、Store 与业务数据库确定所有者和生命周期。
+
+运行本章验收：
 
 ```bash
-uv run --locked pytest -q \
+TMPDIR="$PWD/.tmp" uv run --locked --group dev python \
+  scripts/sync_lesson_notebooks.py tutorials/04_Smart_Tooling.md --execute
+TMPDIR="$PWD/.tmp" uv run --locked --group dev pytest -q \
   tests/test_mini_deerflow_lead_agent.py \
-  tests/test_mini_deerflow_knowledge.py \
-  tests/test_mini_deerflow_vector_index.py \
   tests/test_mini_deerflow_tool_contracts.py \
-  tests/test_mini_deerflow_streaming.py
-uv run --locked python scripts/validate_tutorials.py
+  tests/test_mini_deerflow_streaming.py \
+  tests/test_notebook_sync.py
+TMPDIR="$PWD/.tmp" uv run --locked --group dev python scripts/validate_tutorials.py
 ```
 
-本章交付 `build_tool_registry()` 和 `create_lead_agent()`。第一部的检索工具已经进入真实 `model → tool → model` 循环，v2 updates 也能显示每个节点的执行顺序。
-
-新的问题随之出现：用户身份、工作区、当前研究计划、跨线程偏好和数据库连接都被口语化地称为“上下文”。下一章会为这些事实确定所有者和生命周期，不会另起一个 Agent。
-
-DeerFlow 的 Lead Agent 同样从高层 Agent factory 出发。真正形成 Harness 的，是围绕它的 State、Middleware、Tools、Subagent executor、Sandbox 和 Persistence。阅读真实项目时，应先定位 factory 的入参和 middleware/tool registry，再追踪外围 Gateway。
-
-资料访问日期：2026-07-13。
-
-继续阅读：
+资料访问日期：2026-07-21。
 
 - [LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)
 - [LangChain Tools](https://docs.langchain.com/oss/python/langchain/tools)
+- [LangChain Runtime](https://docs.langchain.com/oss/python/langchain/runtime)
 - [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming)
 
 继续阅读：[第 05 章：为运行时事实确定所有者](/langchain-logbook/posts/05_agent_middleware/)。

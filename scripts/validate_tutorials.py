@@ -35,6 +35,7 @@ LEGACY_NAMES = {
     "RunEvalConfig": "旧 langchain.smith 评测配置不再作为当前入口",
     "run_on_dataset": "旧 dataset runner 不再作为当前入口",
 }
+EXPECTED_FAILURE_AST_ISSUES = frozenset({"agent-input-key"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +99,14 @@ def _call_name(call: ast.Call) -> str:
         return ""
 
 
-def _ast_issues(tree: ast.AST, *, path: str, location_prefix: str, source: str) -> list[Issue]:
+def _ast_issues(
+    tree: ast.AST,
+    *,
+    path: str,
+    location_prefix: str,
+    source: str,
+    ignored_codes: frozenset[str] = frozenset(),
+) -> list[Issue]:
     issues: list[Issue] = []
     source_lines = source.splitlines()
 
@@ -205,7 +213,7 @@ def _ast_issues(tree: ast.AST, *, path: str, location_prefix: str, source: str) 
                     )
                 )
 
-    return issues
+    return [issue for issue in issues if issue.code not in ignored_codes]
 
 
 def _parse_code(
@@ -236,7 +244,16 @@ def _validate_markdown(path: Path, root: Path) -> list[Issue]:
     relative = _relative(path, root)
     text = path.read_text(encoding="utf-8")
     issues: list[Issue] = []
-    for fence_line, code, _ in _extract_python_fences(text):
+    failure_sync_ids: set[str] = set()
+    if LESSON_CONTRACT_V2 in text:
+        try:
+            failure_sync_ids = {
+                lab.lab_id for lab in extract_lesson_labs(text) if lab.kind == "failure"
+            }
+        except ValueError:
+            # marker 结构问题由 v2 validator 报告；普通 Python 校验仍继续执行。
+            pass
+    for fence_line, code, sync_id in _extract_python_fences(text):
         tree, syntax_issues = _parse_code(
             code,
             path=relative,
@@ -251,6 +268,11 @@ def _validate_markdown(path: Path, root: Path) -> list[Issue]:
                     path=relative,
                     location_prefix=f"line {fence_line}",
                     source=code,
+                    ignored_codes=(
+                        EXPECTED_FAILURE_AST_ISSUES
+                        if sync_id in failure_sync_ids
+                        else frozenset()
+                    ),
                 )
             )
     return issues
@@ -620,12 +642,22 @@ def _validate_notebook(path: Path, root: Path) -> list[Issue]:
         )
         issues.extend(syntax_issues)
         if tree is not None:
+            lab_metadata = cell.get("metadata", {}).get("langchain_logbook_lab", {})
+            is_failure_lab = (
+                isinstance(lab_metadata, dict)
+                and lab_metadata.get("kind") == "failure"
+            )
             issues.extend(
                 _ast_issues(
                     tree,
                     path=relative,
                     location_prefix=f"cell {cell_index}",
                     source=source,
+                    ignored_codes=(
+                        EXPECTED_FAILURE_AST_ISSUES
+                        if is_failure_lab
+                        else frozenset()
+                    ),
                 )
             )
     return issues

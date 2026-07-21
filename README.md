@@ -85,7 +85,7 @@ flowchart LR
 
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
-| [第 04 章](./tutorials/04_Smart_Tooling.md) | 应用代码固定调用检索，无法由模型按任务选择工具 | 首个 Lead Agent 与工具 registry |
+| [第 04 章](./tutorials/04_Smart_Tooling.md) | 应用代码固定调用检索，无法由模型按任务选择工具 | 手动 ToolMessage、`create_agent` 完整循环与工具 registry |
 | [第 05 章](./tutorials/05_Agent_Middleware.md) | 身份、线程事实、长期偏好和连接对象混在一起 | Runtime Context、Graph State、Store 边界 |
 | [第 06 章](./tutorials/06_Observability_Persistence.md) | 权限、PII、限额和错误处理散落在工具与 Prompt 中 | 可组合、可测试的 AgentMiddleware 治理链 |
 

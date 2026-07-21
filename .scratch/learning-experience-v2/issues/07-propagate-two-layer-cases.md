@@ -35,4 +35,8 @@ Blocked by: 05, 06
 - 第 03 章已完成 13 个 lesson lab：Context 预算失败/透明 top-k、字符串切分丢 source/Document Splitter 修复、BM25 Retriever、Context 引用丢失/修复、固定 Runnable RAG、强制最近邻失败/显式空召回、recall@k 与两种 Mini DeerFlow 索引迁移。
 - `build_search_knowledge_tool` 的首次执行已从第 03 章后移第 04 章；第 03 章明确停在 `query -> list[Document]` 与固定 `retrieve -> model` 数据流，不把 Retriever、RAG 与 Agent 自主工具循环混为一谈。
 - 第 03 章 Web、已执行 Notebook、13 组稳定 stdout、当前 BM25 import、段落长度、发布副本与全量质量门禁均已验证；README 的章节交付也已同步。
-- 下一步处理第 04 章工具契约与第一个完整 Agent 循环；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
+- 第 04 章已完成 16 个 lesson lab：工具参数越界失败/Schema 修复、`bind_tools` 意图、孤立工具结果失败/手动 ToolMessage、原生 `create_agent` 循环与 v2 stream、身份冒充失败/ToolRuntime 修复、错误 input/messages 修复，以及五个 Mini DeerFlow 迁移实验。
+- `Command(update=...)` 的首次教学已从第 04 章后移第 08 章；学习者先掌握 Message 协议和 Agent 循环，再在已有 StateGraph 心智模型上理解 Command 更新与路由，项目的 `record_artifact` 能力仍完整保留。
+- validator 现在仅对 v2 `kind=failure` 实验允许 `agent-input-key` 反例；普通正文、Notebook 和其他 lab 仍会失败。新增两项测试分别锁住允许与拒绝路径。
+- 第 04 章 Web、已执行 Notebook、16 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证；全量测试增至 171 passed、1 external integration skipped。
+- 下一步处理第 08 章 Command、Send、Subgraph 与显式业务工作流；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。

@@ -54,12 +54,22 @@
     },
     "04_Smart_Tooling": {
       "required_sync_ids": [
-        "ch04-lead-agent-loop",
-        "ch04-v2-agent-stream",
-        "ch04-tool-registry",
-        "ch04-tool-runtime-workspace",
-        "ch04-command-artifact",
-        "ch04-loop-limit-failure"
+        "ch04-unbounded-tool-args-failure",
+        "ch04-bounded-tool-schema-repair",
+        "ch04-bind-tools-intent",
+        "ch04-orphan-tool-result-failure",
+        "ch04-manual-tool-message-repair",
+        "ch04-create-agent-loop",
+        "ch04-create-agent-stream",
+        "ch04-model-spoofs-runtime-failure",
+        "ch04-tool-runtime-repair",
+        "ch04-wrong-input-key-failure",
+        "ch04-messages-input-repair",
+        "ch04-mini-deerflow-lead-loop",
+        "ch04-mini-deerflow-tool-registry",
+        "ch04-mini-deerflow-workspace-runtime",
+        "ch04-mini-deerflow-v2-stream",
+        "ch04-mini-deerflow-recursion-limit"
       ]
     },
     "05_Agent_Middleware": {
