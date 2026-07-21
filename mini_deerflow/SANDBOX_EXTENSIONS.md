@@ -383,6 +383,8 @@ SubagentResult
 
 下面的离线实验把“共享能力、不共享上下文”变成可观察结果。Subagent handler 只从 `sandbox_id` 取回 session；它不会收到 workspace_root、messages 或 auth_token：
 
+> 下面按普通 `.py` 脚本书写，所以最外层使用 `asyncio.run(...)`。若复制到 Jupyter，请直接写 `state = await lead.ainvoke(...)`；不要在 Notebook 已运行的事件循环里再次调用 `asyncio.run(...)`。本篇后续异步示例同理。
+
 ```python
 import asyncio
 import json

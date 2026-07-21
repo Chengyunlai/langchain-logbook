@@ -616,7 +616,7 @@ async def run_unbounded() -> list[str]:
     return list(await asyncio.gather(*(unbounded_worker(str(i)) for i in range(4))))
 
 
-unbounded_results = asyncio.run(run_unbounded())
+unbounded_results = await run_unbounded()
 print("submitted =", len(unbounded_results))
 print("peak_concurrency =", unbounded_counter["peak"])
 print("all_completed =", all(item.startswith("done:") for item in unbounded_results))
@@ -630,7 +630,7 @@ peak_concurrency = 4
 all_completed = True
 ```
 
-**发生了什么**：`gather` 负责等待和聚合，不负责资源配额。模型同轮产生多少 tool calls，执行器就可能同时启动多少后端请求。
+**发生了什么**：`gather` 负责等待和聚合，不负责资源配额。模型同轮产生多少 tool calls，执行器就可能同时启动多少后端请求。Notebook 已经有运行中的事件循环，所以本章异步实验统一直接 `await`；如果把同一段逻辑移到 `.py` 脚本，才在最外层写 `asyncio.run(run_unbounded())`。
 
 **动手修改**：把任务数改为 20。即使本地仍能完成，也要说明供应商 rate limit、连接池和 Sandbox 资源会怎样放大风险。
 
@@ -660,7 +660,7 @@ async def run_limited() -> list[str]:
     return list(await asyncio.gather(*(limited_worker(str(i)) for i in range(4))))
 
 
-limited_results = asyncio.run(run_limited())
+limited_results = await run_limited()
 print("submitted =", len(limited_results))
 print("peak_concurrency =", limited_counter["peak"])
 print("result_order =", limited_results)
@@ -716,9 +716,7 @@ async def run_naive_batch() -> tuple[str, list[str], int, bool]:
     return error_type, side_effects, len(visible_results), slow_was_pending
 
 
-batch_error, completed_side_effects, visible_count, slow_pending = asyncio.run(
-    run_naive_batch()
-)
+batch_error, completed_side_effects, visible_count, slow_pending = await run_naive_batch()
 print("batch_error =", batch_error)
 print("completed_side_effects =", completed_side_effects)
 print("visible_result_count =", visible_count)
@@ -768,7 +766,7 @@ async def run_safe_batch() -> list[dict[str, str]]:
     return list(await asyncio.gather(*(safe_dispatch(name) for name in names)))
 
 
-safe_results = asyncio.run(run_safe_batch())
+safe_results = await run_safe_batch()
 print("names =", [item["name"] for item in safe_results])
 print("statuses =", [item["status"] for item in safe_results])
 print("success_value =", safe_results[0]["value"])
@@ -984,16 +982,14 @@ demo_requests = [
         prompt="给出防重复合并的测试建议",
     ),
 ]
-demo_results = asyncio.run(
-    demo_executor.dispatch_many(
-        demo_requests,
-        parent_context={
-            "locale": "zh-CN",
-            "request_id": "chapter-11",
-            "messages": ["主会话不应转发"],
-            "auth_token": "never-forward",
-        },
-    )
+demo_results = await demo_executor.dispatch_many(
+    demo_requests,
+    parent_context={
+        "locale": "zh-CN",
+        "request_id": "chapter-11",
+        "messages": ["主会话不应转发"],
+        "auth_token": "never-forward",
+    },
 )
 demo_records = demo_executor.ledger.list_records()
 
@@ -1093,15 +1089,13 @@ lead_model = create_offline_model(
     ]
 )
 lead_agent = create_lead_agent(model=lead_model, tools=[task_tool])
-lead_state = asyncio.run(
-    lead_agent.ainvoke(
-        {"messages": [{"role": "user", "content": "解释 checkpoint"}]},
-        context=LeadAgentContext(
-            user_id="learner",
-            workspace_root="/tmp/lesson",
-            auth_token="hidden",
-        ),
-    )
+lead_state = await lead_agent.ainvoke(
+    {"messages": [{"role": "user", "content": "解释 checkpoint"}]},
+    context=LeadAgentContext(
+        user_id="learner",
+        workspace_root="/tmp/lesson",
+        auth_token="hidden",
+    ),
 )
 tool_message = next(
     message for message in lead_state["messages"] if isinstance(message, ToolMessage)
@@ -1166,21 +1160,19 @@ context_executor = SubagentExecutor(
         ]
     )
 )
-context_result = asyncio.run(
-    context_executor.dispatch(
-        SubagentRequest(
-            task_id="context-mini-001",
-            agent_name="inspector",
-            description="检查边界",
-            prompt="只报告允许字段",
-        ),
-        parent_context={
-            "user_id": "learner-11",
-            "locale": "zh-CN",
-            "messages": ["主历史"],
-            "auth_token": "never-forward",
-        },
-    )
+context_result = await context_executor.dispatch(
+    SubagentRequest(
+        task_id="context-mini-001",
+        agent_name="inspector",
+        description="检查边界",
+        prompt="只报告允许字段",
+    ),
+    parent_context={
+        "user_id": "learner-11",
+        "locale": "zh-CN",
+        "messages": ["主历史"],
+        "auth_token": "never-forward",
+    },
 )
 try:
     SubagentSpec(
@@ -1237,18 +1229,16 @@ mini_concurrency_executor = SubagentExecutor(
     ),
     max_concurrency=2,
 )
-mini_concurrency_results = asyncio.run(
-    mini_concurrency_executor.dispatch_many(
-        [
-            SubagentRequest(
-                task_id=f"mini-concurrency-{index}",
-                agent_name="worker",
-                description="并发实验",
-                prompt=str(index),
-            )
-            for index in range(4)
-        ]
-    )
+mini_concurrency_results = await mini_concurrency_executor.dispatch_many(
+    [
+        SubagentRequest(
+            task_id=f"mini-concurrency-{index}",
+            agent_name="worker",
+            description="并发实验",
+            prompt=str(index),
+        )
+        for index in range(4)
+    ]
 )
 
 print("peak_concurrency =", mini_counter["peak"])
@@ -1290,18 +1280,16 @@ mini_failure_executor = SubagentExecutor(
     max_concurrency=2,
     timeout_seconds=0.01,
 )
-mini_failure_results = asyncio.run(
-    mini_failure_executor.dispatch_many(
-        [
-            SubagentRequest(
-                task_id=f"mini-failure-{index}",
-                agent_name="unstable",
-                description="故障实验",
-                prompt=value,
-            )
-            for index, value in enumerate(["success", "failure", "timeout"])
-        ]
-    )
+mini_failure_results = await mini_failure_executor.dispatch_many(
+    [
+        SubagentRequest(
+            task_id=f"mini-failure-{index}",
+            agent_name="unstable",
+            description="故障实验",
+            prompt=value,
+        )
+        for index, value in enumerate(["success", "failure", "timeout"])
+    ]
 )
 
 print("statuses =", [result.status for result in mini_failure_results])
@@ -1356,14 +1344,12 @@ mini_budget_executor = SubagentExecutor(
         ]
     )
 )
-mini_budget_result = asyncio.run(
-    mini_budget_executor.dispatch(
-        SubagentRequest(
-            task_id="mini-large-output",
-            agent_name="verbose",
-            description="验证输出预算",
-            prompt="返回大量证据",
-        )
+mini_budget_result = await mini_budget_executor.dispatch(
+    SubagentRequest(
+        task_id="mini-large-output",
+        agent_name="verbose",
+        description="验证输出预算",
+        prompt="返回大量证据",
     )
 )
 

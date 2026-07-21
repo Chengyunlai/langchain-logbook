@@ -66,4 +66,8 @@ Blocked by: 05, 06
 - DeerFlow Guide 已修正固定版本复现：本地命令现在 fetch 并 detached checkout `4af6178...`，不再只 clone 漂移的 HEAD；外部 fetch 本轮超时被明确记录，没有拿 main 冒充验证结果。
 - DeerFlow Guide 新增四路线证据表、rg 候选点检索命令和 HTTP run/stream → task/Subagent → Journal/SSE 端到端检索实战。完成标准从“看过文件”提升为每个箭头都有固定 commit 调用证据。
 - 全部正式内容已完成，最终全量门禁为 173 passed、1 external integration skipped；Tutorial validator 0 new/known/stale，Astro 0 errors/warnings，links/release/SEO 全绿。
-- 下一步创建不继承改写上下文的全新初学者 Agent，限制其只读 README、Web 正式 Markdown 与 tutorials Notebook；第一次只记录阻塞，不由主 Agent 现场解释。任务保持 claimed，直到修复阻塞并由另一个全新 Agent 复验完成。
+- 首轮全新初学者 Agent 已完成盲读，报告保存于 `../artifacts/beginner-audit-1.md`。01–11 的概念递进、六篇 Mini DeerFlow 工程专题和 Capstone 均能解释；验收因第 06/11 章 Jupyter 中嵌套 `asyncio.run(...)`，以及 DeerFlow 完整 fetch 长时间无输出而判定 BLOCKED。
+- 第 06/11 章正文事实源已改为 Jupyter 顶层 `await`；Notebook 同步器用 `PyCF_ALLOW_TOP_LEVEL_AWAIT` 执行同一代码，并新增回归测试。两章重新生成后均由真实 `jupyter nbconvert --execute` 原样通过，不再由最后的 Ledger 实验级联掩盖根因。
+- Sandbox 与 Capstone 的普通 `.py` 异步示例已明确标注 Jupyter 等价写法，避免学习者把脚本入口原样复制进已有事件循环。
+- DeerFlow Guide 新增固定 commit 的 13 文件证据切片脚本；本轮已从 GitHub Contents API 下载并按 Git blob SHA 校验 `4af6178...`，四条必修源码检索命令均在切片上命中，不再依赖完整 Git pack。
+- 下一步由另一个不继承改写上下文、且不读取首轮报告的全新初学者 Agent 重新执行完整盲读。任务继续保持 claimed，直至第二轮正式判定 PASS 或产生新的可复现阻塞。

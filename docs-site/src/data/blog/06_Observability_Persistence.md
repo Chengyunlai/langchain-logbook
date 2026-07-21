@@ -714,7 +714,7 @@ async def run_cancelled_agent() -> None:
 
 
 try:
-    asyncio.run(run_cancelled_agent())
+    await run_cancelled_agent()
 except NodeCancelledError as error:
     assert isinstance(error, NodeCancelledError)
     print("NodeCancelledError: cancellation propagated")
@@ -728,7 +728,7 @@ else:
 NodeCancelledError: cancellation propagated
 ```
 
-**发生了什么**：`except Exception` 处理普通工具失败，但不会吞掉取消控制流。LangGraph 把取消投影为 `NodeCancelledError`，调用方仍能停止任务。
+**发生了什么**：`except Exception` 处理普通工具失败，但不会吞掉取消控制流。LangGraph 把取消投影为 `NodeCancelledError`，调用方仍能停止任务。这里使用顶层 `await`，因为 Jupyter 内核已经运行着事件循环；`asyncio.run(...)` 是普通 Python 脚本的入口写法，不能嵌套进这个循环。
 
 **动手修改**：把捕获范围错误地扩大为 `BaseException`。解释它会怎样破坏取消、系统退出和运行时控制异常。
 

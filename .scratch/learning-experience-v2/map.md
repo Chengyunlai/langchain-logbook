@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；全部正式课程、Notebook、工程专题、Capstone 与 DeerFlow Guide 已完成，下一步由全新初学者 Agent 只读正式材料进行第一次盲读验收。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；首轮初学者盲读发现的 Jupyter 异步阻塞与 DeerFlow 固定源码获取阻塞已经修复，下一步由另一个全新初学者 Agent 从零复验全部正式材料。
 
 ## Not yet specified
 

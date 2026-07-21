@@ -208,6 +208,8 @@ make mini-deerflow-capstone
 
 上面的摘要适合快速检查。下面的实验把 approve、同 request 重放和 reject 放在同一个临时工作区，并打印每条验收证据：
 
+> 这是一段普通 `.py` 脚本示例，因此用 `asyncio.run(...)` 启动协程。若复制到 Jupyter，请把三次调用分别改为 `first = await run_capstone_scenario(...)`、`replay = await ...` 和 `reject = await ...`，不要嵌套启动事件循环。
+
 ```python
 import asyncio
 from pathlib import Path

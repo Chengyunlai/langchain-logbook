@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import asyncio
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 import hashlib
 import io
+import inspect
 import os
 from pathlib import Path
 import re
@@ -437,10 +440,15 @@ def execute_in_fresh_namespace(notebook: nbformat.NotebookNode, source_name: str
                 patch.object(subprocess, "Popen", deny_external_io),
                 patch.object(os, "system", deny_external_io),
             ):
-                exec(
-                    compile(cell.source, f"{source_name}:{execution_count}", "exec"),
-                    namespace,
+                code = compile(
+                    cell.source,
+                    f"{source_name}:{execution_count}",
+                    "exec",
+                    flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
                 )
+                result = eval(code, namespace)
+                if inspect.isawaitable(result):
+                    asyncio.run(result)
             cell.execution_count = execution_count
             rendered = output.getvalue()
             cell.outputs = (

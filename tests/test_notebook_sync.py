@@ -154,6 +154,43 @@ class NotebookSyncTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "禁止网络或子进程"):
                 execute_in_fresh_namespace(notebook, markdown.name)
 
+    def test_executor_supports_jupyter_style_top_level_await(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            markdown = Path(directory, "06_Demo.md")
+            markdown.write_text(
+                "# 第 06 章：Demo\n\n"
+                "<!-- lesson-contract:v2 -->\n\n"
+                "<!-- lesson-lab:id=demo-await layer=concept kind=repair "
+                "concept=async-execution -->\n"
+                "### 在 Notebook 中等待异步调用\n\n"
+                "**运行前先预测**：顶层 await 会返回什么？\n\n"
+                "```python sync=demo-await\n"
+                "import asyncio\n\n"
+                "async def answer():\n"
+                "    await asyncio.sleep(0)\n"
+                "    return 42\n\n"
+                "result = await answer()\n"
+                "print(result)\n"
+                "```\n\n"
+                "**观察结果**：\n\n"
+                "```text output=demo-await\n42\n```\n\n"
+                "**发生了什么**：Notebook 内核直接等待协程。\n\n"
+                "**动手修改**：修改返回值并重跑。\n"
+                "<!-- /lesson-lab -->\n",
+                encoding="utf-8",
+            )
+            notebook = build_notebook(markdown)
+
+            execute_in_fresh_namespace(notebook, markdown.name)
+
+        code_cell = next(
+            cell
+            for cell in notebook.cells
+            if cell.cell_type == "code"
+            and cell.metadata.get("langchain_logbook_sync") == "demo-await"
+        )
+        self.assertEqual(code_cell.outputs[0].text, "42\n")
+
 
 if __name__ == "__main__":
     unittest.main()

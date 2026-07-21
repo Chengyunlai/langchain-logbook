@@ -43,9 +43,25 @@ git -C "$DEERFLOW_SRC" checkout --detach FETCH_HEAD
 git -C "$DEERFLOW_SRC" show -s --format='%H%n%cI%n%s'
 ```
 
-预期第一行必须等于 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。如果 fetch 受网络、代理或 GitHub 认证影响，先记录为外部阻塞；不要退回 main 后继续假装结论仍对应固定版本。
+预期第一行必须等于 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。不要退回 `main` 后继续假装结论仍对应固定版本。
 
-若目录已经存在，先检查 remote 和 HEAD，不要重复执行 `remote add`。也可以换一个空临时目录；关键是最终 detached HEAD 指向固定提交。
+### 1.1 完整 fetch 很慢时，下载“证据切片”
+
+`git fetch` 会下载 Git pack；在受限网络中，它可能长时间没有输出。本课程提供一个更小的回退入口，只通过 GitHub Contents API 下载四条必修阅读路线需要的 13 个文件：
+
+```bash
+# 回到 langchain-logbook 仓库根目录执行
+export DEERFLOW_SRC=/tmp/deerflow-course-snapshot
+python scripts/fetch_deerflow_snapshot.py --output "$DEERFLOW_SRC"
+python scripts/fetch_deerflow_snapshot.py --output "$DEERFLOW_SRC" --verify-only
+cat "$DEERFLOW_SRC/DEERFLOW_COMMIT"
+```
+
+脚本只接受本章固定 commit，并用 Git blob SHA 逐文件校验；最后一行仍必须是 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。匿名 GitHub API 通常足够下载这 13 个文件；若遇到 API 限额，可设置 `GITHUB_TOKEN` 或 `GH_TOKEN` 后重试。
+
+这个目录是**源码阅读切片**，不是可安装、可运行的完整 DeerFlow。它足以完成 Lead、State/Context/Middleware、task/Subagent、Gateway/Run/SSE 四张证据表；阅读 Sandbox、MCP、Skills 的全部 provider 变体时，仍使用完整 checkout 或本章固定源码链接。也就是说，回退方案缩小下载范围，没有缩小证据标准。
+
+若完整 checkout 目录已经存在，先检查 remote 和 HEAD，不要重复执行 `remote add`。也可以换一个空临时目录；关键是最终 detached HEAD 指向固定提交。若使用证据切片，则每次阅读前运行 `--verify-only`，避免把本地修改误当官方源码。
 
 源码链接全部固定到本章 commit；你可以另外克隆最新 `main` 做差异练习，但不要静默用最新文件替换本章结论。
 
