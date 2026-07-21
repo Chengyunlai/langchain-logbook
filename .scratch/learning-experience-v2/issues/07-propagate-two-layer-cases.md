@@ -29,4 +29,7 @@ Blocked by: 05, 06
 - 第 01 章已完成 7 个 lesson lab：单次模型、Runnable、tool intent 失败/修复、v2 envelope 失败/修复和 Mini DeerFlow 模型/事件入口。
 - 完整 `create_agent` 工具循环的解释代码保留在正文，首次可执行工具循环后移第 04 章，避免提前解决后章核心问题。
 - 第 01 章 Web、已执行 Notebook、稳定 stdout、站点发布副本与全量质量门禁均已验证。
-- 下一步处理第 02 章结构化输出；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
+- 第 02 章已完成 11 个 lesson lab：固定标签解析失败、最小 Pydantic 请求、真实 `with_structured_output`、危险默认值失败/修复、Artifact path 失败/修复、结果协议失败/修复、Schema 生命周期对照与 Mini DeerFlow Schema 迁移。
+- `SubagentResult` 已从第 02 章后移第 11 章；第 02 章不再借子代理封装首次解释结构化输出。概念实验仅使用 Pydantic 与 LangChain 公共 fake chat model，Mini DeerFlow 只在最后一个迁移实验导入。
+- 第 02 章 Web、已执行 Notebook、11 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证；同步前用户修改的 Notebook 保存在 `../backups/02_Structured_Output.ipynb`。
+- 下一步处理第 03 章透明 RAG；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。

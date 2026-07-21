@@ -22,11 +22,17 @@
     },
     "02_Structured_Output": {
       "required_sync_ids": [
+        "ch02-string-parse-failure",
+        "ch02-pydantic-request",
         "ch02-model-structured-output",
-        "ch02-task-plan",
-        "ch02-artifact-boundary",
-        "ch02-subagent-failure",
-        "ch02-outcome-triad"
+        "ch02-default-objective-failure",
+        "ch02-task-plan-repair",
+        "ch02-artifact-path-failure",
+        "ch02-artifact-path-repair",
+        "ch02-outcome-shape-failure",
+        "ch02-outcome-shape-repair",
+        "ch02-schema-lifetimes",
+        "ch02-mini-deerflow-schemas"
       ]
     },
     "03_RAG_2.0": {
