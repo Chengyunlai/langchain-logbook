@@ -22,6 +22,10 @@ contentType: "main"
 
 第 11 章让 Lead 通过 `task` 委派隔离 specialist。若 Subagent 直接获得宿主绝对路径、shell 和全部远端工具，上下文虽已隔离，能力边界仍然失控。
 
+上一篇已经能把 `ArtifactRef` 合并进 State，却没有回答“文件实际写在哪里”。如果这里直接塞进 shell、MCP 和 Skill，初学者会看到四套能力同时出现，却不知道它们为什么必须共享同一条授权链。
+
+因此本专题只沿一条线推进：先把文件能力放进 thread workspace，再让 Agent 工具使用它，然后只把 capability handle 交给 Subagent，最后才接入 MCP 工具来源和 Skill 知识来源。
+
 本专题要回答：模型获得文件、命令、远端工具和技能说明之后，谁决定它能看到什么、在哪个线程执行、结果怎样回到 State，以及如何证明主 Agent 与 Subagent 没有互相泄漏上下文？
 
 完成后，Mini DeerFlow 不再只是能研究和委派的聊天循环。它拥有一个按用户/线程分区的本地工作区、通过 `ToolRuntime` 绑定身份的读写工具、只继承 opaque sandbox handle 的 Subagent、默认关闭的 MCP adapter，以及遵循 progressive disclosure（渐进披露）的 Skill catalog。
@@ -140,26 +144,64 @@ flowchart LR
 
 ```python
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from mini_deerflow.sandbox import LocalSandboxProvider, SandboxCommand
-
-provider = LocalSandboxProvider(Path(".local/sandboxes"))
-session = provider.acquire("thread-42", user_id="learner")
-
-write = session.write_text(
-    "reports/result.md",
-    "线程内研究结果",
-    media_type="text/markdown",
+from mini_deerflow.sandbox import (
+    LocalSandboxProvider,
+    SandboxCommand,
+    SandboxPathError,
 )
-content = session.read_text("reports/result.md")
 
-assert write.artifact.path == "reports/result.md"
-assert content == "线程内研究结果"
 
-# 本地 provider 不执行宿主命令。
-denied = session.execute(SandboxCommand(("python", "-V")))
-assert denied.exit_code == 126
+with TemporaryDirectory() as directory:
+    provider = LocalSandboxProvider(Path(directory) / "sandboxes")
+    session = provider.acquire("thread-42", user_id="learner")
+    other_user = provider.acquire("thread-42", user_id="other-learner")
+    write = session.write_text(
+        "reports/result.md",
+        "线程内研究结果",
+        media_type="text/markdown",
+    )
+    content = session.read_text("reports/result.md")
+
+    try:
+        session.write_text("../outside.md", "blocked")
+    except SandboxPathError as error:
+        traversal_error = type(error).__name__
+
+    denied = session.execute(SandboxCommand(("python", "-V")))
+    original_id = session.sandbox_id
+    provider.release(original_id)
+    missing_after_release = provider.get(original_id) is None
+    restored = provider.acquire("thread-42", user_id="learner")
+
+    print("artifact_path =", write.artifact.path)
+    print("content =", content)
+    print("other_user_isolated =", other_user.sandbox_id != original_id)
+    print("traversal_error =", traversal_error)
+    print("command_exit_code =", denied.exit_code)
+    print("session_released =", missing_after_release)
+    print("workspace_survived =", restored.read_text("reports/result.md") == content)
+    print(
+        "audit_outcomes =",
+        [(event.action, event.outcome) for event in session.audit_events()],
+    )
 ```
+
+```text
+artifact_path = reports/result.md
+content = 线程内研究结果
+other_user_isolated = True
+traversal_error = SandboxPathError
+command_exit_code = 126
+session_released = True
+workspace_survived = True
+audit_outcomes = [('write_text', 'completed'), ('read_text', 'completed'), ('write_text', 'rejected'), ('execute', 'denied')]
+```
+
+这组输出把四个概念分开了：Artifact 使用虚拟相对路径；user/thread 共同决定 workspace；路径越界与宿主命令分别被拒绝；release 释放会话对象，但没有删除线程数据。
+
+**动手修改**：把 other_user 改回 learner，再比较 sandbox_id；随后只修改 thread_id。写出 identity 为什么必须同时包含 user 和 thread。
 
 ### 3.2 为什么目录名使用 identity digest
 
@@ -217,14 +259,85 @@ sequenceDiagram
 - `sandbox_id`；
 - provider 类型。
 
-验证：
+下面让真实 Lead Agent 调用写工具。模型只提交 path/content/media_type；user 和 thread 从 Runtime 进入工具：
 
 ```python
-tools = build_sandbox_workspace_tools(provider)
-for item in tools:
-    assert "thread_id" not in item.tool_call_schema.model_fields
-    assert "user_id" not in item.tool_call_schema.model_fields
+from dataclasses import replace
+from tempfile import TemporaryDirectory
+
+from langchain_core.messages import AIMessage, ToolMessage
+
+from mini_deerflow.app import build_application, build_default_dependencies
+from mini_deerflow.config import ApplicationSettings
+from mini_deerflow.models import create_offline_model
+from mini_deerflow.runtime import RunDescriptor
+
+
+with TemporaryDirectory() as directory:
+    settings = ApplicationSettings.offline(workspace_root=directory)
+    dependencies = build_default_dependencies(settings)
+    model = create_offline_model(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "write_workspace_file",
+                        "args": {
+                            "path": "reports/application.md",
+                            "content": "组合根写入",
+                            "media_type": "text/markdown",
+                        },
+                        "id": "application-write-1",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="应用写入完成。"),
+        ]
+    )
+    application = build_application(
+        settings,
+        dependencies=replace(dependencies, model=model),
+    )
+    run = RunDescriptor("application-thread", "application-request", "learner")
+    state = application.invoke(
+        "写入应用报告",
+        run=run,
+        permissions={"workspace:write"},
+    )
+    session = dependencies.sandbox_provider.acquire(
+        run.thread_id,
+        user_id=run.user_id,
+    )
+    tool_message = next(
+        message for message in state["messages"] if isinstance(message, ToolMessage)
+    )
+
+    print(
+        "workspace_tool_registered =",
+        "write_workspace_file" in application.tool_names,
+    )
+    print("artifact_path =", state["artifacts"][0].path)
+    print("file_content =", session.read_text("reports/application.md"))
+    print(
+        "tool_message_has_path =",
+        "reports/application.md" in str(tool_message.content),
+    )
+    print("final_answer =", state["messages"][-1].content)
 ```
+
+```text
+workspace_tool_registered = True
+artifact_path = reports/application.md
+file_content = 组合根写入
+tool_message_has_path = True
+final_answer = 应用写入完成。
+```
+
+一次写入留下三类可观察事实：workspace 中的文件、State 中的 ArtifactRef、消息协议中的 ToolMessage。任何一项缺失，后续 UI、恢复或模型循环都会得到不完整事实。
+
+**动手修改**：把 permission 改为空集合。预测 handler 是否执行、Artifact 是否进入 State、ToolMessage 是 success 还是 error，然后运行。
 
 ### 4.1 为什么写工具返回 `Command`
 
@@ -280,6 +393,136 @@ SubagentResult
 
 这避免把整份报告复制进主消息。Lead 可先读摘要，需要证据时再通过 Artifact 路径读取文件。
 
+下面的离线实验把“共享能力、不共享上下文”变成可观察结果。Subagent handler 只从 `sandbox_id` 取回 session；它不会收到 workspace_root、messages 或 auth_token：
+
+```python
+import asyncio
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from langchain_core.messages import AIMessage, ToolMessage
+
+from mini_deerflow.agents import create_lead_agent
+from mini_deerflow.context import RuntimeContext
+from mini_deerflow.models import create_offline_model
+from mini_deerflow.sandbox import LocalSandboxProvider
+from mini_deerflow.schemas import SubagentResult
+from mini_deerflow.subagents import (
+    DelegationLedger,
+    SubagentExecutor,
+    SubagentInvocation,
+    SubagentOutput,
+    SubagentRegistry,
+    SubagentSpec,
+    build_task_tool,
+)
+
+
+with TemporaryDirectory() as directory:
+    provider = LocalSandboxProvider(Path(directory) / "sandboxes")
+    observed_contexts = []
+
+    async def report_writer(invocation: SubagentInvocation) -> SubagentOutput:
+        observed_contexts.append(invocation.context)
+        session = provider.get(str(invocation.context["sandbox_id"]))
+        if session is None:
+            raise RuntimeError("sandbox session missing")
+        write = session.write_text(
+            "reports/subagent.md",
+            "Subagent 的有界结果",
+            media_type="text/markdown",
+        )
+        return SubagentOutput(
+            summary="已生成 Subagent 报告",
+            artifacts=[write.artifact],
+        )
+
+    ledger = DelegationLedger()
+    executor = SubagentExecutor(
+        SubagentRegistry(
+            [
+                SubagentSpec(
+                    name="report-writer",
+                    description="写入线程报告",
+                    handler=report_writer,
+                    allowed_context_fields=frozenset({"sandbox_id"}),
+                )
+            ]
+        ),
+        ledger=ledger,
+    )
+    task = build_task_tool(executor, sandbox_provider=provider)
+    lead = create_lead_agent(
+        model=create_offline_model(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "task",
+                            "args": {
+                                "task_id": "sandbox-task-1",
+                                "description": "生成线程报告",
+                                "prompt": "只写入有界结论",
+                                "subagent_type": "report-writer",
+                            },
+                            "id": "sandbox-task-call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="已接收 Subagent 结果。"),
+            ]
+        ),
+        tools=[task],
+    )
+    state = asyncio.run(
+        lead.ainvoke(
+            {"messages": [("user", "委派报告")]},
+            config={"configurable": {"thread_id": "shared-thread"}},
+            context=RuntimeContext(
+                user_id="learner",
+                workspace_root="/must-not-be-delegated",
+                auth_token="must-not-leak",
+            ),
+        )
+    )
+    raw = next(
+        message.content
+        for message in state["messages"]
+        if isinstance(message, ToolMessage)
+    )
+    result = SubagentResult.model_validate(json.loads(str(raw)))
+    content = provider.acquire(
+        "shared-thread",
+        user_id="learner",
+    ).read_text("reports/subagent.md")
+
+    print("context_keys =", sorted(observed_contexts[0]))
+    print("result_status =", result.status)
+    print("artifact_path =", result.artifacts[0].path)
+    print(
+        "secret_leaked =",
+        "must-not-leak" in json.dumps(observed_contexts[0]),
+    )
+    print("workspace_content =", content)
+    print("ledger_context_keys =", ledger.list_records()[0].context_keys)
+```
+
+```text
+context_keys = ['sandbox_id']
+result_status = completed
+artifact_path = reports/subagent.md
+secret_leaked = False
+workspace_content = Subagent 的有界结果
+ledger_context_keys = ('sandbox_id',)
+```
+
+这里的 `sandbox_id` 不是安全魔法。真正的能力来自 handler 持有 provider；把随机 ID 交给没有 provider 的模型，不会突然赋予宿主文件权限。
+
+**动手修改**：从 spec allowlist 删除 sandbox_id。预测结果状态和 ledger context_keys；不要把修复写成重新传 workspace_root。
+
 ## 6. 阶段 D1：MCP 是工具传输协议，不是自动授权
 
 LangChain 的 `MultiServerMCPClient.get_tools()` 会把 MCP server 工具转换为 LangChain tools。Client 默认 stateless，每次工具调用建立新 session。
@@ -287,6 +530,81 @@ LangChain 的 `MultiServerMCPClient.get_tools()` 会把 MCP server 工具转换�
 MCP server 运行在独立进程，不能直接访问 LangGraph Context、State 或 Store；需要时应通过官方 interceptor 显式桥接。参见 [LangChain MCP](https://docs.langchain.com/oss/python/langchain/mcp)。
 
 Mini DeerFlow 增加一层更小的应用 adapter：
+
+先用 fake client 观察“server 发现”和“application 授权”不是同一个列表。这个实验不需要安装 MCP extra，也不会启动外部进程：
+
+```python
+import asyncio
+
+from langchain.tools import tool
+
+from mini_deerflow.mcp import MCPToolAdapter
+
+
+@tool("approved_echo")
+def approved_echo(text: str) -> str:
+    """离线回显。"""
+    return f"approved:{text}"
+
+
+@tool("unapproved_delete")
+def unapproved_delete(path: str) -> str:
+    """代表未授权破坏性工具。"""
+    return f"deleted:{path}"
+
+
+factory_calls = {"count": 0}
+
+
+class FakeMCPClient:
+    async def get_tools(self):
+        return [approved_echo, unapproved_delete]
+
+
+def client_factory():
+    factory_calls["count"] += 1
+    return FakeMCPClient()
+
+
+async def inspect_policy():
+    disabled = MCPToolAdapter(
+        client_factory=client_factory,
+        enabled=False,
+        allowed_tool_names=frozenset({"approved_echo"}),
+    )
+    disabled_tools = await disabled.load_tools()
+    calls_while_disabled = factory_calls["count"]
+
+    enabled = MCPToolAdapter(
+        client_factory=client_factory,
+        enabled=True,
+        allowed_tool_names=frozenset({"approved_echo"}),
+    )
+    loaded = await enabled.load_tools()
+    return disabled_tools, calls_while_disabled, loaded
+
+
+disabled_tools, calls_while_disabled, loaded = asyncio.run(inspect_policy())
+print("disabled_tools =", [item.name for item in disabled_tools])
+print("factory_calls_while_disabled =", calls_while_disabled)
+print("server_tools =", ["approved_echo", "unapproved_delete"])
+print("application_tools =", [item.name for item in loaded])
+print("source =", loaded[0].metadata["source"])
+```
+
+```text
+disabled_tools = []
+factory_calls_while_disabled = 0
+server_tools = ['approved_echo', 'unapproved_delete']
+application_tools = ['approved_echo']
+source = mcp
+```
+
+disabled 时 client factory 一次也没有执行。enabled 后 server 暴露两个工具，但应用只接收 allowlist 中的 approved_echo；unapproved_delete 不会因为远端发现而自动获得权限。
+
+**动手修改**：把 allowed_tool_names 改为空集合。确认 client 仍可被发现，但组合根拿到空工具表；然后解释“连接成功”为什么不是“授权成功”。
+
+接入真实 LangChain MCP server 时，factory 可以这样创建：
 
 ```python
 from mini_deerflow.mcp import MCPToolAdapter
@@ -382,15 +700,37 @@ from mini_deerflow.skills import (
 )
 
 catalog = build_demo_skill_catalog()
-print(catalog.render_index())
-# - research-report: 把多来源证据整理为可核验、可交付的中文研究报告
-
+index = catalog.render_index()
+loaded = catalog.load("research-report")
 load_skill = build_load_skill_tool(catalog)
+
+print("skill_names =", [item.name for item in catalog.list_metadata()])
+print("body_in_index =", "引用核验流程" in index)
+print("body_after_load =", "引用核验流程" in loaded.instructions)
+print("tool_name =", load_skill.name)
+print("tool_schema =", sorted(load_skill.tool_call_schema.model_fields))
+```
+
+```text
+skill_names = ['research-report']
+body_in_index = False
+body_after_load = True
+tool_name = load_skill
+tool_schema = ['name']
+```
+
+启动索引只暴露 metadata；完整“引用核验流程”在显式 load 后才出现。模型可见工具只接受 name，不接受任意宿主路径。
+
+把工具加入组合根时，仍由应用显式决定：
+
+```python
 dependencies = replace(
     build_default_dependencies(settings),
     extension_tools=(load_skill,),
 )
 ```
+
+**动手修改**：在 index 阶段直接拼接 `loaded.instructions`，记录启动 Prompt 增加的字符数。然后恢复两阶段加载，并说明这既是预算边界也是信任边界。
 
 ### 7.2 Skill 也属于不可信输入
 
