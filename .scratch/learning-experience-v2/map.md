@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章与工程架构总览已完成，下一步把 Lead Agent Core 改造成可从组合根继续追踪的工程纵切面。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章、工程架构总览与 Lead Agent Core 已完成，下一步从“宿主路径不是 Sandbox”重写扩展专题的能力边界。
 
 ## Not yet specified
 

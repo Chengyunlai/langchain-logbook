@@ -22,6 +22,12 @@ contentType: "main"
 
 这不是一章新的 API 清单，而是一次纵向集成：把已经分别学过的 State、Tools、Middleware、Checkpointer 和 Streaming 放进同一条业务路径。完成后，你应该能回答一个更接近真实项目的问题：**为什么这个 Agent 在进程重建后仍知道上一轮发生了什么，又怎样证明恢复、权限、摘要和产物合并没有互相破坏？**
 
+上一篇架构总览只追了 `build_application → _assemble_graph → create_lead_agent → graph.invoke`。本专题继续沿这条链，不从目录重新开始，也不引入新的 Agent 框架。
+
+你会复用已经掌握的概念：第 05–06 章的 Context/Middleware，第 07–08 章的 State/Reducer/Command，第 09–10 章的 Checkpoint/Interrupt，以及第 04 章的 model → tool → model 循环。
+
+如果下面某个词仍只能背定义，先回到对应章节的失败/修复实验。这里的任务是把边界一起受压，不是用 Mini DeerFlow 封装替你第一次理解它们。
+
 ## 系统快照：组合根已经存在，核心业务接缝还没有一起受压
 
 一个能调用工具的 Agent 仍可能不是核心业务。只要发生以下任一情况，它就更像一次性 Demo：
@@ -239,42 +245,115 @@ sequenceDiagram
 
 ## 3. 最小实验：同一线程跨应用实例恢复
 
-下面只展示公共 seam。完整断言位于 `tests/test_mini_deerflow_lead_agent_core.py`。
+下面的代码可以直接运行。它没有复用测试内部 helper，也不会在仓库留下 SQLite 文件；`TemporaryDirectory` 退出后会清理实验数据。
 
 ```python
 from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from langchain_core.messages import AIMessage, HumanMessage
 
 from mini_deerflow.app import build_application, build_default_dependencies
 from mini_deerflow.config import ApplicationSettings
+from mini_deerflow.models import create_offline_model
 from mini_deerflow.persistence import open_sqlite_checkpointer
 from mini_deerflow.runtime import RunDescriptor
 
-settings = ApplicationSettings.offline(workspace_root=".")
-run_1 = RunDescriptor(
-    thread_id="research-42",
-    request_id="request-1",
-    user_id="learner",
-)
 
-with open_sqlite_checkpointer(".local/research.sqlite") as saver:
-    dependencies = replace(
-        build_default_dependencies(settings),
-        checkpointer=saver,
+def artifact_call(media_type: str, call_id: str) -> AIMessage:
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "record_artifact",
+                "args": {
+                    "path": "reports/core-agent.md",
+                    "media_type": media_type,
+                },
+                "id": call_id,
+                "type": "tool_call",
+            }
+        ],
     )
-    app_1 = build_application(settings, dependencies=dependencies)
-    app_1.invoke("登记第一轮事实", run=run_1)
 
-# 模拟进程中的 graph/application 对象已被销毁，然后重新连接同一个 SQLite 文件。
-run_2 = replace(run_1, request_id="request-2")
-with open_sqlite_checkpointer(".local/research.sqlite") as saver:
-    dependencies = replace(
-        build_default_dependencies(settings),
-        checkpointer=saver,
-    )
-    app_2 = build_application(settings, dependencies=dependencies)
-    state = app_2.invoke("继续同一线程", run=run_2)
-    snapshot = app_2.state_for(run_2)
+
+with TemporaryDirectory() as directory:
+    checkpoint_path = Path(directory) / "lead-agent.sqlite"
+    settings = ApplicationSettings.offline(workspace_root=directory)
+    first_run = RunDescriptor("core-thread", "core-request-1", "learner")
+    second_run = replace(first_run, request_id="core-request-2")
+
+    with open_sqlite_checkpointer(checkpoint_path) as saver:
+        dependencies = replace(
+            build_default_dependencies(settings),
+            checkpointer=saver,
+            model=create_offline_model(
+                [
+                    artifact_call("text/markdown", "artifact-1"),
+                    AIMessage(content="第一轮已登记 Markdown 产物。"),
+                ]
+            ),
+        )
+        build_application(settings, dependencies=dependencies).invoke(
+            "登记研究报告",
+            run=first_run,
+            permissions={"artifact:write"},
+        )
+
+    # 第一个 saver 和 application 已销毁；第二轮重新打开同一 SQLite 文件。
+    with open_sqlite_checkpointer(checkpoint_path) as saver:
+        dependencies = replace(
+            build_default_dependencies(settings),
+            checkpointer=saver,
+            model=create_offline_model(
+                [
+                    artifact_call("application/json", "artifact-2"),
+                    AIMessage(content="第二轮已更新同一路径的产物类型。"),
+                ]
+            ),
+        )
+        restored = build_application(settings, dependencies=dependencies)
+        state = restored.invoke(
+            "继续线程并更新产物",
+            run=second_run,
+            permissions={"artifact:write"},
+        )
+        snapshot = restored.state_for(second_run)
+
+    human_texts = [
+        message.content
+        for message in state["messages"]
+        if isinstance(message, HumanMessage)
+    ]
+    print("human_messages =", human_texts)
+    print("artifact_count =", len(state["artifacts"]))
+    print("artifact_path =", state["artifacts"][0].path)
+    print("artifact_media_type =", state["artifacts"][0].media_type)
+    print("snapshot_matches =", snapshot["artifacts"] == state["artifacts"])
 ```
+
+运行结果：
+
+```text
+human_messages = ['登记研究报告', '继续线程并更新产物']
+artifact_count = 1
+artifact_path = reports/core-agent.md
+artifact_media_type = application/json
+snapshot_matches = True
+```
+
+先读第一行：第二个 application 没有接收第一轮 messages，却恢复出两条 HumanMessage。恢复来源是同一 SQLite Checkpointer 与 thread_id，不是 Python 对象仍活着。
+
+再读中间三行：两轮都登记 `reports/core-agent.md`，但 State 中只有一条。第二轮 `application/json` 替换第一轮 `text/markdown`，说明 reducer 的路径 identity 真正参与了恢复后的合并。
+
+最后一行把 invocation 返回值与最新 checkpoint 对齐。若它为 False，就不能只看最终回答判断持久化正确。
+
+**动手修改一**：只把 `second_run.thread_id` 改成 `other-thread`。预测 human_messages 和 artifact_count，再运行。
+
+**动手修改二**：保持 thread_id，但让第二轮连接另一个 SQLite 文件。解释它与“换 thread”为什么是两种不同失败。
+
+**动手修改三**：把第二轮 artifact path 改成 `reports/second.md`。观察 reducer 从“替换”转成“追加”。
 
 ### 3.1 按职责解释
 
@@ -286,7 +365,9 @@ with open_sqlite_checkpointer(".local/research.sqlite") as saver:
 
 ### 3.2 为什么显式 serializer allowlist
 
-State 中含有 `ArtifactRef` 和 `MiddlewareTraceEvent` 这样的课程领域类型。LangGraph 的 `JsonPlusSerializer` 在严格模式下不会反序列化任意 Python 类型，因为“从数据库恢复任意类”是安全边界。`open_sqlite_checkpointer()` 只 allowlist 这两个已知类型，不启用全局 pickle fallback，也不允许所有模块。
+State 中含有 `ArtifactRef`、`MiddlewareTraceEvent`、审批决定和研究工作流事件等课程领域类型。LangGraph 的 `JsonPlusSerializer` 不应反序列化任意 Python 类型，因为“从数据库恢复构造器”本身就是安全边界。
+
+`create_memory_checkpointer()` 与 `open_sqlite_checkpointer()` 复用同一份显式 allowlist，不启用全局 pickle fallback，也不允许所有模块。这样从内存 Demo 切到 SQLite 时，不会悄悄改变类型信任策略。
 
 这不是说 Pydantic model 天然危险，而是反序列化器必须知道哪些构造器是应用信任的。以后 State 新增自定义类型时，要么将它归一化为 JSON 数据，要么显式审查并更新 allowlist。
 
@@ -381,9 +462,45 @@ outer:after_model
 调用方不应该在每个页面重复解析上游 envelope。应用提供：
 
 ```python
+import json
+
+from mini_deerflow.app import build_application
+from mini_deerflow.runtime import RunDescriptor
+
+
+app = build_application()
+run = RunDescriptor("stream-thread", "stream-request", "learner")
 events = list(app.stream("继续研究", run=run))
 diagram = app.draw_mermaid()
+updated_nodes = [name for event in events for name in event.data]
+json_payloads = [
+    json.dumps(event.as_dict(), ensure_ascii=False, allow_nan=False)
+    for event in events
+]
+
+print("event_count =", len(events))
+print("event_types =", sorted({event.type for event in events}))
+print("model_updates =", updated_nodes.count("model"))
+print("tool_updates =", updated_nodes.count("tools"))
+print("all_json_safe =", len(json_payloads) == len(events))
+print(
+    "diagram_has_model_and_tools =",
+    "model(model)" in diagram and "tools(tools)" in diagram,
+)
 ```
+
+```text
+event_count = 17
+event_types = ['updates']
+model_updates = 2
+tool_updates = 1
+all_json_safe = True
+diagram_has_model_and_tools = True
+```
+
+两次 model update 中间只有一次 tools update，对应已经学过的 model → tool → model 循环。其余 update 来自拥有 graph node hook 的 Middleware，不应被误读成又调用了十几次模型。
+
+**动手修改**：打印 `updated_nodes`，把 lifecycle、model 和 tools 三类节点分别标色。再说明 Mermaid 静态图与这份动态事件序列各能证明什么。
 
 `app.stream()` 固定请求 `stream_mode=["updates"]` 与 `version="v2"`，再把 `{type, ns, data}` 转为 `StreamEvent`。转换同时把 Message、Pydantic model 和 dataclass 严格投影为 JSON 类型。
 

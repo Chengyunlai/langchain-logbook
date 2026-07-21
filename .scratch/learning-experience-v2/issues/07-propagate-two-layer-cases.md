@@ -53,4 +53,6 @@ Blocked by: 05, 06
 - 第 11 章 Web、已执行 Notebook、24 组稳定 stdout、concept/migration 边界、发布 HTML 与全量质量门禁均已验证；全量基线保持 172 passed、1 external integration skipped。
 - 工程架构总览已补上真实 CLI 输出、装配探针、前 11 章到代码入口映射、四文件首读路线、固定 thread 调用实验、数据归类四问法和依赖方向诊断表，不再让初学者从 package 目录漫游。
 - 架构探针发现组合根仍使用裸 `InMemorySaver`。已通过红→绿回归改为复用 `create_memory_checkpointer()`，让内存与 SQLite provider 共用显式领域类型 allowlist；新增 critical regression 防止宽松反序列化回归。全量基线增至 173 passed、1 external integration skipped。
-- 下一步处理 Lead Agent Core、Sandbox/Extensions、Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
+- Lead Agent Core 已补上与架构总览的连续入口，并把原来无法证明 Artifact 更新的伪最小片段替换为完整可运行实验：两个独立 application、两个 SQLite 连接、两组确定性 tool call，打印两轮消息恢复、同路径 reducer 覆盖和 snapshot 对齐。
+- Lead Agent Core 的 Streaming 部分新增真实 v2 updates 执行记录：17 个事件、2 次 model update、1 次 tools update、严格 JSON 投影与真实 Mermaid 节点，用动态轨迹解释 model→tool→model，而不是只展示 API 名称。
+- 下一步处理 Sandbox/Extensions、Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
