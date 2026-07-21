@@ -254,3 +254,94 @@ DeerFlow @ 4af6178
 2. 13 文件切片不包含 Gateway `services.py`，因此切片内可以证明 router 调用 `start_run/sse_consumer`、worker 调用 Agent/Journal/Bridge，但 router→service→manager 调度的 glue 只能在接口两端核对。指南仍足以完成四条证据表；若希望每个箭头都能在离线切片中展开，最小改进是把 `backend/app/gateway/services.py` 加入切片，或明确标注该箭头以导入/调用签名为验收粒度。
 
 这两项是可读性改进，不影响本轮所有正式 Notebook、离线实验、门禁和固定源码边界的通过结论。
+
+---
+
+## Spec 缺口补验（2026-07-21，首轮报告之后）
+
+### 补验后的最终结论
+
+**BLOCKED（替代本报告开头的首轮 PASS；首轮结论保留为历史记录）。**
+
+本次三项补验中，第 2 项“逐章能修改证据”和第 3 项“锚点/14 文件切片差量复核”均通过；第 1 项本地 Web UI 验收因当前环境没有可用浏览器而无法开始。严格标准要求从真实首页按 UI 导航，不能用 curl、源码路由或猜测 URL 替代，所以在 Web 证据缺失时不能继续维持最终 PASS。
+
+精确阻塞信息：
+
+- 目标入口：`http://127.0.0.1:4321/langchain-logbook/`。
+- 已尝试动作：按 Browser 技能连接与该 URL 匹配的浏览器。
+- 实际错误：`No browser is available`。
+- 按 troubleshooting 进行一次只读浏览器发现：`agent.browsers.list()` 返回 `[]`。
+- 当时可知内容：目标 URL 和需要检查的页面集合已知，但没有任何可交互浏览器 backend，因而无法观察首页/Posts、点击正式阅读路线或验证页面文字/导航。
+- 无法推导点：不能证明 Web 首页/Posts 是否让初学者知道“当前阶段、这一章解决什么、下一步去哪”，也不能证明 01、06、11、ARCHITECTURE、DEERFLOW_GUIDE 的渲染页面与 Markdown 事实一致。
+- 没有采用的替代方案：没有用 curl、读取生成 HTML、直接拼 URL 或源码检查冒充 UI 验收；Browser 技能明确要求浏览器不可用时如实报告，不通过无关工具绕过。
+- 最小解除条件：为当前会话提供一个可用的 in-app Browser 或 Chrome backend，并确保本地站点在目标 URL 可访问；随后从首页重新开始点击验收即可。无需重跑 Notebook、修改实验或 14 文件源码核验。
+
+### 逐章“动手修改”运行证据
+
+所有修改均在独立临时代码 `/tmp/beginner-audit-2-modifications.py` 中完成并用仓库 `.venv/bin/python` 运行；正式 Markdown、Notebook 和课程源码均未修改。脚本返回码为 0。
+
+| 章 | 正文选取的“动手修改” | 实际修改 | 运行前预测 | 实际输出变化 | 边界是否仍理解 |
+|---|---|---|---|---|---|
+| 01 | Runnable 实验中去掉 `StrOutputParser()` | 管道从 `prompt→model→parser` 改为 `prompt→model` | 返回完整 `AIMessage`，而不是 str | `actual_type=AIMessage content=保留完整消息` | 是。parser 决定下游数据形状，模型没有改变固定管道顺序 |
+| 02 | 将 `max_sources` 改成无法转换的字符串 | `"4"` 改为 `"many"` | 在结构化边界出现整数解析错误 | `actual_error=int_parsing` | 是。结构错误在业务执行前失败，和事实正确性无关 |
+| 03 | 把英文精确 query 改为中文“如何恢复长任务” | 英文词项查询改成中文同义问法 | `[a-z0-9_]` 词项检索得到空 query terms 和空召回 | `query_terms=[] actual_hits=[]` | 是。这说明需分词/query rewrite/dense，而不是修改生成 Prompt |
+| 04 | 让 query 只包含空格，再增加去空格领域校验 | 在 `min_length=1` 上增加 `strip()` 后非空 validator | 原 Schema 接受空格；修改后 `value_error` | `original_accepts_spaces=True`，随后 `actual_error=value_error` | 是。模型可见描述不能替代执行前确定性规则 |
+| 05 | 把两个配置改成相同 `thread_id` | 第二次调用复用第一条 checkpoint thread | 第二次会继承旧 `language=zh-CN` | `actual_observed=zh-CN cross_thread_fix=False` | 是。复用 thread 能继承 State，但不是跨 thread 用户偏好的正确方案 |
+| 06 | 交换两个 Middleware 的注册顺序 | `[outer, inner]` 改为 `[inner, outer]` | inner 先进入、最后退出 | `['inner:before','outer:before','outer:after','inner:after']` | 是。before 正序、after 逆序；安全职责顺序必须由测试锁定 |
+| 07 | 把初始 `results` 改成包含 cached 结果 | 输入从 `[]` 改为 `['cached:checkpoint']` | reducer 合并输入与两个并行 patch，共 3 项 | `['cached:checkpoint','docs:checkpoint','web:checkpoint']` | 是。Reducer 同时解释旧 State 与本 step 更新 |
+| 08 | 为 Command 路由增加 `needs_info` | 增加短目标 `<5` 分支、节点及 `Literal` 目标 | 目标“短”进入 `needs_info`，不进入 plan/reject | `actual_status=needs_info trace=['needs_info']` | 是。一次业务判断同时拥有 update/goto，避免规则漂移 |
+| 09 | 使用另一个 SQLite 文件路径重启 | 相同 thread ID，但第二次连接 `second.sqlite` | 后端不同，无法凭 thread ID 恢复 | `actual_values={}` | 是。thread ID 是地址；恢复还依赖同一持久化后端 |
+| 10 | 相同 operation ID 使用不同 path | 首次 `reports/a.md`，重放改为 `reports/b.md` | 必须冲突，ledger 仍只有 1 条 | `actual_error=ValueError ledger_count=1` | 是。幂等只允许相同意图重放，不同 payload 必须 fail closed |
+| 11 | 把 Semaphore 容量改为 1 | 4 个 task，共享 `Semaphore(1)` | 峰值为 1，`gather` 结果仍按输入顺序 | `actual_peak=1`，结果 `done:0..3` | 是。Semaphore 控制实际执行入口并发，不等于队列/进程/租户配额 |
+
+这 11 项补足了“能运行原例”之外的证据：我不仅能复述示例输出，也能预测一个局部契约变化、实施最小修改并解释新输出为何发生。
+
+### 历史锚点说明差量复核：已闭合
+
+只读复核了四篇新增说明，没有重读全书：
+
+- `LEAD_AGENT_CORE.md`：在历史 `807c3c...` 对照段落紧邻处明确说明，该 commit 是本专题写作时的历史版本；全书最终四路线以 `DEERFLOW_GUIDE.md` 的 `4af6178` 为准。
+- `SANDBOX_EXTENSIONS.md`：在历史 `807c3c...` 段落明确说明它只用于观察当时 Sandbox/MCP/Skills 模块关系，最终验收统一使用 `4af6178`。
+- `RUNTIME_GATEWAY.md`：在历史 `3e7baba...` 段落明确说明它只复核 Runtime/Gateway 局部设计，最终验收统一使用 `4af6178`。
+- `EVALUATION_OBSERVABILITY.md`：在历史 `3e7baba...` 段落明确说明它只复核 tracing 结论，最终验收统一使用 `4af6178`。
+
+四处措辞、位置和链接都足够清楚，已能区分“专题历史对照锚点”和“全书最终源码验收锚点”。首轮报告末尾的第 1 条非阻断建议至此关闭。
+
+### 14 文件证据切片差量复核：已闭合
+
+首轮报告第“DeerFlow 固定源码核验”节记录的是当时真实存在的 **13 文件**切片，本节不改写该历史。课程更新后，于 2026-07-21 的 Spec 缺口补验阶段重新创建独立目录 `/tmp/deerflow-course-snapshot-14`，使用已登录 GitHub CLI 的 token 仅注入下载进程：
+
+```text
+GH_TOKEN="$(gh auth token)" .venv/bin/python scripts/fetch_deerflow_snapshot.py --output /tmp/deerflow-course-snapshot-14
+GH_TOKEN="$(gh auth token)" .venv/bin/python scripts/fetch_deerflow_snapshot.py --output /tmp/deerflow-course-snapshot-14 --verify-only
+```
+
+实际结果：
+
+- 14 个固定源码文件全部下载；新增文件为 `backend/app/gateway/services.py`。
+- `--verify-only` 输出 `verified 4af617835805dd7cd78162ebed02fd6b782ea8bf`。
+- `DEERFLOW_COMMIT` 第一行精确等于该 commit。
+
+更新后的固定源码现在能把原来只在接口两端核对的 Gateway glue 完整展开：
+
+1. `backend/app/gateway/routers/thread_runs.py` 从 `app.gateway.services` 导入 `start_run`、`sse_consumer`、`wait_for_run_completion`。
+2. `create_run()`、`stream_run()`、`wait_run()` 都直接执行 `record = await start_run(body, thread_id, request)`；`stream_run()` 再把 `sse_consumer(bridge, record, request, run_mgr)` 交给 `StreamingResponse`。
+3. `services.py::start_run()` 从 request 取得 `StreamBridge`、`RunManager`、`RunContext`，先执行 model allowlist 和 thread ownership 检查，再调用 `run_mgr.create_or_reject(...)` 创建/拒绝产品 Run。
+4. `start_run()` 把 `body.command.resume` 转为 `Command(resume=...)`，普通输入走 `normalize_input()`；随后构造 config、过滤可转发 Context、注入认证身份。
+5. `start_run()` 通过 `asyncio.create_task(run_agent(bridge, run_mgr, record, ...))` 启动 worker，并把 task 写入 `record.task`。因此 router → service → RunManager → worker 的调度箭头已有直接函数调用证据。
+6. `RunManager.create_or_reject()` 在本地 lock 内检查 active Run，并通过 store 原子创建/partial unique index 处理跨 worker 冲突，store 成功后才注册本地 record。
+7. `services.py::sse_consumer()` 读取 request 的 `Last-Event-ID`，调用 `bridge.subscribe(record.run_id, last_event_id=...)`，分别处理 heartbeat、end 和业务事件；断线且 policy 为 cancel 时调用 `run_mgr.cancel(record.run_id)`。
+
+首轮报告末尾第 2 条“切片若加入 services.py”的非阻断建议至此关闭。当前唯一未闭合项是浏览器 backend 缺失导致的 Web UI 验收阻塞。
+
+### Web UI 最终单次重试（2026-07-21，根任务释放 Browser 会话后）
+
+按后续指令只重试一次 `http://127.0.0.1:4321/langchain-logbook/`。Browser 运行时仍在选择与该 URL 匹配的 backend 时直接返回：
+
+```text
+No browser is available
+```
+
+因此本次仍未进入首页，无法判断本地 preview 是否同时存在连接拒绝，也无法从首页/Posts UI 点击 01→11 与工程专题，或核对 01、06、11、ARCHITECTURE、DEERFLOW_GUIDE 的渲染事实。遵循验收约束，没有改用 curl、读取构建产物或 standalone Playwright。
+
+**最终结论保持 BLOCKED。** 唯一阻塞条件仍是当前环境没有可用 Browser backend；其余 Notebook、逐章修改、Mini DeerFlow、14 文件固定源码与全项目门禁证据保持通过。
