@@ -23,3 +23,11 @@ Blocked by: 09
 - 学习者能把实验中的机制定位到 Mini DeerFlow 和 DeerFlow 架构。
 - 自动门禁、可访问性、搜索和发布全部通过。
 - 形成仍需真实人类读者反馈的清单，不把 Agent 验收等同于真实教学成效。
+
+## Progress
+
+- 本地 `make check` 通过：175 passed、1 skipped；Tutorial 0 new/known/stale；Astro 0 errors/warnings/hints；links、release、SEO 均 0 failure。
+- 真实 In-app Browser 已完成 1440px 桌面与 390px 窄屏 QA，首页、学习路线、第 11 章和 DeerFlow Guide 无页面级横向溢出或 console error；详见 [`web-ui-qa.md`](../artifacts/web-ui-qa.md)。
+- `main` 已推送至 GitHub；Quality run `29828880095` 与 Pages run `29828880117` 均成功。
+- 线上首页、学习路线、更新后的 14 文件 DeerFlow Guide、第 11 章顶层 `await` 均已核验；第 06/11 章 Notebook 下载返回 `200 application/x-ipynb+json`。
+- 尚未满足的是 Issue 08 的真实初学者 Web 首页独立阅读。子 Agent 无 Browser backend，根任务 QA 不冒充该主体；因此本项继续保持 open，并等待 `ready-for-human` 反馈。
