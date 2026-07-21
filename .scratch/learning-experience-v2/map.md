@@ -25,14 +25,15 @@
 - [审计全书概念实验与工程迁移的倒置点](./issues/01-audit-concept-migration-inversions.md) — 已按 P0/P1/P2 标出全书改造强度，并确认 Notebook 因果与可观察输出需要独立契约。
 - [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 定义 lesson-lab、稳定输出、Notebook 原序生成和概念/迁移自动边界。
 - [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 12 个连续实验已跑通，并由 v2 同步器和 validator 锁定顺序、输出与两层边界。
+- [评审第 07 章双层案例样章](./issues/04-review-stategraph-sample.md) — 用户确认全书按样章方向改造；内部 marker 只存在于课程源，不进入 Web。
 
 ## Frontier
 
-- [由用户评审第 07 章样章的教学粒度](./issues/04-review-stategraph-sample.md) — 下一前沿；用已构建 Web 页面与 Notebook 检查节奏、解释密度和动手负担，再决定第 05、06 章的粒度。
+- [从“万能 State”失败重写第 05 章 Context Engineering](./issues/05-rewrite-context-from-universal-state-failure.md) — 下一前沿；从真实失败推导四类上下文。
+- [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 可并行前沿；从遗漏权限与重复治理代码推导 Middleware hook。
 
 ## Not yet specified
 
-- 第 01–04、08–11 章各自需要多少个概念实验，要等样章确认有效教学粒度后再拆分，但这些章节全部在改造范围内。
 - 纯文本 transcript 是否足以表达复杂并发与恢复，要在第 07 章样章和后续初学者盲读中验证；当前不提前建设交互式 trace 组件。
 
 ## Out of scope
