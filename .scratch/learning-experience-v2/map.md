@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章已完成，下一步按组合根阅读顺序改造工程架构总览与后续专题。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章与工程架构总览已完成，下一步把 Lead Agent Core 改造成可从组合根继续追踪的工程纵切面。
 
 ## Not yet specified
 

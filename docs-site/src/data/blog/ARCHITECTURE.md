@@ -20,6 +20,8 @@ contentType: "main"
 
 前 11 章分别交付模型、Schema、检索、Lead Agent、Context、State、Middleware、Graph、持久化、审批和 Subagent。若每个专题都自行创建模型、Store 和工具表，课程最终仍会产生多套平行 Demo。
 
+第 11 章结束时，`task` 已经能把研究任务交给隔离 Subagent。可它还悬着一个新问题：谁创建 Lead、task、Executor、Store 和 Checkpointer？如果 CLI、Notebook、API 各装一套，前面建立的边界会在入口处重新分裂。
+
 本篇先固定 Mini DeerFlow 的组合根、依赖方向和四类数据边界。后续专题都从这里继续：Lead 核心 → Sandbox/扩展 → Runtime/Gateway → 评测/观测 → Capstone → DeerFlow 源码导读。
 
 这份文档回答的不是“每个目录里有什么文件”，而是三个更重要的问题：
@@ -29,6 +31,74 @@ contentType: "main"
 3. Sandbox、可选扩展、SSE Gateway、评测与观测怎样组合，才不会让核心 Agent 反向依赖外层协议或平台对象？
 
 Mini DeerFlow 不复制 DeerFlow 的全部产品复杂度。它保留能够迁移的核心关系：一个 Lead Agent 通过 LangGraph runtime 运行；Middleware 治理生命周期；工具与 Subagent 承担受控能力；Checkpointer/Store 分别负责线程内恢复和跨线程记忆；API 只是外层 adapter。
+
+### 本篇怎样读
+
+这不是一张需要背诵的目录表。请按“运行 → 找入口 → 跟装配 → 跟一次调用 → 给数据分类”的顺序读。
+
+第一次阅读只追一条主链：`build_application → _assemble_graph → create_lead_agent → graph.invoke`。遇到 Sandbox、Runtime 或 Evaluation 先记下接口，不要立刻钻进实现；后续专题会逐条展开。
+
+读完后，你应当能回答：
+
+- 为什么 `app.py` 是组合根，而 `agents/lead_agent.py` 不是；
+- 一个新工具应在哪创建、在哪注册、在哪授权；
+- State、Runtime Context、Store 和产品数据库分别保存什么；
+- `make_graph()` 与 `build_application()` 为什么不能随意合并；
+- 从 Mini DeerFlow 的哪个入口开始，才能顺着相同关系阅读 DeerFlow。
+
+## 0. 先运行，不要先浏览目录
+
+先执行一条确定性离线对话：
+
+```bash
+uv run --locked --group dev python -m mini_deerflow \
+  --message "解释 create_agent 与 LangGraph 的关系"
+```
+
+输出如下：
+
+```text
+{"profile": "offline", "tools": ["search_knowledge", "calculator", "read_workspace_file", "write_workspace_file", "record_artifact", "task"], "final_text": "离线工具循环已完成；请查看 ToolMessage 中的引用。", "middleware_events": 6}
+```
+
+先从这行输出提出问题，而不是从文件名猜答案：
+
+1. `profile` 从哪份配置进入模型工厂？
+2. 六个工具由谁合并成一张表？
+3. `task` 为什么和普通工具出现在同一接口中？
+4. 六个 middleware event 在哪里产生，又为何没有直接打印完整 State？
+
+再运行下面的“装配探针”。它不调用模型，只检查组合根创建出的对象关系：
+
+```python
+from mini_deerflow.app import build_application, build_default_dependencies
+from mini_deerflow.config import ApplicationSettings
+
+
+settings = ApplicationSettings.offline(workspace_root=".")
+dependencies = build_default_dependencies(settings)
+application = build_application(settings, dependencies=dependencies)
+
+print("settings_type =", type(application.settings).__name__)
+print("dependencies_type =", type(application.dependencies).__name__)
+print("graph_type =", type(application.graph).__name__)
+print("tool_names =", application.tool_names)
+print("same_store =", application.dependencies.store is dependencies.store)
+print("same_checkpointer =", application.dependencies.checkpointer is dependencies.checkpointer)
+```
+
+```text
+settings_type = ApplicationSettings
+dependencies_type = ApplicationDependencies
+graph_type = CompiledStateGraph
+tool_names = ('search_knowledge', 'calculator', 'read_workspace_file', 'write_workspace_file', 'record_artifact', 'task')
+same_store = True
+same_checkpointer = True
+```
+
+这里最重要的不是类名，而是最后两行：组合根没有在 Agent factory 内偷换 Store 或 Checkpointer。测试传入的活依赖就是应用真正使用的实例。
+
+**动手修改**：用 `dataclasses.replace()` 只替换 model，再调用 `build_application()`。如果你必须复制整套工厂才能换模型，依赖注入边界就没有成立。
 
 ## 1. 从章节零件到应用组合根
 
@@ -41,6 +111,18 @@ Mini DeerFlow 不复制 DeerFlow 的全部产品复杂度。它保留能够迁�
 - 一次运行的 `thread_id`、`request_id`、用户身份和权限由谁提供。
 
 这个唯一装配位置叫 **Composition Root（组合根）**。本项目把组合根集中在 `app.py`：`build_application()` 服务本地 CLI/测试，`make_graph()` 服务 Agent Server/Studio，二者复用同一个内部装配函数。业务模块只声明自己需要什么，不在 import 时读取 Secret、猜测 provider 或连接外部服务。
+
+先看一个常见的错误演进。CLI 自己创建模型和工具，Notebook 再创建一份，API 为了持久化又复制第三份。三条路径都能回答问题，却可能使用不同 Middleware 顺序、不同权限表和不同 Store。
+
+这种错误很难靠单次演示发现。它通常表现为“Notebook 明明能用，API 却没有 task”“测试替换了模型，线上仍在读取环境变量”“CLI 保存的偏好在 Gateway 看不见”。
+
+组合根解决的不是代码重复本身，而是对象身份和策略只有一个决策点。`_assemble_graph()` 的阅读顺序应固定为：
+
+1. 用 settings 创建 SubagentExecutor 的并发和 timeout policy；
+2. 合并核心工具、task tool 和可选 extension tools；
+3. 在启动阶段拒绝重复工具名；
+4. 按固定顺序构造 Middleware；
+5. 把 model、tools、middleware、Store 和 Checkpointer交给 `create_lead_agent()`。
 
 <!-- diagram:id=mini-deerflow-composition-root -->
 ```mermaid
@@ -65,7 +147,7 @@ flowchart LR
 
 **图的文本替代**：配置和活依赖进入唯一组合根。组合根创建 Middleware、工作区工具、可选扩展和 SubagentExecutor，再把 `task` 加入 registry，调用 `create_lead_agent()` 得到 compiled graph。
 
-本地应用绑定独享的内存持久化；`langgraph.json` 调用不绑定本地持久化的 `make_graph()`，让 Agent Server 注入它管理的 Checkpointer 与 Store。
+本地应用绑定独享的内存持久化；内存与 SQLite Checkpointer 复用同一份显式领域类型 allowlist，避免组合根退回宽松反序列化。`langgraph.json` 调用不绑定本地持久化的 `make_graph()`，让 Agent Server 注入它管理的 Checkpointer 与 Store。
 
 这里刻意把“配置”和“依赖”分开：
 
@@ -127,6 +209,35 @@ mini_deerflow/
 
 这些目录不是为了追求“企业项目长相”。只有当一个边界具有不同生命周期、不同替换原因或不同安全责任时，才值得单独存在。例如 `state.py` 和 `context.py` 必须分开，因为前者会进入 checkpoint/trace，后者可以包含不可持久化的调用级身份与 Secret。
 
+### 3.1 把前 11 章放回代码，而不是重新学一套名词
+
+| 已学概念 | 进入 Mini DeerFlow 的入口 | 第一次阅读只回答什么 |
+|---|---|---|
+| Model / Runnable | `models.py` | 离线与真实 provider 在哪里切换？ |
+| 结构化输出 | `schemas.py` | 哪些对象跨模块传递，哪些只是内部实现？ |
+| Retriever / RAG | `knowledge/` | 检索何时返回 Document，何时变成工具结果？ |
+| create_agent / tools | `agents/`、`tools/` | 谁创建工具表，Agent factory 是否自行找工具？ |
+| Runtime Context | `context.py` | user、permission 和 Secret 如何避开 State？ |
+| Middleware | `middleware/` | 顺序由谁固定，哪些 hook 包裹 model/tool？ |
+| State / Reducer | `state.py` | messages 与 artifacts 怎样合并？ |
+| Command / Send / Subgraph | `graph/` | 固定工作流与动态 Agent loop 如何共存？ |
+| Checkpoint / Store | `persistence.py`、`store.py` | 线程恢复与跨线程偏好为何分开？ |
+| Interrupt / effect | `graph/`、`persistence.py` | 暂停点和外部副作用意图各存在哪里？ |
+| Subagent | `subagents/` | task 如何进入工具表，Executor 由谁持有？ |
+
+这张表是导航，不是新的学习顺序。若某一行回答不出来，回到对应章节的失败/修复实验；不要通过随机翻遍整个 package 来补概念。
+
+### 3.2 第一次源码阅读只打开四处
+
+按下面顺序打开代码，每处只带一个问题：
+
+1. `app.py:build_application()`：外部可以传入哪些配置和活依赖？
+2. `app.py:_assemble_graph()`：工具、Middleware、Subagent 和持久化怎样汇合？
+3. `agents/lead_agent.py:create_lead_agent()`：它是否越权创建了应用依赖？
+4. `app.py:MiniDeerFlowApplication.invoke()`：thread_id、RuntimeContext 和 message 怎样进入 Graph？
+
+读到第四处后再回来看目录树，你会看到“不同生命周期的边界”，而不是二十多个陌生文件夹。
+
 ## 4. 一次离线调用的真实时序
 
 <!-- diagram:id=mini-deerflow-minimal-run-sequence -->
@@ -160,6 +271,41 @@ sequenceDiagram
 
 注意，离线模型不是“假的 Agent 循环”。模型回答是脚本化的，但 tool call、工具执行、Middleware、State reducer、Checkpointer 和 compiled LangGraph 都是真实运行路径。它把不确定且收费的模型决策替换成确定 fixture，让测试能精确定位框架和业务错误。
 
+### 4.1 用代码把时序图和运行对象对上
+
+```python
+from mini_deerflow.app import build_application
+from mini_deerflow.runtime import RunDescriptor
+
+
+application = build_application()
+run = RunDescriptor(
+    thread_id="architecture-thread",
+    request_id="architecture-request",
+    user_id="learner",
+)
+result = application.invoke("解释 create_agent", run=run)
+snapshot = application.state_for(run)
+
+print("first_message =", type(result["messages"][0]).__name__)
+print("last_message =", type(result["messages"][-1]).__name__)
+print("tool_registered =", "task" in application.tool_names)
+print("checkpoint_has_messages =", "messages" in snapshot)
+print("auth_token_in_state =", "auth_token" in snapshot)
+```
+
+预期输出：
+
+```text
+first_message = HumanMessage
+last_message = AIMessage
+tool_registered = True
+checkpoint_has_messages = True
+auth_token_in_state = False
+```
+
+**运行前先预测**：把第二次调用的 thread_id 改成新值，`state_for()` 读到的是同一条历史还是新线程？先写判断，再运行第 09 章已经学过的 snapshot 检查。
+
 ## 5. 四类数据不能混装
 
 | 数据类别 | 当前类型/实现 | 生命周期 | 典型内容 | 不能放什么 |
@@ -170,6 +316,19 @@ sequenceDiagram
 | Product Runtime Data | `SqliteRuntimeRepository` | 跨进程/服务 | run 状态、取消、SSE event | 直接冒充 LangGraph checkpoint |
 
 `Checkpointer` 和 `Store` 都能“保存东西”，但它们不是同一种 memory。Checkpointer 让图从某个线程状态恢复；Store 让不同线程读取应用定义的长期事实；run/event repository 则服务于 API、调度和产品状态。DeerFlow 源码阅读中最常见的误区，就是把这三者都叫数据库然后忽略语义差异。
+
+### 5.1 给新字段找位置的四问法
+
+以后想增加一个字段，不要先问“放哪个 dict”。按顺序问：
+
+1. Graph 下一步节点是否需要它？需要且可持久化，才考虑 State。
+2. 它是否只属于本次可信调用？是则放 Runtime Context。
+3. 它是否是用户明确保存、跨线程复用的事实？是则进入 Store 的应用 namespace。
+4. 它是否服务 API 调度、重放或取消？是则进入产品 Runtime repository。
+
+例如 `auth_token` 只属于可信调用，而且不可进入 checkpoint，所以放 Context；`preferred_locale` 经用户确认后可跨线程复用，所以放 Store；`run.status` 服务 Gateway 状态机，所以放 Runtime repository。
+
+**动手判断**：分别为 `approval_decision`、`Last-Event-ID`、`artifact path` 和 `database connection` 选择边界，并写出排除另外三处的理由。
 
 ## 6. `langgraph.json` 是部署接口，不是业务架构
 
@@ -193,7 +352,7 @@ Manifest 表达三件事：从 `pyproject.toml` 安装本地 package；用 `make
 
 本项目选择 factory，是因为离线 fake model 内部保存一次性脚本迭代器：不同 run 必须获得新模型实例。`make_graph()` 每次创建新的离线依赖，并把本地 Store/Checkpointer 留空。
 
-`build_application()` 默认绑定独享的内存 Store/Checkpointer，Runtime 重建测试再替换为 SQLite provider。接入真实无状态模型后，应重新评估进程级 compiled graph 与生命周期管理。
+`build_application()` 默认绑定独享的内存 Store，以及 `create_memory_checkpointer()` 创建的安全 Checkpointer；Runtime 重建测试再替换为 SQLite provider。接入真实无状态模型后，应重新评估进程级 compiled graph 与生命周期管理。
 
 但 manifest 不负责决定工具权限、State schema、Middleware 顺序或业务恢复策略，这些必须留在可测试的 Python 组合根中。当前课程不把 `langgraph-cli[inmem]` 强塞进核心依赖；需要 Studio/Agent Server 时可显式安装 CLI。Runtime 专题对比两条部署路线：
 
@@ -245,6 +404,16 @@ DeerFlow 的关键阅读技巧是先沿依赖方向走：`langgraph.json / Gatew
 | 为未来目录放 `pass`/固定成功结果 | 接口看似齐全但无法证明语义 | 提供有约束的 DTO/Protocol，能力未实现时明确说明 |
 | 把 `langgraph.json` 当成完整部署 | 忽略认证、持久化、取消和产品数据 | 文档明确 manifest 与 runtime/Gateway 的职责差异 |
 | 离线测试绕开 Agent runtime | 测试只证明字符串拼接 | fake model 驱动真实 tool loop、middleware 和 checkpoint |
+
+### 9.1 遇到问题时沿依赖方向诊断
+
+- 工具没出现：先查 `_assemble_graph()` 的 tool registry，不先改 Lead Prompt。
+- 权限错误：先查 API/应用构造的 Runtime Context，再查 Middleware 和工具服务端校验。
+- 恢复失败：先确认 thread_id 和 Checkpointer 实例，再检查 Graph State。
+- API 能跑、Notebook 不能跑：检查 Harness 是否反向 import 了 API/HTTP 对象。
+- 测试替换依赖无效：检查业务模块是否绕过组合根自行读取环境或创建 provider。
+
+这条诊断顺序会在 DeerFlow 中继续使用，只是组合根和 provider 数量更多。
 
 ## 10. 开发与验收命令
 

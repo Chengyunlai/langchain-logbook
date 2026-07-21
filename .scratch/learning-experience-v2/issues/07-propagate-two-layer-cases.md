@@ -51,4 +51,6 @@ Blocked by: 05, 06
 - 第 11 章已完成 24 个 lesson lab：Lead 原始结果污染/有界委派、父 Context 深拷贝泄漏/allowlist 投影、Command/Send Router、Handoff、Subgraph 边界、临时 specialist、无界并发/Semaphore、裸 gather/稳定部分失败、无界输出/preview+digest，以及 Delegation Record。
 - 第 11 章的八个 Mini DeerFlow 迁移实验覆盖 built-in specialist、task tool、真实 Lead model→tool→model 循环、context policy、并发、异常/timeout、输出预算和 DelegationLedger。`tool_call_schema` 与内部 `args_schema` 的 runtime 注入差异也由执行结果校准。
 - 第 11 章 Web、已执行 Notebook、24 组稳定 stdout、concept/migration 边界、发布 HTML 与全量质量门禁均已验证；全量基线保持 172 passed、1 external integration skipped。
-- 下一步按组合根阅读顺序处理工程架构总览、Lead Agent Core、Sandbox/Extensions、Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
+- 工程架构总览已补上真实 CLI 输出、装配探针、前 11 章到代码入口映射、四文件首读路线、固定 thread 调用实验、数据归类四问法和依赖方向诊断表，不再让初学者从 package 目录漫游。
+- 架构探针发现组合根仍使用裸 `InMemorySaver`。已通过红→绿回归改为复用 `create_memory_checkpointer()`，让内存与 SQLite provider 共用显式领域类型 allowlist；新增 critical regression 防止宽松反序列化回归。全量基线增至 173 passed、1 external integration skipped。
+- 下一步处理 Lead Agent Core、Sandbox/Extensions、Runtime Gateway、Evaluation/Observability、Capstone 与 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。

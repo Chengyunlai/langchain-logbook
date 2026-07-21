@@ -42,6 +42,13 @@
     "test_nodeid": "tests/test_mini_deerflow_runtime_gateway.py::LocalRunManagerTests::test_application_state_store_and_runtime_records_survive_service_rebuild"
   },
   {
+    "id": "security.checkpoint-type-allowlist",
+    "category": "checkpoint_deserialization",
+    "severity": "critical",
+    "guarantee": "默认组合根的内存 Checkpointer 只通过显式领域类型 allowlist 反序列化，不退回未注册类型宽松模式。",
+    "test_nodeid": "tests/test_mini_deerflow_application.py::MiniDeerFlowApplicationTests::test_default_application_checkpoint_round_trip_has_no_unregistered_type_warning"
+  },
+  {
     "id": "security.runtime-ownership",
     "category": "tool_authorization",
     "severity": "critical",

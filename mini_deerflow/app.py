@@ -11,7 +11,6 @@ from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 
@@ -26,6 +25,7 @@ from mini_deerflow.fixtures import (
 from mini_deerflow.knowledge import LocalKnowledgeIndex
 from mini_deerflow.middleware import build_lead_middleware
 from mini_deerflow.models import create_model
+from mini_deerflow.persistence import create_memory_checkpointer
 from mini_deerflow.runtime import RunDescriptor
 from mini_deerflow.sandbox import LocalSandboxProvider, SandboxProvider
 from mini_deerflow.subagents import (
@@ -193,7 +193,7 @@ def build_default_dependencies(
         summary_model=summary_model,
         knowledge_index=create_demo_index(),
         store=InMemoryStore(),
-        checkpointer=InMemorySaver(),
+        checkpointer=create_memory_checkpointer(),
         subagent_registry=build_demo_subagent_registry(),
         delegation_ledger=DelegationLedger(),
         sandbox_provider=LocalSandboxProvider(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
+import subprocess
+import sys
 import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -15,6 +18,39 @@ from mini_deerflow.models import create_offline_model
 
 
 class MiniDeerFlowApplicationTests(unittest.TestCase):
+    def test_default_application_checkpoint_round_trip_has_no_unregistered_type_warning(
+        self,
+    ) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                """
+from mini_deerflow.app import build_application
+from mini_deerflow.runtime import RunDescriptor
+
+application = build_application()
+run = RunDescriptor(
+    thread_id="serializer-test-thread",
+    request_id="serializer-test-request",
+    user_id="learner",
+)
+application.invoke("解释 create_agent", run=run)
+application.state_for(run)
+""",
+            ],
+            capture_output=True,
+            check=True,
+            env={
+                **os.environ,
+                "LANGCHAIN_TRACING_V2": "false",
+                "LANGSMITH_TRACING": "false",
+            },
+            text=True,
+        )
+
+        self.assertNotIn("Deserializing unregistered type", completed.stderr)
+
     def test_default_offline_application_builds_and_completes_a_minimal_run(self) -> None:
         settings = ApplicationSettings.offline(workspace_root=".")
         application = build_application(settings)
