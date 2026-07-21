@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–11 章、工程专题与 Capstone 已完成，下一步把 Mini DeerFlow 心智模型转成真实 DeerFlow 源码检索路线。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；全部正式课程、Notebook、工程专题、Capstone 与 DeerFlow Guide 已完成，下一步由全新初学者 Agent 只读正式材料进行第一次盲读验收。
 
 ## Not yet specified
 

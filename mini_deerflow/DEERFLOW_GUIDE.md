@@ -20,10 +20,20 @@
 复核当前 HEAD：
 
 ```bash
-git ls-remote https://github.com/bytedance/deer-flow.git HEAD
-git clone --depth 1 https://github.com/bytedance/deer-flow.git /tmp/deerflow-current
-git -C /tmp/deerflow-current show -s --format='%H%n%cI%n%s' HEAD
+export DEERFLOW_COMMIT=4af617835805dd7cd78162ebed02fd6b782ea8bf
+export DEERFLOW_SRC=/tmp/deerflow-course
+
+mkdir -p "$DEERFLOW_SRC"
+git -C "$DEERFLOW_SRC" init
+git -C "$DEERFLOW_SRC" remote add origin https://github.com/bytedance/deer-flow.git
+git -C "$DEERFLOW_SRC" fetch --depth 1 origin "$DEERFLOW_COMMIT"
+git -C "$DEERFLOW_SRC" checkout --detach FETCH_HEAD
+git -C "$DEERFLOW_SRC" show -s --format='%H%n%cI%n%s'
 ```
+
+预期第一行必须等于 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。如果 fetch 受网络、代理或 GitHub 认证影响，先记录为外部阻塞；不要退回 main 后继续假装结论仍对应固定版本。
+
+若目录已经存在，先检查 remote 和 HEAD，不要重复执行 `remote add`。也可以换一个空临时目录；关键是最终 detached HEAD 指向固定提交。
 
 源码链接全部固定到本章 commit；你可以另外克隆最新 `main` 做差异练习，但不要静默用最新文件替换本章结论。
 
@@ -38,6 +48,43 @@ git -C /tmp/deerflow-current show -s --format='%H%n%cI%n%s' HEAD
 5. tracing callback 与 `RunJournal` 都是 callback，它们记录的是同一事实吗？
 
 读完每条路线后回来修订答案。若只能说“都差不多是 memory / callback / agent”，说明边界仍未建立。
+
+### 2.1 每条结论都要留下四类证据
+
+“我看过这个文件”不算完成。为四条路线各复制一行表格，并在本地 Markdown 中填写：
+
+| 路线 | 可执行入口 | 调用者 → 被调用者 | 经过的数据/能力 | 没有该边界时的失败 |
+|---|---|---|---|---|
+| Lead 组合根 |  |  |  |  |
+| State/Context/Middleware |  |  |  |  |
+| task/Subagent |  |  |  |  |
+| Gateway/Run/SSE |  |  |  |  |
+
+每一格至少引用一个固定 commit 下的 symbol 或文件路径。调用关系来自 import、函数调用或 factory 参数；不要用“看起来应该调用”代替证据。
+
+第四列只记录跨边界的数据，例如 Runtime Context、ToolMessage、RunEvent 或 sandbox handle。第五列必须能回指课程中的一个失败实验。
+
+### 2.2 先用 rg 建立候选点，再打开上下文
+
+在固定 checkout 中执行：
+
+```bash
+cd "$DEERFLOW_SRC"
+
+rg -n 'def make_lead_agent|def _make_lead_agent|create_agent\(' \
+  backend/packages/harness/deerflow/agents/lead_agent/agent.py
+
+rg -n 'class ThreadState|build_middlewares|Runtime\[' \
+  backend/packages/harness/deerflow
+
+rg -n 'def task|class SubagentExecutor|subagent_enabled=False' \
+  backend/packages/harness/deerflow
+
+rg -n 'RunManager|RunJournal|StreamBridge|Last-Event-ID' \
+  backend/app/gateway backend/packages/harness/deerflow/runtime
+```
+
+`rg` 结果只是候选点。下一步要打开定义上下各 20–40 行，确认参数从哪里来、结果到哪里去，再填证据表。
 
 ## 3. 三层系统：不要把 DeerFlow 看成一个大 Graph
 
@@ -390,6 +437,36 @@ flowchart LR
 | `persistence.py` | [`runtime/checkpointer/`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/runtime/checkpointer) + [`runtime/store/`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/runtime/store) | checkpoint/Store provider | 把两者叫同一种 memory |
 | `runtime/` / `api/` | [`thread_runs.py`](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/app/gateway/routers/thread_runs.py) + [`runtime/runs/`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/runtime/runs) | Thread/Run/Event 与 SSE | 产品边缘功能全集 |
 | `observability.py` | [`tracing/`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/tracing) + [`journal.py`](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/runtime/journal.py) | root owner 与两条观测链 | 多 backend 配置矩阵 |
+
+### 10.1 端到端检索实战：一次研究委派怎样回到 SSE
+
+假设客户端创建一个流式 Run，Lead 决定调用 task，把研究交给 Subagent，最后返回综合结果。不要运行应用，先用静态源码完成下面的调用链：
+
+```text
+HTTP run/stream endpoint
+→ Gateway service input translation
+→ RunManager create/claim
+→ Worker graph invocation
+→ make_lead_agent 创建的 compiled graph
+→ Lead model 产生 task tool call
+→ task tool 解析 Subagent policy
+→ SubagentExecutor 创建隔离 Agent
+→ structured terminal result / ToolMessage
+→ Lead model 综合
+→ RunJournal/EventStore 持久化
+→ StreamBridge / SSE 返回客户端
+```
+
+为每个箭头记录三项：调用 symbol、传递的最小数据、失败由哪一层投影。例如 task → executor 传任务和裁剪后的 Context；它不传完整 parent messages。
+
+然后回答四个反事实问题：
+
+1. task 超时时，哪个对象把异常归一化为终态？
+2. SSE 在最后一条消息后断开，Subagent 是否需要重跑？
+3. tracing backend 失败，RunJournal 还能否形成客户端事件？
+4. worker 重启后，Graph checkpoint 与产品 Run record 各负责恢复什么？
+
+完成标准不是链条与上面文字完全相同，而是每个箭头都能用固定 commit 的调用点证明。若中间只能写“框架自动处理”，就回到对应路线继续追。
 
 ## 11. 五个错误阅读实验
 

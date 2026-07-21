@@ -63,4 +63,7 @@ Blocked by: 05, 06
 - 评测专题新增两组确定性实验：相同正确文本因禁止工具路径或调用超限得到不同 metric；baseline/candidate 同为 50% 通过率，但关键恢复案例新增失败触发发布阻断。离线真实 Agent 评测保持 outcome/trajectory/budget 全绿。
 - Capstone 已明确只做 assembly，并新增六个源码停靠点，学习者按 Request validation → Lead → Subagent → draft gate → checkpoint reopen → prepublish/effect/final eval 追踪，不再逐行浏览大函数。
 - Capstone 新增 approve/replay/reject 同场实验：打印 Subagent 终态、真实 checkpoint reopen、recorded/already_recorded 幂等结果、精确完整轨迹、报告章节，以及 reject 后 draft 保留但 final/effect 缺失。
-- 下一步处理 DeerFlow Guide；任务保持 claimed，直到初学者盲读和换新 Agent 复验完成。
+- DeerFlow Guide 已修正固定版本复现：本地命令现在 fetch 并 detached checkout `4af6178...`，不再只 clone 漂移的 HEAD；外部 fetch 本轮超时被明确记录，没有拿 main 冒充验证结果。
+- DeerFlow Guide 新增四路线证据表、rg 候选点检索命令和 HTTP run/stream → task/Subagent → Journal/SSE 端到端检索实战。完成标准从“看过文件”提升为每个箭头都有固定 commit 调用证据。
+- 全部正式内容已完成，最终全量门禁为 173 passed、1 external integration skipped；Tutorial validator 0 new/known/stale，Astro 0 errors/warnings，links/release/SEO 全绿。
+- 下一步创建不继承改写上下文的全新初学者 Agent，限制其只读 README、Web 正式 Markdown 与 tutorials Notebook；第一次只记录阻塞，不由主 Agent 现场解释。任务保持 claimed，直到修复阻塞并由另一个全新 Agent 复验完成。
