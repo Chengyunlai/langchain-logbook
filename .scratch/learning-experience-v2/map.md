@@ -27,10 +27,11 @@
 - [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 12 个连续实验已跑通，并由 v2 同步器和 validator 锁定顺序、输出与两层边界。
 - [评审第 07 章双层案例样章](./issues/04-review-stategraph-sample.md) — 用户确认全书按样章方向改造；内部 marker 只存在于课程源，不进入 Web。
 - [从“万能 State”失败重写第 05 章 Context Engineering](./issues/05-rewrite-context-from-universal-state-failure.md) — 由真实失败推导四类数据边界，9 个实验已跑通。
+- [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 从权限遗漏推导四类 hook，14 个 Web/Notebook 实验已跑通。
 
 ## Frontier
 
-- [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 下一前沿；从遗漏权限与重复治理代码推导 Middleware hook。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 下一前沿；改造第 01–04、08–11 章、工程专题、Capstone 与 DeerFlow 导读，并重生成所有 Notebook。
 
 ## Not yet specified
 

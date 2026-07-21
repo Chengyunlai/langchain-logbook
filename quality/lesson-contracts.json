@@ -61,17 +61,20 @@
     },
     "06_Observability_Persistence": {
       "required_sync_ids": [
-        "ch06-lifecycle-order",
-        "ch06-order-failure",
-        "ch06-governance-chain",
-        "ch06-call-limit-failure",
+        "ch06-permission-omission",
+        "ch06-tool-permission",
+        "ch06-hook-order",
+        "ch06-context-prompt",
         "ch06-model-routing",
-        "ch06-tool-error",
-        "ch06-permission-failure",
-        "ch06-async-symmetry",
+        "ch06-call-limit",
+        "ch06-raw-tool-error",
+        "ch06-structured-tool-error",
+        "ch06-async-cancellation",
         "ch06-summarization",
         "ch06-hitl-rejection",
-        "ch06-listener-signature-failure"
+        "ch06-listener-signature-failure",
+        "ch06-listener-signature-repair",
+        "ch06-mini-deerflow-governance"
       ]
     },
     "07_StateGraph": {
