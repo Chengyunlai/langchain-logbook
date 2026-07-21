@@ -11,6 +11,7 @@ Blocked by: 02
 
 ## Work
 
+- 先升级 Notebook 同步器与教程 validator，使其能解析 `lesson-lab` marker、保留正文顺序、同步预测/解释/修改提示，并核对稳定输出。
 - 从普通函数和共享字典开始，逐步引出 State、Node、Edge 与 Conditional Edge。
 - 搭建 `plan → search_docs/search_web → summarize` 的最小并行 Graph。
 - 先制造并发写冲突，再依次实验 `operator.add` 的正确用途、错误用途和按 ID 合并的自定义 Reducer。
@@ -24,4 +25,5 @@ Blocked by: 02
 - 最小实验不导入 `mini_deerflow`，每一步只增加一个机制。
 - Web 文章展示可观察执行记录，Notebook 允许修改 reducer 后重跑。
 - Mini DeerFlow 只在工程迁移阶段出现，并明确说明额外封装的理由。
+- 第 07 章通过 `lesson-lab` marker、概念层导入、failure/repair 顺序、Web 输出与 Notebook output drift 自动检查。
 - 现有显式 ReAct、streaming、循环预算等内容被合理后移或保留，不丢失工程深度。

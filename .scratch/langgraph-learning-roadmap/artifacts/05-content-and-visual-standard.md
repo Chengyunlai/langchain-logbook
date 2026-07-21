@@ -5,6 +5,8 @@
 > 上游约束：[课程信息架构与章节契约](./04-curriculum-information-architecture.md)  
 > 核心原则：详细不等于堆砌，清晰不等于简化；通过结构、层次、实验和图示降低理解成本，不通过删除原理和工程边界缩短内容。
 
+> 2026-07-21 教学顺序更新：章节结构、实验 marker 与 Notebook 生成以[双层案例章节契约与可观察反馈格式](../../learning-experience-v2/artifacts/02-two-layer-lesson-contract.md)为准。该契约覆盖本文件旧模板中“正确实现早于失败实验”的顺序，但不替代语言、图示、安全和资料标准。
+
 ## 1. 标准的目的
 
 本标准解决当前课程中五类不一致：
@@ -87,7 +89,7 @@
 
 ## 4. 单章中文 Markdown 模板
 
-下列模板是正文骨架。章节可以增加必要小节，但不能删除问题建模、失败实验、练习、验收和项目增量。
+下列模板记录第一轮课程改造时的章节要素，不再规定它们的先后顺序。新版章节必须先按双层案例契约完成“真实失败 → 设计问题 → 最小概念 → 从零修复 → 工程迁移”；不能继续照抄本节中“工程实现 → 失败实验”的历史顺序。
 
 ````markdown
 # 第 NN 章：中文标题（Official Term）
@@ -362,24 +364,21 @@ uv run pytest ...
 ### 7.1 单一事实源
 
 - 可复用业务逻辑、schema、tool、middleware、graph 和 adapter 以 Python 包为事实源。
-- Markdown 引用关键片段并解释架构。
-- Notebook import 真实模块，负责交互观察、失败注入和练习。
+- 概念实验的透明短代码以 Markdown lesson lab 为事实源，并按原顺序生成到 Notebook；它不承担生产复用。
+- Markdown 引用工程关键片段并解释架构。
+- Notebook 在概念层执行透明实验，在迁移层 import 真实模块，负责交互观察、失败注入和练习。
 - 不在 Markdown 和 Notebook 分别复制一份不同的 Lead Agent 或 StateGraph。
 
 ### 7.2 Notebook 单元顺序
 
-每个 Notebook 使用固定结构：
+每个 Notebook 保持 Markdown lesson lab 的因果顺序，不再按 sync id 把所有成功实验、事件实验和失败实验重新分组。
 
-1. 标题、目标、环境与预计用时；
-2. offline profile 初始化；
-3. 前置能力探针；
-4. 最小成功实验；
-5. state/event 可视化；
-6. 失败实验；
-7. Mini DeerFlow 工程调用；
-8. 分层练习；
-9. 自动验收摘要；
-10. 清理临时资源。
+1. 标题、上一刻系统能力、环境与预计用时；
+2. 前置能力探针；
+3. 按正文顺序生成预测、代码、输出、解释和修改提示；
+4. 同一问题的 failure 与 repair 相邻；
+5. 概念实验全部完成后再进入 Mini DeerFlow 工程迁移；
+6. 分层练习、自动验收摘要和清理。
 
 核心单元必须从空 kernel 顺序执行。integration 单元使用统一 tag，缺 key 时明确跳过。
 
@@ -422,14 +421,14 @@ class RuntimeContext(...):
 #### 1. 错误版本
 给出能稳定触发问题的最小代码。
 
-#### 2. 可观察现象
+#### 2. 先做预测
+在运行前要求学习者写下：会在哪一层失败？为什么？
+
+#### 3. 可观察现象
 - 异常类型：
 - 错误 state/event：
 - 是否存在静默错误：
 - 是否产生外部副作用：
-
-#### 3. 先做预测
-在运行前要求学习者写下：会在哪一层失败？为什么？
 
 #### 4. 根因路径
 输入 → schema/context/state → control flow → side effect → output
@@ -867,6 +866,9 @@ flowchart LR
 
 ### 代码与实验
 
+- [ ] 核心概念先有可观察失败，再出现术语和最小修复；
+- [ ] 概念实验不导入 Mini DeerFlow，工程迁移位于概念实验之后；
+- [ ] failure 与 repair 相邻，Web 与 Notebook 都保留预测和可读输出；
 - [ ] 最小实验离线运行；
 - [ ] 工程实验落到 Mini DeerFlow；
 - [ ] 至少一个可重复失败实验；
@@ -903,5 +905,6 @@ flowchart LR
 6. 章节内容可以很长，但必须用六层深度、总览/局部图和最小/工程实验控制认知负荷；
 7. 不以删除 RAG 索引、Graph reducer、durable execution、middleware ordering、sandbox boundary、SSE replay 等工程细节换取篇幅；
 8. 课程完成度由测试、Notebook 执行和评审量规决定，不由 README 手工打勾。
+9. Notebook 保持 Markdown lesson lab 原始顺序；assert 负责回归，可观察输出负责教学。
 
 本标准与课程信息架构共同构成后续内容任务的验收基线：信息架构决定“教什么、何时教、交付什么”，本标准决定“如何解释、如何练习、如何画图、如何证明学会”。

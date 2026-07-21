@@ -19,16 +19,16 @@
 ## Decisions so far
 
 - [审计全书概念实验与工程迁移的倒置点](./issues/01-audit-concept-migration-inversions.md) — 课程是“叙述 problem-first、执行 solution-first”；已按 P0/P1/P2 标出全书改造强度，并确认 Notebook 因果与可观察输出需要独立契约。
+- [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 固定“真实失败先于概念答案”的章节依赖，并定义 lesson-lab、稳定输出、Notebook 原序生成和概念/迁移自动边界。
 
 ## Frontier
 
-- [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 下一前沿；把审计结果转为 Markdown、Notebook、Web 和测试都能执行的章节契约。
+- [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 下一前沿；先让同步器支持新契约，再完成 StateGraph 样章的失败、修复、观察和工程迁移。
 
 ## Not yet specified
 
 - 第 01–04、08–11 章各自需要多少个概念实验，要等样章确认有效教学粒度后再拆分，但这些章节全部在改造范围内。
-- Notebook 是否需要生成更丰富的逐步 trace 组件，要等第 07 章样章验证纯文本观察记录是否足够。
-- 现有同步脚本能否同时承载“错误版本 → 修复版本”的相邻实验，要在章节契约任务中判断。
+- 纯文本 transcript 是否足以表达复杂并发与恢复，要在第 07 章样章和后续初学者盲读中验证；当前不提前建设交互式 trace 组件。
 
 ## Out of scope
 
