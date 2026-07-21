@@ -1,6 +1,6 @@
 # 把双层案例扩展到其余章节
 
-Status: open
+Status: claimed
 Triage: ready-for-agent
 Type: task
 Blocked by: 05, 06
@@ -23,3 +23,10 @@ Blocked by: 05, 06
 - Mini DeerFlow 不再遮挡概念的第一次实现。
 - Web、Notebook 和测试三端保留一致事实源与可读输出。
 - 全书概念依赖、章节过渡和工程迁移保持连续。
+
+## Progress
+
+- 第 01 章已完成 7 个 lesson lab：单次模型、Runnable、tool intent 失败/修复、v2 envelope 失败/修复和 Mini DeerFlow 模型/事件入口。
+- 完整 `create_agent` 工具循环的解释代码保留在正文，首次可执行工具循环后移第 04 章，避免提前解决后章核心问题。
+- 第 01 章 Web、已执行 Notebook、稳定 stdout、站点发布副本与全量质量门禁均已验证。
+- 下一步处理第 02 章结构化输出；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。

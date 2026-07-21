@@ -1,506 +1,485 @@
-# 第 01 章：先看见一次 Agent 运行
+# 第 01 章：模型、消息与第一次可观察调用
 
-> - 验证环境：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
-> - 校准日期：2026-07-13
-> - API 状态：`invoke`、Runnable、`create_agent`、v2 streaming 均为 current
-> - 本章工件：`mini_deerflow.models`、`mini_deerflow.streaming`
+<!-- lesson-contract:v2 -->
 
-## 1. 系统快照：一个能回答，却无法接入产品的模型
+> **课程位置**：增强模型层第 1 章
+> **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
+> **本章工件**：可替换模型入口、Messages、Runnable 与 v2 stream envelope
 
-序章留下了一项研究任务：调研 LangGraph 如何恢复长任务，并交付带引用、经过审批的中文报告。
+## 1. 从一个真实限制开始：字符串回答无法支撑 Agent 工程
 
-我们先从最小系统开始。它把用户问题交给聊天模型，再打印一段回答。只要网络和模型都正常，这个程序看起来已经“能工作”。
+我们的长期任务是交付一份带引用、可恢复、可审批的研究报告。第一步还没有工具、Graph 和 Subagent，只有一次模型调用。
 
-问题出在下一步。界面想逐字显示结果，日志想知道当前事件来自模型还是工具，业务代码又想区分一次模型调用、固定管道和会自主调用工具的 Agent。此时“调用模型”这个说法已经不够精确。
+即使模型回答正确，程序仍要知道输入是什么消息、返回什么对象、谁决定下一步，以及长任务运行过程如何被观察。若这些边界不清楚，后续所有封装都会像魔法。
 
-本章先建立两个边界：调用入口决定谁拥有控制权；流式协议决定运行过程如何被程序观察。完成后，Mini DeerFlow 仍不会研究资料，但已经有稳定的模型入口和事件入口。
+本章只建立四块地基：一次模型调用、固定 Runnable、工具调用意图和基础 stream envelope。完整工具循环留到第 04 章。
 
-<!-- diagram:id=01-entry-boundaries -->
 ```mermaid
-flowchart TD
+flowchart LR
     U["研究请求"] --> M["Messages"]
-    M --> C{"谁决定下一步？"}
-    C -->|"只调用一次"| I["model.invoke"]
-    C -->|"顺序由代码固定"| R["prompt | model | parser"]
-    C -->|"模型可选择工具"| A["create_agent"]
-    I --> O["AIMessage"]
-    R --> O2["解析后的结果"]
-    A --> E["Agent state + stream events"]
+    M --> I["model.invoke"]
+    M --> R["prompt | model | parser"]
+    M --> T["model.bind_tools"]
+    I --> A["AIMessage"]
+    R --> S["固定管道输出"]
+    T --> C["AIMessage.tool_calls"]
+    C --> N["工具尚未执行"]
 ```
 
-**图的文本替代**：研究请求先成为 Messages。单次模型调用、固定 Runnable 管道和 Agent 工具循环拥有不同的控制权，并返回不同层级的结果。
+**图的文本替代**：同一请求可以进入单次模型调用、固定 Runnable 或绑定工具的模型。前两者由应用决定顺序；`bind_tools` 只允许模型表达工具意图，不执行函数。
 
-## 2. 先分清四个调用入口
+## 2. 第一次调用：字符串进去，Message 对象出来
 
-### 2.1 `invoke`：只完成一次模型调用
+在线模型会受网络、凭证和随机输出影响。概念实验先使用 LangChain 公共 fake model，把注意力放在调用协议，而不是供应商质量。
 
-`model.invoke(messages)` 的责任很窄：把当前输入交给模型并等待一个结果。分类、改写、摘要和抽取等单步任务通常从这里开始。
+<!-- lesson-lab:id=ch01-message-invoke layer=concept kind=baseline concept=model-message -->
+### 调用一次模型并检查返回消息类型
 
-它不会执行工具，也不会替你保存任务进度。即使模型返回了 tool call，后续动作仍由调用方负责。
+**运行前先预测**：传入 HumanMessage 后，`invoke` 返回普通字符串、字典，还是 AIMessage？
 
-### 2.2 Runnable：顺序由程序确定
+```python sync=ch01-message-invoke
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-Runnable 的 `|` 运算符把 Prompt、模型和解析器组合成固定数据流：
 
-```python
+single_model = GenericFakeChatModel(
+    messages=iter([AIMessage(content="checkpoint 保存图运行中的状态快照。")])
+)
+single_input = [
+    SystemMessage(content="你是研究助手，只回答当前问题。"),
+    HumanMessage(content="一句话解释 checkpoint。"),
+]
+single_reply = single_model.invoke(single_input)
+
+print("input_types =", [type(message).__name__ for message in single_input])
+print("output_type =", type(single_reply).__name__)
+print("output_content =", single_reply.content)
+```
+
+**观察结果**：
+
+```text output=ch01-message-invoke
+input_types = ['SystemMessage', 'HumanMessage']
+output_type = AIMessage
+output_content = checkpoint 保存图运行中的状态快照。
+```
+
+**发生了什么**：Message 不只是文本。类型区分系统规则、用户输入、模型回答和后续工具结果；`content` 才是当前消息的正文。
+
+这次 `invoke` 只调用一次模型。它不会自动执行工具、保存 Thread 或决定下一阶段。
+
+**动手修改**：增加一条历史 AIMessage 和新的 HumanMessage。预测 fake model 是否会推理历史，再说明确定性 fixture 与真实模型能力的区别。
+<!-- /lesson-lab -->
+
+## 3. Runnable：当步骤必须由程序固定
+
+有些任务不需要 Agent 决策，例如“套用 Prompt → 调用模型 → 取出字符串”。Runnable 的 `|` 把这些步骤组成固定数据流。
+
+<!-- lesson-lab:id=ch01-runnable-pipeline layer=concept kind=contrast concept=runnable-pipeline -->
+### 运行一个顺序完全固定的 Prompt 管道
+
+**运行前先预测**：最终结果还会是 AIMessage，还是解析后的字符串？模型能否跳过 Prompt 或 parser？
+
+```python sync=ch01-runnable-pipeline
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "你是一个严谨的研究助手。"),
-    ("user", "{question}"),
-])
 
-chain = prompt | llm | StrOutputParser()
-answer = chain.invoke({"question": "什么是 durable execution？"})
+fixed_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "把概念解释压缩成一句话。"),
+        ("user", "{question}"),
+    ]
+)
+fixed_model = GenericFakeChatModel(
+    messages=iter([AIMessage(content="Runnable 是由程序固定顺序的数据流。")])
+)
+fixed_chain = fixed_prompt | fixed_model | StrOutputParser()
+fixed_result = fixed_chain.invoke({"question": "什么是 Runnable？"})
+fixed_text = str(fixed_result)
+
+print("pipeline = prompt -> model -> parser")
+print("result_type =", type(fixed_text).__name__)
+print("result =", fixed_text)
 ```
 
-这里没有“自主规划”。输入必定先经过 Prompt，再经过模型和解析器。可预测的顺序正是 Runnable 的价值。
+**观察结果**：
 
-### 2.3 `bind_tools`：模型可以表达工具意图
-
-`bind_tools` 把工具名称、参数 Schema 和说明交给模型。模型因此可以返回 tool call，但它不会自动执行函数。
-
-```python
-from langchain.tools import tool
-
-@tool
-def search_knowledge(query: str) -> str:
-    """在课程知识库中查找与研究问题有关的资料。"""
-    return f"待检索：{query}"
-
-model_with_tools = llm.bind_tools([search_knowledge])
-message = model_with_tools.invoke("查找 LangGraph 持久化资料")
-print(message.tool_calls)
+```text output=ch01-runnable-pipeline
+pipeline = prompt -> model -> parser
+result_type = str
+result = Runnable 是由程序固定顺序的数据流。
 ```
 
-工具 docstring 会进入模型看到的工具说明。含糊的说明会让模型误选工具，过宽的参数又会扩大能力边界。第 04 章会专门处理工具契约和执行责任。
+**发生了什么**：输入必定经过 Prompt、模型和 parser。模型只负责其中一步，不能改变管道顺序。这种确定性正是 Runnable 的价值。
 
-### 2.4 `create_agent`：运行标准工具循环
+**动手修改**：去掉 `StrOutputParser()`。预测返回类型后运行，说明下游什么时候更适合保留完整 AIMessage。
+<!-- /lesson-lab -->
 
-当模型需要选择工具、读取结果并继续判断时，可以使用 `create_agent`：
+## 4. 第一个容易误解的信号：模型“没有回答”
 
-```python
-from langchain.agents import create_agent
+当模型绑定工具后，AIMessage 的有效输出可能不在 `content`，而在 `tool_calls`。只打印正文，会把一个正确工具意图误判成空回答。
 
-agent = create_agent(model=llm, tools=[search_knowledge])
-result = agent.invoke({
-    "messages": [("user", "查找 LangGraph 持久化资料并概括要点")]
-})
-print(result["messages"][-1].content)
-```
+<!-- lesson-lab:id=ch01-tool-intent-failure layer=concept kind=failure concept=tool-intent pair=tool-intent -->
+### 只读取 content 并误判工具意图
 
-`create_agent` 来自 LangChain，返回的却是由 LangGraph runtime 支撑的 compiled graph。它负责标准的模型—工具—模型循环，但不负责替你定义审批、并行研究等外层业务拓扑。
+**运行前先预测**：模型选择天气工具时，AIMessage 的 `content` 一定包含自然语言吗？工具函数会不会已经执行？
 
-| 入口 | 增加的能力 | 仍由应用负责 | 适合场景 |
-| --- | --- | --- | --- |
-| `model.invoke` | 一次模型调用 | 工具执行、流程、持久化 | 分类、改写、抽取 |
-| `prompt \| model \| parser` | 固定数据流组合 | 自主决策与循环 | 可预测的 Chain |
-| `model.bind_tools` | 生成 tool call | 参数授权与工具执行 | 观察或定制路由 |
-| `create_agent` | 标准工具循环 | 业务拓扑与产品运行时 | 工具型 Agent |
+```python sync=ch01-tool-intent-failure
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.tools import tool
 
-下图要回答的问题是：`create_agent` 如何在模型和工具之间维护一次完整的消息循环？
 
-<!-- diagram:id=01-agent-tool-loop -->
-```mermaid
-sequenceDiagram
-    participant U as "User"
-    participant A as "create_agent graph"
-    participant M as "Chat model"
-    participant T as "Tool executor"
-    U->>A: messages=[HumanMessage]
-    A->>M: messages + tool schemas
-    M-->>A: AIMessage(tool_calls)
-    A->>T: validate and execute args
-    T-->>A: ToolMessage
-    A->>M: updated messages
-    M-->>A: final AIMessage
-    A-->>U: AgentState messages
-```
+class IntentFakeModel(GenericFakeChatModel):
+    def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+        del tools, tool_choice, kwargs
+        return self
 
-**图的文本替代**：用户消息进入 `create_agent` Graph；模型先返回包含工具请求的 `AIMessage`，工具执行节点写入匹配的 `ToolMessage`，模型读取更新后的消息历史，再生成最终 `AIMessage`。
 
-### 2.5 这张图描述的是哪一种 Agent
-
-它描述的是 `create_agent` 提供的标准工具循环，不代表所有 Agent 都必须采用同一套业务流程。它适合“模型决定是否调用工具，读取工具结果后继续回答”这类开放式任务。
-
-调用方只需要向 `agent.invoke()` 提交初始消息。`create_agent` 生成的 Graph 负责调用模型、判断是否存在 `tool_calls`、执行工具，并把结果重新交给模型。
-
-模型本身不会执行 Python 函数。它只返回“希望调用哪个工具、传入什么参数”；Graph 中的工具执行节点完成参数校验和函数调用，再把结果包装成 `ToolMessage`。
-
-一次工具循环会留下四条关键消息：
-
-1. `HumanMessage`：用户问题；
-2. `AIMessage(tool_calls=...)`：模型提出工具调用请求；
-3. `ToolMessage`：工具执行结果；
-4. `AIMessage`：模型读取结果后给出的最终回答。
-
-工具请求的 `id` 必须与结果的 `tool_call_id` 一致。这个关联让模型知道每条工具结果属于哪次调用，也是恢复执行、并行工具和 Subagent 协作能够正确拼接消息的基础。
-
-下面使用项目内的确定性离线模型，完整运行一次 `create_agent` 工具循环。离线模型固定返回两次决策，因此实验关注的是消息协议，而不是模型措辞是否稳定。
-
-```python sync=ch01-create-agent-tool-loop
-from langchain.agents import create_agent
-from langchain.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
-from mini_deerflow.models import create_offline_model
+weather_execution_count = 0
 
 
 @tool
-def get_weather(city: str) -> str:
+def lookup_weather(city: str) -> str:
     """查询指定城市的天气。"""
+    global weather_execution_count
+    weather_execution_count += 1
     return f"{city}：晴，25°C"
 
 
-scripted_model = create_offline_model(
-    [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "get_weather",
-                    "args": {"city": "成都"},
-                    "id": "call-weather-1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="成都今天晴，25°C，适合出行。"),
-    ]
-)
-
-weather_agent = create_agent(
-    model=scripted_model,
-    tools=[get_weather],
-)
-weather_result = weather_agent.invoke(
-    {"messages": [("user", "成都今天天气如何？")]}
-)
-
-weather_messages = weather_result["messages"]
-assert [type(message) for message in weather_messages] == [
-    HumanMessage,
-    AIMessage,
-    ToolMessage,
-    AIMessage,
-]
-assert weather_messages[1].tool_calls[0]["id"] == "call-weather-1"
-assert weather_messages[2].tool_call_id == "call-weather-1"
-
-for message in weather_messages:
-    print(type(message).__name__, message.content)
-```
-
-运行后可以看到 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage`。第二条 `AIMessage` 的正文可以为空，因为这一轮的有效输出是工具调用请求；第四条消息才是交给用户的最终回答。
-
-`bind_tools` 只完成“让模型表达工具意图”这一步，工具执行仍由应用负责。`create_agent` 则把整个标准循环封装成 compiled graph。如果流程还包含固定审批、动态并行或跨进程恢复，应在外层继续设计显式 `StateGraph`。
-
-## 3. 建立可替换的模型与消息入口
-
-### 3.1 用统一工厂初始化真实模型
-
-`init_chat_model` 把供应商差异收敛到配置层。下面的 DeepSeek profile 用于真实集成实验：
-
-```python
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
-
-load_dotenv()
-
-llm = init_chat_model(
-    model="deepseek-chat",
-    model_provider="deepseek",
-    base_url="https://api.deepseek.com",
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    streaming=True,
-)
-```
-
-供应商 profile 证明网络、凭证和模型能力可用。它不适合作为基础测试，因为响应措辞、延迟和可用性都不由项目控制。
-
-### 3.2 Messages 是后续状态的共同语言
-
-字符串适合最小调用，研究 Agent 则需要区分系统规则、历史对话和当前请求：
-
-```python
-def prepare_inputs(user_query: str, chat_history: list | None = None):
-    return {
-        "messages": [
-            ("system", "你负责交付可核验的研究报告。"),
-            *(chat_history or []),
-            ("user", user_query),
+intent_model = IntentFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "lookup_weather",
+                        "args": {"city": "成都"},
+                        "id": "weather-intent-1",
+                        "type": "tool_call",
+                    }
+                ],
+            )
         ]
-    }
-```
-
-工具结果、摘要和恢复后的对话最终都会回到消息协议。消息又只是 Graph State 的一部分；身份、数据库连接和跨线程偏好将在第 05 章拆到各自边界。
-
-### 3.3 离线模型验证应用契约
-
-Mini DeerFlow 通过模型工厂选择真实 profile 或确定性离线 profile。下面的实验不测试自然语言质量，只证明业务代码依赖的调用协议稳定。
-
-```python sync=ch01-offline-model
-from mini_deerflow.config import ModelProfile, ModelSettings
-from mini_deerflow.models import create_model
-
-model = create_model(ModelSettings(profile=ModelProfile.OFFLINE))
-reply = model.invoke("请用一句话说明离线模型的用途。")
-assert reply.content == "这是离线模型的确定性回答。"
-reply.content
-```
-
-真实模型进入 integration test；离线模型进入基础 CI。把两者分开后，供应商故障不会伪装成应用逻辑故障，应用回归也不会被随机措辞掩盖。
-
-## 4. 让运行过程可以被观察
-
-一次 `invoke` 只能在结束后返回结果。研究任务持续数分钟时，界面还需要看到模型 token、工具结果、节点更新和子图事件。
-
-LangGraph v2 streaming 使用统一 envelope：
-
-```text
-{
-  "type": "updates | messages | custom | ...",
-  "ns": ["subgraph", ...],
-  "data": "由 type 决定的 payload"
-}
-```
-
-`type` 说明事件种类，`ns` 标识子图命名空间，`data` 才是真正 payload。只有 `type == "messages"` 时，`data` 才通常是 `(message_chunk, metadata)`。
-
-真实 Agent 可以这样消费消息流：
-
-```python
-async for event in agent.astream(
-    input_dict,
-    stream_mode="messages",
-    version="v2",
-):
-    if event["type"] != "messages":
-        continue
-    chunk, metadata = event["data"]
-    if metadata.get("langgraph_node") == "model" and chunk.content:
-        print(chunk.content, end="", flush=True)
-```
-
-Mini DeerFlow 不让 UI、Notebook 和 Gateway 各自解析上游字典，而是在 `mini_deerflow.streaming` 设置 adapter：
-
-```python sync=ch01-stream-envelope
-from mini_deerflow.streaming import normalize_stream_part
-
-raw_part = {
-    "type": "updates",
-    "ns": ("lead_agent",),
-    "data": {"model": {"messages": []}},
-}
-event = normalize_stream_part(raw_part)
-assert event.type == "updates"
-assert event.namespace == ("lead_agent",)
-assert event.data == {"model": {"messages": []}}
-event
-```
-
-这个 adapter 会成为内部 Graph 事件与后续 SSE 产品事件之间的接缝。上游协议变化集中在这里，业务状态不直接依赖供应商或框架的原始响应字典。
-
-## 5. 故障实验：把 v2 事件当成二元组
-
-旧示例常直接解包 stream item：
-
-```text
-async for chunk, metadata in graph.astream(..., version="v2"):
-    print(chunk.content)
-```
-
-在 v2 中，循环拿到的是包含 `type`、`ns`、`data` 的字典。Python 会迭代字典的 key，常见结果是 `ValueError: too many values to unpack`。
-
-更隐蔽的风险是字典恰好只有两个 key，代码没有报错，却把两个字符串当成 chunk 和 metadata。边界 adapter 应主动拒绝旧形状：
-
-```python sync=ch01-stream-failure
-from mini_deerflow.streaming import normalize_stream_part
-
-try:
-    normalize_stream_part(("chunk", {"langgraph_node": "model"}))
-except ValueError as error:
-    stream_shape_error = error
-else:
-    raise AssertionError("旧 tuple 流式形状必须被拒绝")
-
-assert "v2" in str(stream_shape_error)
-```
-
-根因不是异步语法，而是消费者依赖了旧版或特定 stream mode 的形状。修复时先解析 envelope，再按 `event.type` 缩小 payload 类型。
-
-### 5.1 综合观测实验：给天气 Tool 增加 custom 事件
-
-`stream_mode` 只决定调用者观察哪些事件，不改变 Agent 的 `model → tool → model` 决策。`messages` 和 `updates` 由运行时自动产生；工具需要报告稳定的业务进度时，可以通过注入的 `ToolRuntime.stream_writer()` 主动发送 `custom` 事件。
-
-下面仍然使用第 02 节的离线天气 Agent，但把工具执行开始和完成显式写入 custom 通道。当前锁定版本的 `GenericFakeChatModel` 在逐 Token streaming 时不会保留只有 tool call、没有正文的 `AIMessage` 调用意图；如果离线工具循环同时订阅 `messages`，模型节点将失去这次 tool call。为了不把 Fake Model 限制伪装成 Agent 协议，实验明确拆成两个调用：天气工具循环观察 `updates + custom`，另一个纯文本 Agent 观察 `messages`。真实供应商模型可以在同一次工具循环中订阅三种模式：
-
-```python
-real_agent.stream(
-    input_data,
-    stream_mode=["messages", "updates", "custom"],
-    version="v2",
+    )
 )
+intent_message = intent_model.bind_tools([lookup_weather]).invoke(
+    "成都今天天气如何？"
+)
+
+print("content =", repr(intent_message.content))
+print("naive_has_answer =", bool(intent_message.content))
+print("tool_execution_count =", weather_execution_count)
 ```
 
-```python sync=ch01-custom-stream-boundary
-from langchain.agents import create_agent
-from langchain.tools import ToolRuntime, tool
-from langchain_core.messages import AIMessage
+**观察结果**：
 
-from mini_deerflow.models import create_offline_model
+```text output=ch01-tool-intent-failure
+content = ''
+naive_has_answer = False
+tool_execution_count = 0
+```
+
+**发生了什么**：正文为空不等于模型没有输出。当前 AIMessage 表达的是“希望调用工具”，而 Python 函数仍未执行。
+
+`bind_tools` 只把工具名称、说明和参数 Schema 提供给模型。执行权限、参数校验、真正调用和结果配对仍由应用负责。
+
+**动手修改**：把 docstring 改得含糊，再思考真实模型会怎样误选工具。不要手动调用函数，先修正消息读取方式。
+<!-- /lesson-lab -->
+
+<!-- lesson-lab:id=ch01-tool-intent-repair layer=concept kind=repair concept=tool-intent pair=tool-intent -->
+### 正确读取 tool_calls 并确认工具尚未执行
+
+**运行前先预测**：tool call 中哪一个字段把未来 ToolMessage 与这次请求关联起来？
+
+```python sync=ch01-tool-intent-repair
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.tools import tool
+
+
+class InspectableIntentModel(GenericFakeChatModel):
+    def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+        del tools, tool_choice, kwargs
+        return self
+
+
+inspected_execution_count = 0
 
 
 @tool
-def get_weather_with_progress(city: str, runtime: ToolRuntime) -> str:
-    """查询指定城市的天气，并报告工具执行进度。"""
-    runtime.stream_writer(
-        {"event": "weather_lookup_started", "city": city}
-    )
-    result = f"{city}：晴，25°C"
-    runtime.stream_writer(
-        {"event": "weather_lookup_completed", "city": city}
-    )
-    return result
+def inspectable_weather(city: str) -> str:
+    """查询指定城市的天气。"""
+    global inspected_execution_count
+    inspected_execution_count += 1
+    return f"{city}：晴，25°C"
 
 
-progress_model = create_offline_model(
-    [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "get_weather_with_progress",
-                    "args": {"city": "成都"},
-                    "id": "call-weather-progress-1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="成都今天晴，25°C，适合出行。"),
-    ]
-)
-progress_agent = create_agent(
-    model=progress_model,
-    tools=[get_weather_with_progress],
-)
-
-tool_parts = list(
-    progress_agent.stream(
-        {"messages": [("user", "成都今天天气如何？")]},
-        stream_mode=["updates", "custom"],
-        version="v2",
+inspectable_model = InspectableIntentModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "inspectable_weather",
+                        "args": {"city": "成都"},
+                        "id": "weather-intent-2",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        ]
     )
 )
-
-message_agent = create_agent(
-    model=create_offline_model(["天气查询已完成。"]),
-    tools=[],
+inspected_message = inspectable_model.bind_tools([inspectable_weather]).invoke(
+    "成都今天天气如何？"
 )
-message_parts = list(
-    message_agent.stream(
-        {"messages": [("user", "天气工具执行完了吗？")]},
-        stream_mode=["messages"],
-        version="v2",
-    )
-)
+tool_intent = inspected_message.tool_calls[0]
 
-observed_parts = [*tool_parts, *message_parts]
-observed_types = {part["type"] for part in observed_parts}
-assert {"messages", "updates", "custom"} <= observed_types
-
-custom_events = [
-    part["data"]
-    for part in observed_parts
-    if part["type"] == "custom"
-]
-assert custom_events == [
-    {"event": "weather_lookup_started", "city": "成都"},
-    {"event": "weather_lookup_completed", "city": "成都"},
-]
-
-message_text = "".join(
-    chunk.content
-    for part in message_parts
-    if part["type"] == "messages"
-    for chunk, _metadata in [part["data"]]
-)
-assert message_text == "天气查询已完成。"
-
-for part in observed_parts:
-    if part["type"] == "messages":
-        chunk, metadata = part["data"]
-        if chunk.content:
-            print("message:", metadata.get("langgraph_node"), chunk.content)
-    elif part["type"] == "updates":
-        print("update:", list(part["data"]))
-    elif part["type"] == "custom":
-        print("custom:", part["data"])
+print("tool_name =", tool_intent["name"])
+print("tool_args =", tool_intent["args"])
+print("tool_call_id =", tool_intent["id"])
+print("tool_execution_count =", inspected_execution_count)
 ```
 
-运行时重点观察：`custom` 事件发生在工具函数内部，而 `updates` 要等相应 Graph 节点产生状态更新；`messages` 来自模型输出。它们都只是在描述执行，没有改变模型是否调用工具。这个单元是第一章 Notebook 的最后一个可执行实验，后面只保留工程调用、练习、验收与清理说明。
+**观察结果**：
 
-## 6. 调试顺序与工程边界
+```text output=ch01-tool-intent-repair
+tool_name = inspectable_weather
+tool_args = {'city': '成都'}
+tool_call_id = weather-intent-2
+tool_execution_count = 0
+```
 
-### 6.1 模型连不上时先分层定位
+**发生了什么**：`name` 和 `args` 描述意图，`id` 用于和未来的 `ToolMessage.tool_call_id` 配对。读取正确后，执行计数仍为零。
 
-出现 `SSL_ERROR_SYSCALL`、`Connection error` 或超时时，先检查 `.env`、API Key、base URL 和代理，再运行最小连通性探针：
+**动手修改**：手动执行工具并构造 ToolMessage 前，先列出应用必须完成的权限、参数、错误和配对职责。第 04 章会逐项实现。
+<!-- /lesson-lab -->
+
+## 5. `create_agent` 在哪里出现
+
+标准工具循环需要反复完成：模型产生 tool call、应用执行工具、写入 ToolMessage、模型读取结果并继续回答。LangChain 的 `create_agent` 会建立这条循环。
 
 ```python
-import requests
+from langchain.agents import create_agent
 
-try:
-    response = requests.get("https://api.deepseek.com", timeout=5)
-    print(response.status_code)
-except Exception as error:
-    print(f"连接失败：{error}")
+agent = create_agent(model=model, tools=[lookup_weather])
+result = agent.invoke({"messages": [("user", "查询成都天气并解释结果")]})
 ```
 
-连通性探针只能证明网络路径，不证明模型凭证和请求参数正确。下一步应运行最小 `model.invoke`，最后才接入 Agent 和 streaming。
+这段代码回答了“最终如何使用”，但本章不把它当成已掌握能力。第 04 章会先手动执行一次 tool call，再运行完整 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage` 循环。
 
-### 6.2 本章边界
+当前只借用一个没有工具的 `create_agent` 来产生 LangGraph v2 stream envelope。它不会发生工具执行，也不会抢先解决第 04 章的问题。
 
-- 不把 provider-specific `response_metadata` 当成稳定业务字段。
-- 需要一次性结果时使用 `invoke`；需要长任务反馈时使用 streaming。
-- adapter 保留未知事件，业务层再决定如何展示或忽略。
-- 离线模型不证明 Prompt 质量、模型能力和线上延迟。
-- `create_agent` 提供标准工具循环，不替代显式业务 Graph。
+## 6. 第二个容易误解的信号：把 v2 event 当成旧二元组
 
-消息、v1/v2 和各类 stream mode 的完整返回矩阵见[附录 A5](../APPENDIX.md#a5-stream-mode-与-v1v2-返回形状)。
+长任务不能只等最终结果。v2 streaming 把事件统一成包含 `type`、`ns` 和 `data` 的 envelope；只有 messages 事件的 `data` 通常才是 `(chunk, metadata)`。
 
-## 7. 本章交付：系统已经可观察，但结果仍不可消费
+<!-- lesson-lab:id=ch01-stream-shape-failure layer=concept kind=failure concept=stream-envelope pair=v2-envelope -->
+### 直接把整个 v2 event 解包成 chunk 和 metadata
 
-### 动手练习
+**运行前先预测**：迭代一个包含三个 key 的 event 字典时，`chunk, metadata = event` 会得到什么？
 
-1. 把 `raw_part["type"]` 改成 `custom`，确认 normalizer 保留未知类型。
-2. 判断固定翻译管道、可选计算器和强制审批分别适合 model、Runnable、Agent 还是显式 Graph。
-3. 为 `StreamEvent` 编写终端 renderer，确保 ANSI 样式没有进入 normalizer。
+```python sync=ch01-stream-shape-failure
+from langchain.agents import create_agent
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
 
-打开 [01_Getting_Started.ipynb](./01_Getting_Started.ipynb)，依次运行真实模型最小调用、离线模型契约、Agent 工具循环和 v2 事件实验。
 
-### 自动验收
+wrong_stream_agent = create_agent(
+    GenericFakeChatModel(messages=iter([AIMessage(content="流式回答")])),
+    tools=[],
+)
+wrong_events = list(
+    wrong_stream_agent.stream(
+        {"messages": [("user", "开始流式回答")]},
+        stream_mode=["messages", "updates"],
+        version="v2",
+    )
+)
+first_event = wrong_events[0]
+print("event_keys =", list(first_event))
+try:
+    chunk, metadata = first_event
+except ValueError as error:
+    assert "too many values" in str(error)
+    print("ValueError: v2 event has three envelope fields")
+else:
+    raise AssertionError((chunk, metadata))
+```
+
+**观察结果**：
+
+```text output=ch01-stream-shape-failure
+event_keys = ['type', 'ns', 'data']
+ValueError: v2 event has three envelope fields
+```
+
+**发生了什么**：Python 解包字典时迭代的是 key，而不是 event payload。旧式二元组假设在 v2 envelope 外层已经失效。
+
+更隐蔽的错误是字典恰好只有两个 key，代码不报错，却得到两个字符串。消费者应先解析 envelope，再根据 `type` 缩小 `data` 的形状。
+
+**动手修改**：只打印 `event["data"]`，比较 messages 与 updates 两类 payload。不要假设它们拥有相同结构。
+<!-- /lesson-lab -->
+
+<!-- lesson-lab:id=ch01-stream-envelope layer=concept kind=repair concept=stream-envelope pair=v2-envelope -->
+### 先读取 type 和 ns，再解析对应 data
+
+**运行前先预测**：没有子图时 `ns` 是什么？messages 与 updates 分别暴露模型文本还是节点 patch？
+
+```python sync=ch01-stream-envelope
+from langchain.agents import create_agent
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+
+
+correct_stream_agent = create_agent(
+    GenericFakeChatModel(messages=iter([AIMessage(content="流式回答")])),
+    tools=[],
+)
+correct_events = list(
+    correct_stream_agent.stream(
+        {"messages": [("user", "开始流式回答")]},
+        stream_mode=["messages", "updates"],
+        version="v2",
+    )
+)
+
+for event in correct_events:
+    if event["type"] == "messages":
+        chunk, metadata = event["data"]
+        print(
+            "messages",
+            {"ns": event["ns"], "node": metadata.get("langgraph_node"), "text": chunk.content},
+        )
+    elif event["type"] == "updates":
+        print("updates", {"ns": event["ns"], "nodes": list(event["data"])})
+```
+
+**观察结果**：
+
+```text output=ch01-stream-envelope
+messages {'ns': (), 'node': 'model', 'text': '流式回答'}
+updates {'ns': (), 'nodes': ['model']}
+```
+
+**发生了什么**：`type` 决定 data 的解释方式，`ns` 标识事件来自哪一层图。根图 namespace 为空；未来 Subagent 和子图会产生非空路径。
+
+**动手修改**：只订阅 `messages`，再只订阅 `updates`。说明终端逐字输出和 UI 状态重建分别更依赖哪一种事件。
+<!-- /lesson-lab -->
+
+## 7. 现在再比较调用入口
+
+| 入口 | 谁控制下一步 | 返回或观察对象 | 本章边界 |
+|---|---|---|---|
+| `model.invoke` | 调用方只发起一次 | AIMessage | 不执行工具、不持久化 |
+| `prompt \| model \| parser` | 程序固定顺序 | parser 输出 | 不自主规划 |
+| `model.bind_tools` | 模型可表达工具意图 | AIMessage.tool_calls | 函数仍未执行 |
+| `create_agent` | 标准模型—工具循环 | Agent State / events | 第 04 章完整实践 |
+| 显式 StateGraph | 应用声明业务拓扑 | State / updates / values | 第 07 章开始实践 |
+
+选择入口时不要问“哪个更高级”，而要问谁应该拥有控制权。固定翻译管道不需要 Agent；开放式工具选择适合 `create_agent`；审批、并行和恢复等业务规则需要显式 Graph。
+
+## 8. 工程迁移：Mini DeerFlow 只统一模型与事件入口
+
+概念实验已经解释 Message 与 envelope。现在再导入 Mini DeerFlow，观察工程层如何锁定离线/真实模型 profile，并把上游 event 适配成稳定内部类型。
+
+<!-- lesson-lab:id=ch01-mini-deerflow-entry layer=migration kind=contrast concept=model-message -->
+### 对照模型工厂与 stream adapter
+
+**运行前先预测**：离线 profile 是否仍返回 AIMessage？adapter 会不会丢掉 namespace 或未知 event type？
+
+```python sync=ch01-mini-deerflow-entry
+from mini_deerflow.config import ModelProfile, ModelSettings
+from mini_deerflow.models import create_model
+from mini_deerflow.streaming import normalize_stream_part
+
+
+project_model = create_model(ModelSettings(profile=ModelProfile.OFFLINE))
+project_reply = project_model.invoke("说明离线模型的用途")
+project_event = normalize_stream_part(
+    {
+        "type": "updates",
+        "ns": ("lead_agent",),
+        "data": {"model": {"messages": []}},
+    }
+)
+
+print("reply_type =", type(project_reply).__name__)
+print("reply_content =", project_reply.content)
+print("event_type =", project_event.type)
+print("event_namespace =", project_event.namespace)
+print("event_nodes =", list(project_event.data))
+```
+
+**观察结果**：
+
+```text output=ch01-mini-deerflow-entry
+reply_type = AIMessage
+reply_content = 这是离线模型的确定性回答。
+event_type = updates
+event_namespace = ('lead_agent',)
+event_nodes = ['model']
+```
+
+**发生了什么**：模型工厂把供应商选择收敛到配置层；stream adapter 保留 type、namespace 与 payload。业务代码不必各自解析框架原始字典。
+
+真实模型用于 integration test，离线模型用于基础 CI。adapter 是内部 Graph event 与未来 Gateway SSE 之间的接缝，但它还不是产品事件协议。
+<!-- /lesson-lab -->
+
+## 9. 真实模型、网络与调试边界
+
+真实 profile 可以通过 `init_chat_model` 接入 DeepSeek、OpenAI 或其他供应商。API Key、base URL 和代理属于运行配置，不应写进 Notebook、State 或提交记录。
+
+网络错误时按层定位：先检查配置与最小 HTTP 连通性，再运行单次 `model.invoke`，最后才接入 Agent 和 streaming。供应商响应随机性不能成为基础课程唯一证据。
+
+不要把 provider-specific `response_metadata` 当成稳定业务协议。业务需要的 model、usage、finish reason 应在应用边界显式归一化。
+
+## 10. 练习：先判断控制权，再选择 API
+
+### 练习 A：消息边界
+
+构造 SystemMessage、两轮历史消息和当前 HumanMessage。让 fake model 返回固定 AIMessage，打印每种消息的类型与正文。
+
+### 练习 B：入口选择
+
+判断固定翻译、可选计算器、并行研究和强制审批分别适合单次 model、Runnable、`create_agent` 还是 StateGraph。每项说明控制权属于谁。
+
+### 练习 C：事件 renderer
+
+为 messages 和 updates 分别编写终端 renderer。renderer 可以决定样式，但不能修改 adapter 中的事件事实。
+
+### 延迟回忆
+
+合上讲义回答：AIMessage.content 为空时还要检查什么？`bind_tools` 与工具执行的责任差在哪里？v2 的 `(chunk, metadata)` 位于哪一层？为什么 `ns` 对 Subagent 很重要？
+
+## 11. 下一刻系统：调用和观察已经稳定，结果仍只是自然语言
+
+本章结束后，学习者能区分单次模型、固定 Runnable、tool intent 和标准 Agent 循环，并能按 v2 envelope 观察基础事件。
+
+Mini DeerFlow 现在拥有可替换模型入口和稳定 stream adapter，但研究请求与任务计划仍是一段自然语言。下一章会先让脆弱字符串解析失败，再引入结构化输出业务契约。
+
+运行本章验收：
 
 ```bash
-uv run --locked pytest -q \
-  tests/test_mini_deerflow_models.py \
-  tests/test_mini_deerflow_streaming.py
-uv run --locked python scripts/validate_tutorials.py
+TMPDIR="$PWD/.tmp" uv run --locked --group dev python \
+  scripts/sync_lesson_notebooks.py tutorials/01_Getting_Started.md --execute
+TMPDIR="$PWD/.tmp" uv run --locked --group dev pytest -q \
+  tests/test_mini_deerflow_models.py tests/test_mini_deerflow_streaming.py \
+  tests/test_notebook_sync.py
+TMPDIR="$PWD/.tmp" uv run --locked --group dev python scripts/validate_tutorials.py
 ```
 
-### 系统快照
-
-Mini DeerFlow 现在拥有 `ModelSettings`、`create_model()`、消息入口、`StreamEvent` 和 `normalize_stream_part()`。它可以替换模型 profile，也能稳定观察运行事件。
-
-但模型返回的仍是一段自然语言。下一章会把研究请求和任务计划变成 Pydantic 对象，让 Graph、数据库和后续工具不再靠字符串猜测语义。
-
-延迟回忆：`bind_tools` 与 `create_agent` 的执行责任差在哪里？v2 的 `(message, metadata)` 位于哪一层？为什么 `ns` 对未来 Subagent 很重要？
-
-继续阅读：[第 02 章：把自然语言计划变成业务契约](./02_Structured_Output.md)。
-
-参考资料（访问日期：2026-07-13）：
+资料访问日期：2026-07-21。
 
 - [LangChain Models](https://docs.langchain.com/oss/python/langchain/models)
+- [LangChain Messages](https://docs.langchain.com/oss/python/langchain/messages)
 - [LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)
 - [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming)
+
+继续阅读：[第 02 章：把自然语言计划变成业务契约](./02_Structured_Output.md)。

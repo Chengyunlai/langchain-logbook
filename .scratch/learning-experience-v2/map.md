@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 下一前沿；改造第 01–04、08–11 章、工程专题、Capstone 与 DeerFlow 导读，并重生成所有 Notebook。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01 章已完成，下一步重写第 02 章结构化输出。
 
 ## Not yet specified
 
