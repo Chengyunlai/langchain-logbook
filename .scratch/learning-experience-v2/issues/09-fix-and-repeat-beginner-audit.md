@@ -24,7 +24,7 @@ Blocked by: 08
 - 每个核心概念都能被正确迁移到 Mini DeerFlow，而不是只会复述定义。
 - 剩余问题均有明确理由、影响等级和后续建议。
 
-## Answer
+## Progress
 
 同步器和第 06/11 章已支持 Jupyter 顶层 `await`，两本 Notebook 由真实内核原样通过；DeerFlow Guide 增加固定 commit、逐文件 blob 校验的源码切片。第二位全新初学者 Agent 未读取首轮报告和任务讨论，11 本 Notebook 全部通过，并以 `4af6178...` 固定源码完成四条证据表；逐章补验后，11 项“动手修改”也全部符合预测。完整报告见 [`beginner-audit-2.md`](../artifacts/beginner-audit-2.md)。
 
