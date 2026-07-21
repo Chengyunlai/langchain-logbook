@@ -10,6 +10,7 @@ import sqlite3
 from typing import Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
@@ -18,9 +19,23 @@ from langgraph.store.sqlite import SqliteStore
 _CHECKPOINT_TYPE_ALLOWLIST = [
     ("mini_deerflow.graph.approval", "ApprovalDecision"),
     ("mini_deerflow.graph.events", "WorkflowEvent"),
+    ("mini_deerflow.graph.migration", "DraftDocument"),
+    ("mini_deerflow.graph.research", "ResearchFinding"),
     ("mini_deerflow.schemas", "ArtifactRef"),
     ("mini_deerflow.state", "MiddlewareTraceEvent"),
 ]
+
+
+def _checkpoint_serializer() -> JsonPlusSerializer:
+    """只允许课程已审查的领域类型从 checkpoint 反序列化。"""
+
+    return JsonPlusSerializer(allowed_msgpack_modules=_CHECKPOINT_TYPE_ALLOWLIST)
+
+
+def create_memory_checkpointer() -> InMemorySaver:
+    """创建与 SQLite provider 使用相同类型 allowlist 的内存 Checkpointer。"""
+
+    return InMemorySaver(serde=_checkpoint_serializer())
 
 
 @contextmanager
@@ -33,9 +48,7 @@ def open_sqlite_checkpointer(path: str | Path) -> Iterator[SqliteSaver]:
     try:
         yield SqliteSaver(
             connection,
-            serde=JsonPlusSerializer(
-                allowed_msgpack_modules=_CHECKPOINT_TYPE_ALLOWLIST
-            ),
+            serde=_checkpoint_serializer(),
         )
     finally:
         connection.close()
@@ -163,6 +176,7 @@ __all__ = [
     "EffectReceipt",
     "IdempotencyConflictError",
     "SqliteEffectLedger",
+    "create_memory_checkpointer",
     "open_sqlite_checkpointer",
     "open_sqlite_store",
 ]

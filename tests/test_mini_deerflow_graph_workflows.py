@@ -10,6 +10,7 @@ from mini_deerflow.graph import (
     create_functional_research_flow,
     create_research_workflow,
 )
+from mini_deerflow.persistence import create_memory_checkpointer
 from mini_deerflow.models import create_offline_model
 from mini_deerflow.tools import calculator
 
@@ -98,6 +99,21 @@ class DeterministicResearchWorkflowTests(unittest.TestCase):
         snapshot = graph.get_state(config)
         self.assertEqual(snapshot.values["status"], "completed")
         self.assertEqual(snapshot.values["objective"], "解释 checkpoint")
+
+    def test_project_memory_checkpointer_deserializes_allowlisted_domain_types(self) -> None:
+        graph = create_research_workflow(checkpointer=create_memory_checkpointer())
+        config = {"configurable": {"thread_id": "allowlist-001"}}
+        graph.invoke(
+            {"objective": "验证类型 allowlist", "sections": ["checkpoint"]},
+            config=config,
+        )
+
+        history = list(graph.get_state_history(config))
+
+        self.assertTrue(history)
+        self.assertTrue(
+            any(snapshot.values.get("findings") for snapshot in history)
+        )
 
 
 class FunctionalResearchFlowTests(unittest.TestCase):

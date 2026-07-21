@@ -31,7 +31,7 @@
 
 ## Frontier
 
-- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–08 章已完成，下一步从“进程退出后状态丢失”重写第 09 章 Checkpointer 与恢复。
+- [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 正在执行；第 01–09 章已完成，下一步从“恢复会重跑节点”重写第 10 章 interrupt、resume 与幂等副作用。
 
 ## Not yet specified
 

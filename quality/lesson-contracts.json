@@ -140,12 +140,20 @@
     },
     "09_Multi_Agent_Eval": {
       "required_sync_ids": [
-        "ch09-memory-checkpoints",
-        "ch09-sqlite-restart",
+        "ch09-result-only-failure",
+        "ch09-memory-checkpointer-repair",
+        "ch09-missing-thread-id-failure",
+        "ch09-thread-isolation-repair",
+        "ch09-memory-restart-failure",
+        "ch09-sqlite-restart-repair",
+        "ch09-snapshot-anatomy",
         "ch09-checkpoint-history",
         "ch09-time-travel",
-        "ch09-state-migration",
-        "ch09-thread-id-failure"
+        "ch09-old-state-shape-failure",
+        "ch09-state-migration-repair",
+        "ch09-mini-deerflow-checkpoint-history",
+        "ch09-mini-deerflow-sqlite-restart",
+        "ch09-mini-deerflow-state-migration"
       ]
     },
     "10_Human_In_The_Loop": {
