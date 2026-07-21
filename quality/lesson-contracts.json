@@ -158,13 +158,20 @@
     },
     "10_Human_In_The_Loop": {
       "required_sync_ids": [
-        "ch10-approve-restart",
-        "ch10-edit-reject",
-        "ch10-multiple-interrupt-events",
-        "ch10-side-effect-before-interrupt-failure",
-        "ch10-time-travel-idempotency",
-        "ch10-concurrent-intent",
-        "ch10-idempotency-conflict-failure"
+        "ch10-blocking-wait-failure",
+        "ch10-durable-interrupt-repair",
+        "ch10-approval-decision-protocol",
+        "ch10-effect-before-interrupt-failure",
+        "ch10-effect-after-interrupt-repair",
+        "ch10-time-travel-duplicate-failure",
+        "ch10-idempotent-effect-repair",
+        "ch10-multiple-interrupt-order",
+        "ch10-mini-deerflow-approve-restart",
+        "ch10-mini-deerflow-edit-reject",
+        "ch10-mini-deerflow-multiple-interrupts",
+        "ch10-mini-deerflow-time-travel-idempotency",
+        "ch10-mini-deerflow-concurrent-intent",
+        "ch10-mini-deerflow-idempotency-conflict"
       ]
     },
     "11_Multi_Agent_Patterns": {

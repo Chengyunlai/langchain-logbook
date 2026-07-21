@@ -45,4 +45,7 @@ Blocked by: 05, 06
 - 第 09 章已完成 14 个 lesson lab：无 Checkpointer 失败/InMemory 修复、缺 thread ID/线程隔离、内存重建失败/SQLite reopen、StateSnapshot、history、time travel、旧 State 类型失败/显式 migration，以及三个 Mini DeerFlow 持久化迁移实验。
 - Mini DeerFlow 持久化 provider 现在让 InMemory 与 SQLite 共用显式 msgpack 类型 allowlist，并补充 `ResearchFinding`、`WorkflowEvent`、`DraftDocument` 等领域类型；新增测试真实反序列化研究图 history，避免未来严格模式从警告升级为运行失败。
 - 第 09 章 Web、已执行 Notebook、14 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证；全量测试增至 172 passed、1 external integration skipped。
-- 下一步处理第 10 章 durable interrupt、resume、审批与幂等副作用；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
+- 第 10 章已完成 14 个 lesson lab：阻塞 worker/durable interrupt、审批决定协议、interrupt 前副作用失败/后移修复、time travel 重复/幂等 operation ID、多个 interrupt 顺序，以及六个 Mini DeerFlow/SQLite 审批迁移实验。
+- Notebook 执行发现并修复五处临时 SQLite 生命周期错误：所有 ledger 统计都在 `TemporaryDirectory` 退出前读取，课程不再依赖已删除数据库文件。
+- 第 10 章 Web、已执行 Notebook、14 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证。
+- 下一步处理第 11 章 Subagent、委派、上下文隔离、并发和稳定失败协议；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
