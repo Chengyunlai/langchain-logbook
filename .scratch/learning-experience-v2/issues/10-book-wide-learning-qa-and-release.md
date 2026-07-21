@@ -1,6 +1,6 @@
 # 完成全书学习体验验收与发布
 
-Status: open
+Status: claimed
 Triage: ready-for-agent
 Type: task
 Blocked by: 09

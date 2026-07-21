@@ -1,6 +1,6 @@
 # 把双层案例扩展到其余章节
 
-Status: claimed
+Status: resolved
 Triage: ready-for-agent
 Type: task
 Blocked by: 05, 06
@@ -69,5 +69,9 @@ Blocked by: 05, 06
 - 首轮全新初学者 Agent 已完成盲读，报告保存于 `../artifacts/beginner-audit-1.md`。01–11 的概念递进、六篇 Mini DeerFlow 工程专题和 Capstone 均能解释；验收因第 06/11 章 Jupyter 中嵌套 `asyncio.run(...)`，以及 DeerFlow 完整 fetch 长时间无输出而判定 BLOCKED。
 - 第 06/11 章正文事实源已改为 Jupyter 顶层 `await`；Notebook 同步器用 `PyCF_ALLOW_TOP_LEVEL_AWAIT` 执行同一代码，并新增回归测试。两章重新生成后均由真实 `jupyter nbconvert --execute` 原样通过，不再由最后的 Ledger 实验级联掩盖根因。
 - Sandbox 与 Capstone 的普通 `.py` 异步示例已明确标注 Jupyter 等价写法，避免学习者把脚本入口原样复制进已有事件循环。
-- DeerFlow Guide 新增固定 commit 的 13 文件证据切片脚本；本轮已从 GitHub Contents API 下载并按 Git blob SHA 校验 `4af6178...`，四条必修源码检索命令均在切片上命中，不再依赖完整 Git pack。
-- 下一步由另一个不继承改写上下文、且不读取首轮报告的全新初学者 Agent 重新执行完整盲读。任务继续保持 claimed，直至第二轮正式判定 PASS 或产生新的可复现阻塞。
+- DeerFlow Guide 新增固定 commit 的 14 文件证据切片脚本；本轮已从 GitHub Contents API 下载并按 Git blob SHA 校验 `4af6178...`，四条必修源码检索命令均在切片上命中，不再依赖完整 Git pack；第二轮反馈后补入 `gateway/services.py`，使 router → service → RunManager 的 glue 也能在切片内展开。
+- 随后由另一个不继承改写上下文、且不读取首轮报告的全新初学者 Agent 重新执行完整盲读；第二轮已正式判定 PASS。
+
+## Answer
+
+01–11、全部 Notebook、六篇工程专题、Capstone 与 DeerFlow 固定源码导读均已完成双层改造。首轮盲读发现的 Jupyter 事件循环和完整 Git fetch 阻塞已经修复；第二位全新初学者 Agent 最终从原生概念推导到 Mini DeerFlow，并用固定源码证明 DeerFlow 四条调用链。任务的正文改造、跨端同步和初学者可理解性标准全部满足。

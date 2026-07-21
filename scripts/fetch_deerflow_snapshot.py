@@ -24,6 +24,7 @@ SNAPSHOT_PATHS = (
     "backend/packages/harness/deerflow/tools/builtins/task_tool.py",
     "backend/packages/harness/deerflow/subagents/executor.py",
     "backend/app/gateway/app.py",
+    "backend/app/gateway/services.py",
     "backend/app/gateway/routers/thread_runs.py",
     "backend/app/gateway/routers/runs.py",
     "backend/packages/harness/deerflow/runtime/runs/manager.py",

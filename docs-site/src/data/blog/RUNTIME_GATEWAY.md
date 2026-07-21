@@ -579,6 +579,8 @@ SQLite 适合本地学习和单进程开发。异步高并发服务应考虑 asy
 
 本专题对照 DeerFlow `main` 固定提交 [`3e7baba39a9597e480dd82bbc18aee806679a2bf`](https://github.com/bytedance/deer-flow/tree/3e7baba39a9597e480dd82bbc18aee806679a2bf)。固定提交是可复查阅读锚点，不表示课程复制其全部实现。
 
+> **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来复核 Runtime/Gateway 的局部设计；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](/langchain-logbook/posts/deerflow_guide/) 的 `4af6178` 为准。
+
 建议按下面顺序阅读，而不是从 FastAPI router 随机跳转：
 
 ```text

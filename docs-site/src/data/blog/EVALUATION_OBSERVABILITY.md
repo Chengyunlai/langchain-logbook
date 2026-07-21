@@ -589,6 +589,8 @@ stateDiagram-v2
 
 本专题固定阅读 DeerFlow `3e7baba39a9597e480dd82bbc18aee806679a2bf`，避免裸 `main` 漂移。Mini DeerFlow 与 DeerFlow 的映射如下：
 
+> **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来复核 tracing 结论；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](/langchain-logbook/posts/deerflow_guide/) 的 `4af6178` 为准。
+
 | 本专题概念 | Mini DeerFlow | DeerFlow 固定提交入口 | 阅读重点 |
 |---|---|---|---|
 | tracing provider factory | `observability.py` 的 LangSmith 配置 | [`tracing/factory.py`](https://github.com/bytedance/deer-flow/blob/3e7baba39a9597e480dd82bbc18aee806679a2bf/backend/packages/harness/deerflow/tracing/factory.py) | 多 provider 如何创建 callback，但不决定业务拓扑 |

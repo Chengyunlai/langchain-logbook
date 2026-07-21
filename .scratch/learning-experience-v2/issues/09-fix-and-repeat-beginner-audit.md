@@ -1,6 +1,6 @@
 # 修复盲读阻塞并由第二个初学者 Agent 复验
 
-Status: open
+Status: resolved
 Triage: ready-for-agent
 Type: task
 Blocked by: 08
@@ -23,3 +23,9 @@ Blocked by: 08
 - 不再依赖提前阅读 Mini DeerFlow 源码来理解基础概念。
 - 每个核心概念都能被正确迁移到 Mini DeerFlow，而不是只会复述定义。
 - 剩余问题均有明确理由、影响等级和后续建议。
+
+## Answer
+
+同步器和第 06/11 章已支持 Jupyter 顶层 `await`，两本 Notebook 由真实内核原样通过；DeerFlow Guide 增加固定 commit、逐文件 blob 校验的源码切片。第二位全新初学者 Agent 未读取首轮报告和任务讨论，11 本 Notebook 全部通过，并以 `4af6178...` 固定源码完成四条证据表，最终判定 `PASS`。完整报告见 [`beginner-audit-2.md`](../artifacts/beginner-audit-2.md)。
+
+它提出的两项非阻断建议也已闭合：四篇专题明确区分历史对照锚点与最终验收锚点；14 文件切片补入 `gateway/services.py`，差量复核确认 router → service → RunManager/worker 的每个接缝都能由固定源码证明。

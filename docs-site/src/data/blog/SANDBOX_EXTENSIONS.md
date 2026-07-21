@@ -874,6 +874,8 @@ uv run --locked --group dev pytest -q \
 
 固定提交：[`807c3c521832526c6205ffee23e5f05231eaea5b`](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)。课程只缩小关系，不复制产品规模。
 
+> **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来观察 Sandbox/MCP/Skills 当时的模块关系；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](/langchain-logbook/posts/deerflow_guide/) 的 `4af6178` 为准。
+
 | Mini DeerFlow | DeerFlow 固定提交阅读入口 | 重点问题 |
 |---|---|---|
 | `SandboxProvider.acquire/get/release` | `backend/packages/harness/deerflow/sandbox/sandbox_provider.py` | provider 生命周期由谁拥有？ |

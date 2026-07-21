@@ -632,6 +632,8 @@ uv run --locked --group dev pytest -q \
 
 本专题固定对照 DeerFlow `main` 提交 [`807c3c521832526c6205ffee23e5f05231eaea5b`](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)。阅读时按下面顺序，不要先钻进某个大型工具实现：
 
+> **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来复核本节结论；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](./DEERFLOW_GUIDE.md) 的 `4af6178` 为准。
+
 | Mini DeerFlow | DeerFlow 阅读方向 | 阅读问题 |
 |---|---|---|
 | `app.py:_assemble_graph` | `agents/lead_agent/agent.py:make_lead_agent` | 模型、工具、State 和 Middleware 在哪里汇合？ |

@@ -35,7 +35,7 @@ git -C "$DEERFLOW_SRC" show -s --format='%H%n%cI%n%s'
 
 ### 1.1 完整 fetch 很慢时，下载“证据切片”
 
-`git fetch` 会下载 Git pack；在受限网络中，它可能长时间没有输出。本课程提供一个更小的回退入口，只通过 GitHub Contents API 下载四条必修阅读路线需要的 13 个文件：
+`git fetch` 会下载 Git pack；在受限网络中，它可能长时间没有输出。本课程提供一个更小的回退入口，只通过 GitHub Contents API 下载四条必修阅读路线需要的 14 个文件：
 
 ```bash
 # 回到 langchain-logbook 仓库根目录执行
@@ -45,9 +45,9 @@ python scripts/fetch_deerflow_snapshot.py --output "$DEERFLOW_SRC" --verify-only
 cat "$DEERFLOW_SRC/DEERFLOW_COMMIT"
 ```
 
-脚本只接受本章固定 commit，并用 Git blob SHA 逐文件校验；最后一行仍必须是 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。匿名 GitHub API 通常足够下载这 13 个文件；若遇到 API 限额，可设置 `GITHUB_TOKEN` 或 `GH_TOKEN` 后重试。
+脚本只接受本章固定 commit，并用 Git blob SHA 逐文件校验；最后一行仍必须是 `4af617835805dd7cd78162ebed02fd6b782ea8bf`。匿名 GitHub API 通常足够下载这 14 个文件；若遇到 API 限额，可设置 `GITHUB_TOKEN` 或 `GH_TOKEN` 后重试。已经用 GitHub CLI 登录但环境变量为空时，可以先执行 `export GH_TOKEN="$(gh auth token)"`；命令不会打印 token，下载结束后可执行 `unset GH_TOKEN`。
 
-这个目录是**源码阅读切片**，不是可安装、可运行的完整 DeerFlow。它足以完成 Lead、State/Context/Middleware、task/Subagent、Gateway/Run/SSE 四张证据表；阅读 Sandbox、MCP、Skills 的全部 provider 变体时，仍使用完整 checkout 或本章固定源码链接。也就是说，回退方案缩小下载范围，没有缩小证据标准。
+这个目录是**源码阅读切片**，不是可安装、可运行的完整 DeerFlow。它足以完成 Lead、State/Context/Middleware、task/Subagent、Gateway/Run/SSE 四张证据表，并包含 `gateway/services.py`，可以把 router → service → RunManager 的调度接缝展开；阅读 Sandbox、MCP、Skills 的全部 provider 变体时，仍使用完整 checkout 或本章固定源码链接。也就是说，回退方案缩小下载范围，没有缩小证据标准。
 
 若完整 checkout 目录已经存在，先检查 remote 和 HEAD，不要重复执行 `remote add`。也可以换一个空临时目录；关键是最终 detached HEAD 指向固定提交。若使用证据切片，则每次阅读前运行 `--verify-only`，避免把本地修改误当官方源码。
 
