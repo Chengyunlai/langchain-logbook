@@ -307,3 +307,213 @@ Evaluation store: versioned quality decisions
 4. 为 `DEERFLOW_GUIDE` 提供固定 commit 的可访问 checkout/archive，之后按证据表完成四条源码路线复核；不要用 `main` 代替。
 
 完成 1–3 后，课程本地学习链有条件判 PASS；完成 4 后，才能对最终 DeerFlow 固定源码阅读路线判 PASS。
+
+---
+
+## 后续 Spec 审查补充（不改写首轮历史）
+
+本节是首轮报告提交后的补充证据。上面的首轮结论、Blocker 编号和 **BLOCKED** 判断保持原样；下面的实验不是首轮已经完成却漏写的内容，也不表示 Notebook 问题已经修复。
+
+补充方法：从 01–11 每章各选择一个正文中的“动手修改”，在独立临时代码 `/tmp/beginner-audit-1-hands-on.py` 中做最小变体，并使用仓库环境运行。没有修改正式 Markdown、Notebook 或 Python 源码。
+
+## 01–11 “动手修改”补充实验
+
+### 第 01 章：去掉 `StrOutputParser`
+
+- **正文实验**：Runnable 管道后的“去掉 `StrOutputParser()`，预测返回类型”。
+- **最小修改**：把 `prompt | model | StrOutputParser()` 改为 `prompt | model`。
+- **运行前预测**：结果不再是 `str`，而是保留角色和 metadata 的 `AIMessage`；模型不能跳过 prompt。
+- **实际输出**：
+
+  ```text
+  result_type = AIMessage
+  result_content = 保留消息元数据
+  ```
+
+- **边界解释**：Parser 是应用固定管道的一步。去掉它改变下游数据形状，不改变模型步骤或 Runnable 顺序；需要读取 `tool_calls`、usage 或其他消息字段时，应保留完整 Message。
+
+### 第 02 章：把整数改成不可转换字符串
+
+- **正文实验**：`ResearchRequest` 后的“把 `max_sources` 改成无法转换的字符串”。
+- **最小修改**：`max_sources="many"`。
+- **运行前预测**：Pydantic 不会把任意英文转成整数，会在 `max_sources` 字段报 `int_parsing`，不会等到 Graph 节点才失败。
+- **实际输出**：
+
+  ```text
+  invalid_field = ('max_sources',)
+  error_type = int_parsing
+  ```
+
+- **边界解释**：Schema 边界负责候选数据的确定性类型转换；“字符串可转整数”和“任意字符串可接受”是两件事。错误位置可以被 API/Graph 稳定消费。
+
+### 第 03 章：交换零分文档顺序
+
+- **正文实验**：强制最近邻失败后的“交换两个文档的顺序”。
+- **最小修改**：知识列表由 `persistence, middleware` 反转为 `middleware, persistence`，查询仍为与两者都无词项重叠的 `quantum gravity`。
+- **运行前预测**：两个文档分数都为 0；`max()` 会选择列表中先出现的文档，因此所谓“证据”会随存储顺序改变。
+- **实际输出**：
+
+  ```text
+  before_swap = ('persistence', 0)
+  after_swap = ('middleware', 0)
+  ```
+
+- **边界解释**：最近不等于相关。Prompt 无法修复 Retriever 把零分候选包装成证据的问题；召回边界必须允许显式空结果。
+
+### 第 04 章：让第二条 AIMessage 再调用一次工具
+
+- **正文实验**：首次完整 `create_agent` 循环后的“让第二条 AIMessage 继续调用同一工具，再准备第三条最终回答”。
+- **最小修改**：scripted model 从“一次 tool call + final”改为“两次 tool call + final”。
+- **运行前预测**：消息序列为 Human、AI、Tool、AI、Tool、AI；模型调用三次，工具执行两次，第三条无 tool call 的 AIMessage 才终止。
+- **实际输出**：
+
+  ```text
+  message_types = ['HumanMessage', 'AIMessage', 'ToolMessage', 'AIMessage', 'ToolMessage', 'AIMessage']
+  tool_message_count = 2
+  final = 两轮检索完成
+  ```
+
+- **边界解释**：`create_agent` 不是固定只跑一个工具回合；循环终止取决于模型最终不再产生 tool call。每次结果仍必须用各自 call ID 配对。
+
+### 第 05 章：两个调用复用同一 `thread_id`
+
+- **正文实验**：偏好放进 Thread State 失败后的“把两个 config 改成相同 `thread_id`”。
+- **最小修改**：保存偏好和随后读取都使用 `same-thread`；第二次输入不再提交 `language`。
+- **运行前预测**：第二次调用会从同一 checkpoint 继承 `zh-CN`，所以看起来实现了记忆；但这只是同一 thread 的延续，不是跨 thread 用户偏好。
+- **实际输出**：
+
+  ```text
+  first_observed = zh-CN
+  second_observed = zh-CN
+  ```
+
+- **边界解释**：复用 thread 能恢复该线程 State，却不能满足“新会话仍记住用户偏好”。用同一 thread 冒充 Store 会破坏会话隔离和产品 thread 语义。
+
+### 第 06 章：给 Runnable listener 增加 `on_end`
+
+- **正文实验**：正确 listener 实验后的“增加 `on_end` 并记录顺序”。
+- **最小修改**：在 `with_listeners` 中同时注册 `on_start`、`on_end`，业务函数在中间追加 `business`。
+- **运行前预测**：顺序为 start → business → end，结果仍为 2。
+- **实际输出**：
+
+  ```text
+  business_result = 2
+  event_order = ['start:RunnableLambda', 'business', 'end:RunnableLambda']
+  ```
+
+- **边界解释**：listener 包围任意 Runnable 的局部运行，适合计时和日志；它没有 Agent Runtime Context，也不能取代 `before_model/after_model` 的治理职责。
+
+### 第 07 章：给 Reducer 初始值加入 cached result
+
+- **正文实验**：`operator.add` 并行修复后的“把初始 results 改成 `['cached:checkpoint']`”。
+- **最小修改**：初始 State 包含一条 cached 结果，两个并行节点仍分别提交 docs/web patch。
+- **运行前预测**：Reducer 会把输入 channel 与两个新 patch 一起合并，最终长度为 3。
+- **实际输出**：
+
+  ```text
+  result_count = 3
+  results = ['cached:checkpoint', 'docs:checkpoint', 'web:checkpoint']
+  ```
+
+- **边界解释**：Reducer 不只处理两个并行节点之间的冲突，也定义已有 State 与新更新的合并。若 cached 项需要去重，`operator.add` 就不再是正确领域规则。
+
+### 第 08 章：加入最大修订次数
+
+- **正文实验**：可进展循环后的“加入 `max_revisions=1`，未达标以 `needs_review` 结束”。
+- **最小修改**：review 始终给 0 分；router 在修订次数达到 1 时进入 `needs_review` 节点，而非继续循环。
+- **运行前预测**：轨迹是 review:0 → revise:1 → review:0 → needs_review；结果是正常业务终态，不触发 recursion error。
+- **实际输出**：
+
+  ```text
+  status = needs_review
+  revision_count = 1
+  trace = ['review:0', 'revise:1', 'review:0', 'needs_review']
+  ```
+
+- **边界解释**：循环要同时拥有进度、质量条件和预算耗尽后的可解释出口。recursion limit 仍保留为拓扑错误保险丝，但不应充当产品终态。
+
+### 第 09 章：重启时换另一个 SQLite 文件
+
+- **正文实验**：SQLite 重开修复后的“使用另一个 SQLite 文件路径重启”。
+- **最小修改**：第一轮写 `first.sqlite`，第二个 saver 连接空的 `other.sqlite`，thread ID 保持 `same-id`。
+- **运行前预测**：新后端没有该 checkpoint，`values` 为空；相同 thread ID 本身不能跨错误数据库恢复。
+- **实际输出**：
+
+  ```text
+  recovered_values = {}
+  same_thread_id_was_enough = False
+  ```
+
+- **边界解释**：恢复地址由 thread identity 和持久后端共同决定。“换 thread”和“换数据库”都会表现为找不到旧 State，但前者是 lineage 选择，后者是数据源选择，诊断层次不同。
+
+### 第 10 章：审批选择 reject
+
+- **正文实验**：把副作用移到 interrupt 后的修复实验中的“reject 后确认 external effects 为空”。
+- **最小修改**：同一安全图第一次 interrupt，随后以 `Command(resume="reject")` 恢复。
+- **运行前预测**：进入 reject 终态，不可达 publish 节点，外部副作用列表长度为 0。
+- **实际输出**：
+
+  ```text
+  status = rejected
+  effects = []
+  ```
+
+- **边界解释**：reject 是正常业务终态而不是异常。把 publish 放在 interrupt 后的独立节点，使拒绝路径从拓扑上不触发副作用；批准路径仍需要幂等 ledger 防重放。
+
+### 第 11 章：把 Semaphore 容量改为 1 和 4
+
+- **正文实验**：并发限制修复后的“把容量改为 1 和 4，分别观察峰值”。
+- **最小修改**：同一批四个 coroutine 分别经容量 1、容量 4 的 Semaphore 执行。该变体在独立 `/tmp` Python 脚本中运行，不把脚本成功伪装成正式 Jupyter 已修复。
+- **运行前预测**：容量 1 时真实峰值为 1；容量 4 时峰值为 4；`asyncio.gather` 仍按输入顺序返回结果。
+- **实际输出**：
+
+  ```text
+  capacity_1_peak = 1
+  capacity_4_peak = 4
+  capacity_1_order = ['done:0', 'done:1', 'done:2', 'done:3']
+  capacity_4_order = ['done:0', 'done:1', 'done:2', 'done:3']
+  ```
+
+- **边界解释**：Semaphore 控制执行入口的同时运行数，`gather` 的返回顺序不代表完成顺序。它仍不限制队列长度、租户总量、CPU/进程或外部副作用。
+
+## 首轮发现的四类归档
+
+这是对首轮已记录事实的重新归类，不把上面的后续动手实验倒填成首轮证据。一个问题若同时影响多个维度，下面指定主要类别，并在说明中标出次生影响。
+
+### 1. 阻断理解：2 项
+
+1. **B1，第 06 章异步取消实验不能在正式 Jupyter 原样运行。** 它阻断“取消是否越过普通工具错误 middleware”的直接运行证据；虽然前后文字足以继续阅读，但初学者只能猜预期 stdout 是否真实。
+2. **B2，第 11 章十个异步单元直接失败。** 它覆盖并发、timeout、部分失败、Lead→task、Executor、输出预算等本章核心后半程，因此是实际的概念验收阻断，而不只是排版问题。
+
+依据：两项都满足首轮约定的 blocker 标准——正式代码无法运行，学习者不能仅靠课程自身完成预期实验。B3 属外部环境问题，按要求不计入本类。
+
+### 2. 造成错误心智模型：0 项
+
+首轮没有发现正式材料在概念上互相矛盾，或会稳定诱导出错误架构结论的内容。相反，以下关键区别在正文和可运行实验中保持一致：`bind_tools` 不执行工具、Checkpointer 不等于 Store、Subgraph 不等于 Subagent、interrupt resume 会重入节点、Runtime Journal 不等于 Trace/Evaluation。
+
+第 06/11 章的 `asyncio.run` 是运行介质错误，会让实验失败，但其预期概念结论本身没有被相反输出“验证”；因此不把它升级为错误心智模型。
+
+### 3. 练习反馈不足：1 项
+
+1. **第 11 章实验 24 的级联 `IndexError` 掩盖前置失败。** 在 `--allow-errors` 继续运行时，前面的 demo 委派没有成功，`ledger_records[-1]` 只给出 `tuple index out of range`，没有指出“前置异步实验未完成/ledger 为空”。这会让初学者误查 Ledger，而不是定位首个事件循环错误。
+
+依据：这不是新的独立实现缺陷，而是 B2 的次生反馈问题；归档数量按一个反馈链计算。其最小改进是让实验自建 fixture，或在读取最后一项前断言非空并给出明确前置提示。
+
+### 4. 一般编辑建议：2 项
+
+1. **文件名与正文主题有旧命名痕迹。** `05_Agent_Middleware.md` 的正文是 Context Engineering，`06_Observability_Persistence.md` 的正文是 Agent Middleware。README 和 H1 足以导航，所以不阻断，但搜索、书签和报错路径会增加一次认知切换。
+2. **工程专题的异步示例应标注运行介质。** `SANDBOX_EXTENSIONS.md`、`CAPSTONE.md` 等正文含 `asyncio.run(...)` 的可运行代码。作为 `.py` 脚本正确，复制到 Jupyter 会复现同类错误。建议明确标注“保存为脚本运行”，或并列给出 Notebook 顶层 `await` 版本。
+
+依据：这两项不迫使学习者猜核心架构，也不在所有正式路径上导致失败，因此保持为编辑建议，而不是 blocker。
+
+## 外部环境问题：1 项
+
+1. **B3，固定 DeerFlow commit 无法 fetch。** 两次固定 SHA 的浅 fetch 长时间无输出并被中止，导致四条外部源码路线不能完成固定版本证据复核。课程正确要求不要退回 `main`；因此这项只影响最终外部验收，不反证课程内 Mini DeerFlow 的概念链。
+
+所需条件仍是首轮所列的最小项：可访问的 GitHub fetch 通道，或该固定 commit 的只读本地 checkout/archive。
+
+## 补充实验对首轮结论的影响
+
+11 个“动手修改”变体都得到与正文边界一致的输出，说明首轮对 01–11 概念链的理解可以由独立实验支持；特别是第 11 章 Semaphore 变体在普通 Python 脚本中成功，进一步把“异步概念/实现本身”与“正式 Jupyter 调用方式”区分开。
+
+这不改变 **BLOCKED**：正式第 06/11 Notebook 仍未被修改，固定 DeerFlow commit 仍未取得。补充证据只补足书面验收，不把后续临时变体冒充正式课程已经可运行。

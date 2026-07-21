@@ -1,6 +1,6 @@
 # 修复盲读阻塞并由第二个初学者 Agent 复验
 
-Status: resolved
+Status: open
 Triage: ready-for-agent
 Type: task
 Blocked by: 08
@@ -31,3 +31,5 @@ Blocked by: 08
 它提出的两项非阻断建议也已闭合：四篇专题明确区分历史对照锚点与最终验收锚点；14 文件切片补入 `gateway/services.py`，差量复核确认 router → service → RunManager/worker 的每个接缝都能由固定源码证明。
 
 子 Agent 的 Web UI 补验因其独立会话没有 Browser backend 而保持环境 `BLOCKED`；它没有用 curl 冒充点击证据。根任务随后用真实 In-app Browser 完成桌面与 390px 窄屏 QA，见 [`web-ui-qa.md`](../artifacts/web-ui-qa.md)。因此课程内容、Notebook、源码迁移和实际 Web 渲染均已通过，但不会把根任务 UI 检查伪装成初学者亲自点击。
+
+本项依赖 08 的真实读者 Web 反馈，因此暂不标记 resolved。

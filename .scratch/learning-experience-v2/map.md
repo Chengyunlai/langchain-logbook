@@ -29,12 +29,10 @@
 - [从“万能 State”失败重写第 05 章 Context Engineering](./issues/05-rewrite-context-from-universal-state-failure.md) — 由真实失败推导四类数据边界，9 个实验已跑通。
 - [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 从权限遗漏推导四类 hook，14 个 Web/Notebook 实验已跑通。
 - [把双层案例扩展到其余章节](./issues/07-propagate-two-layer-cases.md) — 01–11、工程专题、Capstone 与 DeerFlow 固定源码导读均已完成，Web/Notebook 保持同一事实源。
-- [让全新初学者 Agent 端到端盲读课程](./issues/08-fresh-beginner-end-to-end-audit.md) — 首轮严格盲读如实判定 BLOCKED，并定位 Jupyter 异步执行与固定源码获取问题。
-- [修复盲读阻塞并由第二个初学者 Agent 复验](./issues/09-fix-and-repeat-beginner-audit.md) — 第二位零上下文初学者 Agent 判定 PASS；两项非阻断建议也已完成差量复核。
 
 ## Frontier
 
-- [完成全书学习体验验收与发布](./issues/10-book-wide-learning-qa-and-release.md) — 正在执行；两轮盲读已完成，进入最终双轴审查、发布门禁和 GitHub Pages 在线验证。
+- [让全新初学者 Agent 端到端盲读课程](./issues/08-fresh-beginner-end-to-end-audit.md) — Markdown、11 本 Notebook、逐章修改和架构迁移均已验收；子 Agent 会话无 Browser backend，真实 Web 首页独立阅读保留为 `ready-for-human`。根任务桌面/窄屏 QA 已通过，但不冒充初学者点击。
 
 ## Not yet specified
 
