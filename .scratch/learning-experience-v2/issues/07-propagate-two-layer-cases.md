@@ -39,4 +39,7 @@ Blocked by: 05, 06
 - `Command(update=...)` 的首次教学已从第 04 章后移第 08 章；学习者先掌握 Message 协议和 Agent 循环，再在已有 StateGraph 心智模型上理解 Command 更新与路由，项目的 `record_artifact` 能力仍完整保留。
 - validator 现在仅对 v2 `kind=failure` 实验允许 `agent-input-key` 反例；普通正文、Notebook 和其他 lab 仍会失败。新增两项测试分别锁住允许与拒绝路径。
 - 第 04 章 Web、已执行 Notebook、16 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证；全量测试增至 171 passed、1 external integration skipped。
-- 下一步处理第 08 章 Command、Send、Subgraph 与显式业务工作流；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。
+- 第 08 章已完成 15 个 lesson lab：重复 router 漂移/Command 修复、固定 worker 丢任务/Send 修复、父 State 泄漏/Subgraph 修复、无进度循环/显式进度修复、Functional task，以及六个 Mini DeerFlow 工作流迁移实验。
+- 第 04 章后移的 `Command(update=...)` 已在本章回收：`record_artifact` 同时产生配对 ToolMessage 与 Artifact State patch；课程先建立消息循环和 StateGraph，再解释工具 Command 的双重效果。
+- 第 08 章 Web、已执行 Notebook、15 组稳定 stdout、段落长度、发布副本与全量质量门禁均已验证；README 章节交付已同步。
+- 下一步处理第 09 章 Checkpointer、thread、snapshot、SQLite 重启与 time travel；任务保持 claimed，直到其余教程、工程专题、Capstone 与 DeerFlow 导读全部完成。

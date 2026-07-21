@@ -98,7 +98,7 @@ flowchart LR
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
 | [第 07 章](./tutorials/07_StateGraph.md) | 固定流程隐藏在 Prompt 和 Agent 循环里 | State、Reducer、Node、Edge 与显式 ReAct |
-| [第 08 章](./tutorials/08_Engineering_Defense.md) | 单一循环无法表达条件、动态并行和子流程 | Command、Send、Subgraph 与 reducer 冲突实验 |
+| [第 08 章](./tutorials/08_Engineering_Defense.md) | 单一循环无法表达条件、动态并行和子流程 | Command、Send、Subgraph、显式循环与 Functional task |
 | [第 09 章](./tutorials/09_Multi_Agent_Eval.md) | 进程退出后研究进度丢失 | Checkpointer、Thread、SQLite 与跨重启恢复 |
 | [第 10 章](./tutorials/10_Human_In_The_Loop.md) | 发布前需要等待人工判断，恢复又可能重放副作用 | Interrupt、审批恢复与幂等意图记录 |
 

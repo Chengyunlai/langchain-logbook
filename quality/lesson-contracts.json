@@ -121,12 +121,21 @@
     },
     "08_Engineering_Defense": {
       "required_sync_ids": [
-        "ch08-research-workflow",
-        "ch08-command-route",
-        "ch08-send-stream",
-        "ch08-subgraph-xray",
-        "ch08-functional-policies",
-        "ch08-missing-reducer-failure"
+        "ch08-duplicated-router-failure",
+        "ch08-command-route-repair",
+        "ch08-static-fanout-failure",
+        "ch08-send-fanout-repair",
+        "ch08-review-state-leak-failure",
+        "ch08-review-subgraph-repair",
+        "ch08-no-progress-loop-failure",
+        "ch08-progress-loop-repair",
+        "ch08-functional-task-baseline",
+        "ch08-mini-deerflow-research-workflow",
+        "ch08-mini-deerflow-command-reject",
+        "ch08-mini-deerflow-send-stream",
+        "ch08-mini-deerflow-subgraph-xray",
+        "ch08-mini-deerflow-functional-policies",
+        "ch08-mini-deerflow-artifact-command"
       ]
     },
     "09_Multi_Agent_Eval": {
