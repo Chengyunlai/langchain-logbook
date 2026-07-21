@@ -15,6 +15,12 @@ import sys
 import textwrap
 from typing import Iterable
 
+from sync_lesson_notebooks import (
+    LESSON_CONTRACT_V2,
+    LessonLab,
+    extract_lesson_labs,
+)
+
 
 PYTHON_FENCE = re.compile(
     r"^(?P<indent>\s*)```(?:python|py)(?:\s+sync=(?P<sync>[a-zA-Z0-9_.:-]+))?\s*$"
@@ -247,6 +253,312 @@ def _validate_markdown(path: Path, root: Path) -> list[Issue]:
                     source=code,
                 )
             )
+    return issues
+
+
+def _lesson_issue(
+    *, code: str, path: Path, root: Path, line: int | str, message: str, anchor: str
+) -> Issue:
+    return Issue(
+        code=code,
+        path=_relative(path, root),
+        location=f"line {line}" if isinstance(line, int) else line,
+        message=message,
+        anchor=anchor,
+    )
+
+
+def _imports_mini_deerflow(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(
+                imported.name == "mini_deerflow"
+                or imported.name.startswith("mini_deerflow.")
+                for imported in node.names
+            ):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == "mini_deerflow" or module.startswith("mini_deerflow."):
+                return True
+    return False
+
+
+def _is_assert_only_lab(code: str) -> bool:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    has_assert = any(isinstance(node, ast.Assert) for node in ast.walk(tree))
+    has_print = any(
+        isinstance(node, ast.Call) and _call_name(node).split(".")[-1] == "print"
+        for node in ast.walk(tree)
+    )
+    return has_assert and not has_print
+
+
+def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list[Issue]]:
+    text = path.read_text(encoding="utf-8")
+    if LESSON_CONTRACT_V2 not in text:
+        return [], []
+    try:
+        labs = extract_lesson_labs(text)
+    except ValueError as error:
+        message = str(error)
+        if "output fence" in message:
+            code = "lab-output-missing"
+        elif "重复" in message or "id 必须一致" in message:
+            code = "lesson-lab-id-duplicate"
+        else:
+            code = "lesson-lab-marker-missing"
+        return [], [
+            _lesson_issue(
+                code=code,
+                path=path,
+                root=root,
+                line="lesson labs",
+                message=message,
+                anchor=_normalize_anchor(message),
+            )
+        ]
+
+    issues: list[Issue] = []
+    sync_ids = [
+        sync_id
+        for _, _, sync_id in _extract_python_fences(text)
+        if sync_id is not None
+    ]
+    lab_ids = [lab.lab_id for lab in labs]
+    if sync_ids != lab_ids:
+        issues.append(
+            _lesson_issue(
+                code="lesson-lab-marker-missing",
+                path=path,
+                root=root,
+                line="lesson labs",
+                message="v2 章节的每个 sync fence 必须按原顺序属于一个 lesson lab",
+                anchor=f"sync:{','.join(sync_ids)}|labs:{','.join(lab_ids)}",
+            )
+        )
+
+    seen_concepts: set[str] = set()
+    for index, lab in enumerate(labs):
+        if lab.layer == "concept":
+            seen_concepts.add(lab.concept)
+            if _imports_mini_deerflow(lab.code):
+                issues.append(
+                    _lesson_issue(
+                        code="concept-imports-mini-deerflow",
+                        path=path,
+                        root=root,
+                        line=lab.line,
+                        message=f"概念实验 {lab.lab_id} 不得导入 mini_deerflow",
+                        anchor=lab.lab_id,
+                    )
+                )
+        elif lab.concept not in seen_concepts:
+            issues.append(
+                _lesson_issue(
+                    code="migration-before-concept",
+                    path=path,
+                    root=root,
+                    line=lab.line,
+                    message=f"工程迁移 {lab.lab_id} 早于 concept={lab.concept} 的概念实验",
+                    anchor=lab.lab_id,
+                )
+            )
+
+        if not lab.expected_output:
+            issues.append(
+                _lesson_issue(
+                    code="lab-output-missing",
+                    path=path,
+                    root=root,
+                    line=lab.line,
+                    message=f"lesson lab {lab.lab_id} 没有学习者可读的稳定输出",
+                    anchor=lab.lab_id,
+                )
+            )
+        if _is_assert_only_lab(lab.code):
+            issues.append(
+                _lesson_issue(
+                    code="assert-only-lab",
+                    path=path,
+                    root=root,
+                    line=lab.line,
+                    message=f"lesson lab {lab.lab_id} 只有断言，没有教学输出",
+                    anchor=lab.lab_id,
+                )
+            )
+
+        needs_pair = lab.kind in {"failure", "repair"}
+        if needs_pair and not lab.pair:
+            issues.append(
+                _lesson_issue(
+                    code="failure-repair-order",
+                    path=path,
+                    root=root,
+                    line=lab.line,
+                    message=f"{lab.kind} 实验 {lab.lab_id} 必须声明 pair",
+                    anchor=f"{lab.lab_id}:pair-missing",
+                )
+            )
+            continue
+        if lab.kind == "failure" and lab.pair:
+            next_lab = labs[index + 1] if index + 1 < len(labs) else None
+            if not (
+                next_lab
+                and next_lab.kind in {"repair", "contrast"}
+                and next_lab.concept == lab.concept
+                and next_lab.pair == lab.pair
+            ):
+                issues.append(
+                    _lesson_issue(
+                        code="failure-repair-order",
+                        path=path,
+                        root=root,
+                        line=lab.line,
+                        message=(
+                            f"failure {lab.lab_id} 后必须紧邻相同 concept/pair 的 repair 或 contrast"
+                        ),
+                        anchor=f"{lab.lab_id}:not-adjacent",
+                    )
+                )
+        if lab.kind in {"repair", "contrast"} and lab.pair:
+            previous = labs[index - 1] if index > 0 else None
+            if not (
+                previous
+                and previous.kind == "failure"
+                and previous.concept == lab.concept
+                and previous.pair == lab.pair
+            ):
+                issues.append(
+                    _lesson_issue(
+                        code="failure-repair-order",
+                        path=path,
+                        root=root,
+                        line=lab.line,
+                        message=f"带 pair 的 {lab.kind} {lab.lab_id} 必须紧跟对应 failure",
+                        anchor=f"{lab.lab_id}:missing-failure",
+                    )
+                )
+    return labs, issues
+
+
+def _stream_output(cell: dict[str, object]) -> str:
+    rendered: list[str] = []
+    for output in cell.get("outputs", []):
+        if not isinstance(output, dict) or output.get("output_type") != "stream":
+            continue
+        text = output.get("text", "")
+        rendered.append("".join(text) if isinstance(text, list) else str(text))
+    return "".join(rendered)
+
+
+def _validate_v2_notebook(
+    markdown_path: Path,
+    notebook_path: Path,
+    root: Path,
+    labs: list[LessonLab],
+) -> list[Issue]:
+    try:
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    issues: list[Issue] = []
+    synced_cells = [
+        cell
+        for cell in notebook.get("cells", [])
+        if cell.get("cell_type") == "code"
+        and cell.get("metadata", {}).get("langchain_logbook_sync")
+    ]
+    notebook_ids = [
+        str(cell.get("metadata", {}).get("langchain_logbook_sync"))
+        for cell in synced_cells
+    ]
+    markdown_ids = [lab.lab_id for lab in labs]
+    if notebook_ids != markdown_ids:
+        issues.append(
+            Issue(
+                code="notebook-order-drift",
+                path=_relative(notebook_path, root),
+                location="lesson labs",
+                message="Notebook lab 顺序与 Markdown 不一致",
+                anchor=f"md:{','.join(markdown_ids)}|nb:{','.join(notebook_ids)}",
+            )
+        )
+
+    cells_by_id = {
+        str(cell.get("metadata", {}).get("langchain_logbook_sync")): cell
+        for cell in synced_cells
+    }
+    roles: dict[str, set[str]] = {}
+    for cell in notebook.get("cells", []):
+        metadata = cell.get("metadata", {})
+        lab_id = metadata.get("langchain_logbook_lab_id")
+        role = metadata.get("langchain_logbook_role")
+        if lab_id and role:
+            roles.setdefault(str(lab_id), set()).add(str(role))
+
+    for lab in labs:
+        if cell := cells_by_id.get(lab.lab_id):
+            actual = _stream_output(cell)
+            if actual != lab.expected_output:
+                issues.append(
+                    Issue(
+                        code="notebook-output-drift",
+                        path=_relative(notebook_path, root),
+                        location=f"lab {lab.lab_id}",
+                        message="Notebook stdout 与 Markdown output fence 不一致",
+                        anchor=f"{lab.lab_id}:{hashlib.sha256(actual.encode()).hexdigest()[:8]}",
+                    )
+                )
+        required_roles = {"prediction", "explanation"}
+        if lab.layer == "concept":
+            required_roles.add("modification")
+        missing = required_roles - roles.get(lab.lab_id, set())
+        if missing:
+            issues.append(
+                Issue(
+                    code="notebook-prose-missing",
+                    path=_relative(notebook_path, root),
+                    location=f"lab {lab.lab_id}",
+                    message=f"Notebook 缺少教学文本角色: {', '.join(sorted(missing))}",
+                    anchor=f"{lab.lab_id}:{','.join(sorted(missing))}",
+                )
+            )
+    return issues
+
+
+def _validate_v2_pairs(tutorials: Path, root: Path) -> list[Issue]:
+    issues: list[Issue] = []
+    lab_owners: dict[str, Path] = {}
+    for markdown_path in sorted(tutorials.glob("[0-9][0-9]_*.md")):
+        labs, markdown_issues = _validate_v2_markdown(markdown_path, root)
+        issues.extend(markdown_issues)
+        for lab in labs:
+            if owner := lab_owners.get(lab.lab_id):
+                issues.append(
+                    _lesson_issue(
+                        code="lesson-lab-id-duplicate",
+                        path=markdown_path,
+                        root=root,
+                        line=lab.line,
+                        message=(
+                            f"lesson lab id {lab.lab_id} 已在 {_relative(owner, root)} 使用"
+                        ),
+                        anchor=f"{lab.lab_id}:{_relative(owner, root)}",
+                    )
+                )
+            else:
+                lab_owners[lab.lab_id] = markdown_path
+        notebook_path = markdown_path.with_suffix(".ipynb")
+        if labs and notebook_path.exists():
+            issues.extend(_validate_v2_notebook(markdown_path, notebook_path, root, labs))
     return issues
 
 
@@ -512,7 +824,99 @@ def _validate_required_experiments(tutorials: Path, root: Path) -> list[Issue]:
     return issues
 
 
-def discover_issues(root: Path) -> list[Issue]:
+def _validate_v2_release_scope(root: Path) -> list[Issue]:
+    manifest_path = root / "quality" / "lesson-contracts.json"
+    relative_manifest = _relative(manifest_path, root)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return [
+            Issue(
+                code="lesson-contract-v2-incomplete",
+                path=relative_manifest,
+                location="course_scope",
+                message=f"最终发布模式无法读取课程清单: {error}",
+                anchor="course-scope-unavailable",
+            )
+        ]
+    scope = manifest.get("course_scope")
+    include = scope.get("include") if isinstance(scope, dict) else None
+    exemptions = scope.get("exemptions") if isinstance(scope, dict) else None
+    if not isinstance(include, list) or not include:
+        return [
+            Issue(
+                code="lesson-contract-v2-incomplete",
+                path=relative_manifest,
+                location="course_scope.include",
+                message="最终发布模式要求非空 course_scope.include glob 清单",
+                anchor="course-scope-include-empty",
+            )
+        ]
+    issues: list[Issue] = []
+    included: set[Path] = set()
+    for raw_pattern in include:
+        pattern = str(raw_pattern)
+        if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+            issues.append(
+                Issue(
+                    code="lesson-contract-v2-incomplete",
+                    path=relative_manifest,
+                    location="course_scope.include",
+                    message=f"课程 glob 必须是仓库内相对路径: {pattern}",
+                    anchor=f"invalid-pattern:{pattern}",
+                )
+            )
+            continue
+        matches = {path for path in root.glob(pattern) if path.is_file()}
+        if not matches:
+            issues.append(
+                Issue(
+                    code="lesson-contract-v2-incomplete",
+                    path=relative_manifest,
+                    location="course_scope.include",
+                    message=f"课程 glob 没有匹配文件: {pattern}",
+                    anchor=f"empty-pattern:{pattern}",
+                )
+            )
+        included.update(matches)
+
+    exemption_paths: set[Path] = set()
+    if not isinstance(exemptions, list):
+        exemptions = []
+    for index, exemption in enumerate(exemptions):
+        if not isinstance(exemption, dict):
+            exemption = {}
+        raw_path = str(exemption.get("path", ""))
+        reason = str(exemption.get("reason", "")).strip()
+        path = root / raw_path
+        if not raw_path or not reason or path not in included:
+            issues.append(
+                Issue(
+                    code="lesson-contract-v2-incomplete",
+                    path=relative_manifest,
+                    location=f"course_scope.exemptions[{index}]",
+                    message="豁免必须命中 include，并同时给出具体 path 与非空中文 reason",
+                    anchor=f"invalid-exemption:{index}:{raw_path}",
+                )
+            )
+            continue
+        exemption_paths.add(path)
+
+    for path in sorted(included - exemption_paths):
+        if LESSON_CONTRACT_V2 not in path.read_text(encoding="utf-8"):
+            issues.append(
+                Issue(
+                    code="lesson-contract-v2-incomplete",
+                    path=_relative(path, root),
+                    location="file",
+                    message="正式课程文档缺少 lesson-contract:v2 marker",
+                    anchor="lesson-contract-v2-missing",
+                )
+            )
+    return issues
+
+
+def discover_issues(root: Path, *, require_v2_all: bool = False) -> list[Issue]:
     tutorials = root / "tutorials"
     if not tutorials.is_dir():
         return [
@@ -526,6 +930,9 @@ def discover_issues(root: Path) -> list[Issue]:
         ]
     issues = _validate_pairs(tutorials, root)
     issues.extend(_validate_required_experiments(tutorials, root))
+    issues.extend(_validate_v2_pairs(tutorials, root))
+    if require_v2_all:
+        issues.extend(_validate_v2_release_scope(root))
     for path in sorted(tutorials.glob("[0-9][0-9]_*.md")):
         issues.extend(_validate_markdown(path, root))
     for path in sorted(tutorials.glob("[0-9][0-9]_*.ipynb")):
@@ -566,10 +973,15 @@ def main() -> int:
         default=Path(__file__).resolve().parents[1] / "quality" / "tutorial-baseline.json",
     )
     parser.add_argument("--write-baseline", action="store_true")
+    parser.add_argument(
+        "--require-v2-all",
+        action="store_true",
+        help="按课程 manifest 要求全部正式文档完成 lesson-contract:v2",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
-    issues = discover_issues(root)
+    issues = discover_issues(root, require_v2_all=args.require_v2_all)
     if args.write_baseline:
         _write_baseline(args.baseline, issues)
         print(f"Wrote {len(issues)} known issue(s) to {args.baseline}")

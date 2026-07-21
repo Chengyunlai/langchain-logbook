@@ -154,7 +154,14 @@ InvalidUpdateError: ...
 | `layer` | `concept` / `migration` | 区分首次解释与工程迁移 |
 | `kind` | `baseline` / `failure` / `repair` / `contrast` / `exercise` | 保留实验在因果链中的职责 |
 | `concept` | 领域术语 slug | 检查概念首次出现和章节归属 |
-| `pair` | 问题 slug | 把 failure 与 repair/contrast 相邻配对；非配对实验可省略 |
+| `pair` | 问题 slug | 把 failure 与 repair/contrast 相邻配对；baseline 和独立 contrast 可省略 |
+
+`kind=failure` 与 `kind=repair` 必须填写 `pair`。承担修复职责、紧随 failure 的
+`kind=contrast` 也必须填写 `pair`；只比较两种已成立机制的独立 contrast 可以省略。
+
+配对作用域是同一 Markdown 章节内的 `(concept, pair)`。每个 failure 的下一个 lab
+必须是相同 `(concept, pair)` 的 repair 或 contrast；每个带 pair 的 repair/contrast
+也必须紧跟对应 failure。pair 不跨章节连接，不能靠在中间插入说明性 lab 绕过相邻性。
 
 ### 6.2 实验内部必备元素
 
@@ -169,7 +176,7 @@ InvalidUpdateError: ...
 
 ### 6.3 Marker grammar
 
-- 开始 marker 独占一行，字段固定按 `id layer kind concept pair` 排列；`pair` 可省略，其余必填；
+- 开始 marker 独占一行，字段固定按 `id layer kind concept pair` 排列；baseline 与独立 contrast 可省略 `pair`，其余情况按上一节要求填写；
 - `id`、`concept`、`pair` 只使用小写字母、数字和连字符；
 - lab 以独占一行的 `<!-- /lesson-lab -->` 结束；
 - lesson lab 不允许嵌套；
@@ -184,7 +191,38 @@ InvalidUpdateError: ...
 <!-- lesson-contract:v2 -->
 ```
 
-迁移期间，lesson-lab validator 只对带该 marker 的章节启用新规则，避免把尚未改写的旧 sync fence 误报为缺少 lab。最终发布门禁要求全部正式课程章节带 v2 marker；附录和纯维护手册可以显式列入豁免清单。
+迁移期间，lesson-lab validator 只对带该 marker 的章节启用新规则，避免把尚未改写的旧 sync fence 误报为缺少 lab。
+
+最终发布门禁使用：
+
+```bash
+python scripts/validate_tutorials.py --require-v2-all
+```
+
+`quality/lesson-contracts.json` 的 `course_scope.include` 是正式课程文档的权威 glob
+清单，路径相对仓库根目录；`course_scope.exemptions` 只能列出 include 命中的具体文件，
+且每项必须同时给出非空 `path` 与中文 `reason`。示例：
+
+```json
+{
+  "version": 2,
+  "course_scope": {
+    "include": [
+      "tutorials/[0-9][0-9]_*.md",
+      "mini_deerflow/CAPSTONE.md",
+      "mini_deerflow/DEERFLOW_GUIDE.md"
+    ],
+    "exemptions": [
+      {"path": "tutorials/00_Maintainer_Notes.md", "reason": "纯维护手册，不面向学习者"}
+    ]
+  },
+  "chapters": {}
+}
+```
+
+启用 `--require-v2-all` 后，validator 必须展开 include，拒绝空清单、无效 glob、
+不存在或未被 include 命中的豁免，并要求所有未豁免文档带 `lesson-contract:v2`。
+普通迁移模式不启用这项全量检查。
 
 ## 7. 可观察输出格式
 
@@ -250,7 +288,9 @@ Notebook 必须保持 lesson lab 在 Markdown 中的原始顺序，不再根据 
 
 Notebook 先出现全部必要概念实验，再进入工程迁移。`mini_deerflow` 的环境探针不能出现在概念实验之前，避免让学习者误以为所有实验都必须依赖项目包。
 
-输出 fence 是 Web 的稳定 transcript。Notebook 执行后捕获的标准化 stdout 必须与同 id 的 output fence 一致；换行、临时目录、时间和 UUID 必须在实验中主动稳定化，不能由 validator 猜测业务语义。
+输出 fence 是 Web 的稳定 transcript。Notebook 执行后捕获的标准化 stdout 必须与同 id 的 output fence 一致。
+
+换行、临时目录、时间和 UUID 必须在实验中主动稳定化，不能由 validator 猜测业务语义。
 
 ## 10. 自动检查规则
 
@@ -295,19 +335,21 @@ Notebook 先出现全部必要概念实验，再进入工程迁移。`mini_deerf
 
 ## 12. 第 07 章样章的最小验收集
 
-第 07 章必须至少包含以下 lab，顺序固定：
+第 07 章必须至少包含以下 lab，顺序固定。下列每项依次写出完整
+`id / layer / kind / concept / pair`；`—` 表示按 grammar 省略 pair：
 
-1. `concept/baseline/state-node-patch`：单节点读取 State、返回 patch；
-2. `concept/repair/serial-edge`：A → B 的 State 演进；
-3. `concept/contrast/conditional-edge`：纯 router 只读 State；
-4. `concept/failure/parallel-results`：并行同字段触发 `InvalidUpdateError`；
-5. `concept/repair/parallel-results`：`operator.add` 合并两个 patch；
-6. `concept/failure/task-list-duplicates`：`operator.add` 错用于可更新实体；
-7. `concept/repair/task-list-duplicates`：按 ID 自定义 Reducer；
-8. `concept/baseline/explicit-react`：从零搭 model/tool/conditional loop；
-9. `concept/contrast/stream-modes`：展示 updates 与 values；
-10. `concept/failure/recursion-limit`：显示异常前已发生的节点轨迹；
-11. `migration/contrast/explicit-react`：迁移到 Mini DeerFlow factory 并列出新增边界。
+1. `ch07-state-node-patch / concept / baseline / state-node-patch / —`：单节点读取 State、返回 patch；
+2. `ch07-serial-edge / concept / baseline / serial-edge / —`：A → B 的 State 演进；
+3. `ch07-conditional-edge / concept / contrast / conditional-edge / —`：纯 router 只读 State；
+4. `ch07-parallel-conflict / concept / failure / reducer / parallel-results`：并行同字段触发 `InvalidUpdateError`；
+5. `ch07-parallel-reducer / concept / repair / reducer / parallel-results`：`operator.add` 合并两个 patch；
+6. `ch07-task-list-duplicates / concept / failure / reducer / task-list-identity`：`operator.add` 错用于可更新实体；
+7. `ch07-task-list-merge / concept / repair / reducer / task-list-identity`：按 ID 自定义 Reducer；
+8. `ch07-explicit-react / concept / baseline / explicit-react / —`：从零搭 model/tool/conditional loop；
+9. `ch07-stream-modes / concept / contrast / stream-modes / —`：展示 updates 与 values；
+10. `ch07-recursion-limit / concept / failure / recursion-limit / loop-budget`：显示异常前已发生的节点轨迹；
+11. `ch07-loop-budget / concept / repair / recursion-limit / loop-budget`：在 State 中加入可解释的业务终止预算；
+12. `ch07-mini-deerflow-migration / migration / contrast / explicit-react / —`：迁移到 Mini DeerFlow factory，并映射 Artifact 与 middleware trace reducer。
 
 这组实验既是样章目录，也是 Notebook 生成器和 validator 的首个真实验收 fixture。
 

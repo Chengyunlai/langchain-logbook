@@ -1,6 +1,6 @@
 # 用双层案例重写第 07 章 StateGraph
 
-Status: open
+Status: resolved
 Triage: ready-for-agent
 Type: task
 Blocked by: 02
@@ -27,3 +27,23 @@ Blocked by: 02
 - Mini DeerFlow 只在工程迁移阶段出现，并明确说明额外封装的理由。
 - 第 07 章通过 `lesson-lab` marker、概念层导入、failure/repair 顺序、Web 输出与 Notebook output drift 自动检查。
 - 现有显式 ReAct、streaming、循环预算等内容被合理后移或保留，不丢失工程深度。
+
+## Answer
+
+已把第 07 章重写为 12 个连续 lesson lab。读者先从单节点 patch、串行边和条件边建立执行直觉，再亲手触发并行写冲突；Reducer 只在冲突证据之后出现。
+
+并行部分先用 `operator.add` 修复 append-only 搜索结果，再制造任务表重复的静默错误，最后从零实现按 ID 替换的自定义 reducer。
+
+显式 ReAct、`updates` / `values`、recursion limit 与业务预算均保留为可执行概念实验。
+
+Mini DeerFlow 只在最后一个 migration lab 导入。该实验同时对照显式 ReAct factory、`merge_artifacts()` 与 append-only `middleware_trace`，解释工程层新增的类型、安全、持久化和回归边界。
+
+同步器现可解析 v2 marker，按 Markdown 原序生成“预测 → 代码与 stdout → 解释 → 修改”单元；概念层之前不再注入 Mini DeerFlow。
+
+执行器使用独立 Python module namespace，使本地 `Annotated` State schema 可被 LangGraph 正确解析。
+
+validator 已实现 v2 opt-in、marker / id、概念层导入、输出、assert-only、failure / repair 相邻性、migration 顺序、Notebook 顺序、stdout 和教学文本检查，并提供 `--require-v2-all` 最终发布模式。
+
+验证证据：本章 12 个 lab 已离线执行并同步 Notebook；`make check` 通过 168 项测试（1 项外部集成跳过），教程 validator 为 0 new / 0 known / 0 stale。
+
+Astro 构建、站内链接、发布契约与 SEO 检查全部通过。

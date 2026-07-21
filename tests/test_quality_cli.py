@@ -72,6 +72,228 @@ class TutorialCheckerCliTests(unittest.TestCase):
         )
         (root / "quality-baseline.json").write_text('{"issues": []}\n', encoding="utf-8")
 
+    def write_v2_pair(
+        self,
+        root: Path,
+        *,
+        markdown: str | None = None,
+        notebook_lab_order: list[str] | None = None,
+        notebook_outputs: dict[str, str] | None = None,
+        missing_role: tuple[str, str] | None = None,
+    ) -> None:
+        labs = [
+            {
+                "id": "demo-failure",
+                "layer": "concept",
+                "kind": "failure",
+                "concept": "merge",
+                "pair": "merge-results",
+                "title": "先看冲突",
+                "code": "print('conflict')",
+                "output": "conflict\n",
+            },
+            {
+                "id": "demo-repair",
+                "layer": "concept",
+                "kind": "repair",
+                "concept": "merge",
+                "pair": "merge-results",
+                "title": "再加合并规则",
+                "code": "print('merged')",
+                "output": "merged\n",
+            },
+            {
+                "id": "demo-migration",
+                "layer": "migration",
+                "kind": "contrast",
+                "concept": "merge",
+                "pair": None,
+                "title": "迁移到工程层",
+                "code": "print('project')",
+                "output": "project\n",
+            },
+        ]
+
+        def marker(lab: dict[str, str | None]) -> str:
+            pair = f" pair={lab['pair']}" if lab["pair"] else ""
+            return (
+                f"<!-- lesson-lab:id={lab['id']} layer={lab['layer']} "
+                f"kind={lab['kind']} concept={lab['concept']}{pair} -->"
+            )
+
+        if markdown is None:
+            rendered_labs = []
+            for lab in labs:
+                rendered_labs.append(
+                    f"{marker(lab)}\n"
+                    f"### {lab['title']}\n\n"
+                    "**运行前先预测**：请先写下预测。\n\n"
+                    f"```python sync={lab['id']}\n{lab['code']}\n```\n\n"
+                    "**观察结果**：\n\n"
+                    f"```text output={lab['id']}\n{lab['output']}```\n\n"
+                    "**发生了什么**：输出展示了当前边界。\n\n"
+                    "**动手修改**：改变一个值后重跑。\n"
+                    "<!-- /lesson-lab -->"
+                )
+            markdown = (
+                "# 第 01 章：Demo\n\n<!-- lesson-contract:v2 -->\n\n"
+                + "\n\n".join(rendered_labs)
+                + "\n"
+            )
+
+        lab_by_id = {str(lab["id"]): lab for lab in labs}
+        ordered = notebook_lab_order or [str(lab["id"]) for lab in labs]
+        outputs = notebook_outputs or {}
+        cells: list[dict[str, object]] = [
+            {
+                "cell_type": "markdown",
+                "metadata": {},
+                "source": ["# 第 01 章：Demo"],
+            }
+        ]
+        for lab_id in ordered:
+            lab = lab_by_id[lab_id]
+            lab_metadata = {
+                "id": lab_id,
+                "layer": lab["layer"],
+                "kind": lab["kind"],
+                "concept": lab["concept"],
+                "pair": lab["pair"],
+            }
+            for role in ("prediction",):
+                if missing_role != (lab_id, role):
+                    cells.append(
+                        {
+                            "cell_type": "markdown",
+                            "metadata": {
+                                "langchain_logbook_lab_id": lab_id,
+                                "langchain_logbook_role": role,
+                            },
+                            "source": ["运行前先预测"],
+                        }
+                    )
+            cells.append(
+                {
+                    "cell_type": "code",
+                    "execution_count": 1,
+                    "metadata": {
+                        "langchain_logbook_sync": lab_id,
+                        "langchain_logbook_lab": lab_metadata,
+                    },
+                    "outputs": [
+                        {
+                            "output_type": "stream",
+                            "name": "stdout",
+                            "text": outputs.get(lab_id, str(lab["output"])),
+                        }
+                    ],
+                    "source": [str(lab["code"])],
+                }
+            )
+            for role in ("explanation", "modification"):
+                if missing_role != (lab_id, role):
+                    cells.append(
+                        {
+                            "cell_type": "markdown",
+                            "metadata": {
+                                "langchain_logbook_lab_id": lab_id,
+                                "langchain_logbook_role": role,
+                            },
+                            "source": [role],
+                        }
+                    )
+        notebook = {
+            "cells": cells,
+            "metadata": {"langchain_logbook": {"lesson_contract": "v2"}},
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        tutorials = root / "tutorials"
+        tutorials.mkdir()
+        (tutorials / "01_Demo.md").write_text(markdown, encoding="utf-8")
+        (tutorials / "01_Demo.ipynb").write_text(
+            json.dumps(notebook, ensure_ascii=False), encoding="utf-8"
+        )
+        (root / "quality-baseline.json").write_text('{"issues": []}\n', encoding="utf-8")
+
+    def test_accepts_complete_v2_lesson_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_v2_pair(root)
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_reports_v2_pairing_and_concept_import_violations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_v2_pair(root)
+            markdown_path = root / "tutorials" / "01_Demo.md"
+            markdown = markdown_path.read_text(encoding="utf-8")
+            markdown = markdown.replace(" pair=merge-results", "", 1)
+            markdown = markdown.replace(
+                "print('conflict')", "import mini_deerflow\nprint('conflict')"
+            )
+            markdown_path.write_text(markdown, encoding="utf-8")
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("failure-repair-order", result.stdout)
+            self.assertIn("concept-imports-mini-deerflow", result.stdout)
+
+    def test_reports_v2_notebook_order_output_and_prose_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_v2_pair(
+                root,
+                notebook_lab_order=["demo-repair", "demo-failure", "demo-migration"],
+                notebook_outputs={"demo-failure": "wrong\n"},
+                missing_role=("demo-repair", "prediction"),
+            )
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("notebook-order-drift", result.stdout)
+            self.assertIn("notebook-output-drift", result.stdout)
+            self.assertIn("notebook-prose-missing", result.stdout)
+
+    def test_require_v2_all_uses_manifest_scope_and_exemptions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_pair(root, markdown_code="value = 1")
+            quality = root / "quality"
+            quality.mkdir()
+            (quality / "lesson-contracts.json").write_text(
+                json.dumps(
+                    {
+                        "version": 2,
+                        "course_scope": {
+                            "include": ["tutorials/[0-9][0-9]_*.md"],
+                            "exemptions": [],
+                        },
+                        "chapters": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            failing = self.run_checker(root, "--require-v2-all")
+            manifest = json.loads((quality / "lesson-contracts.json").read_text())
+            manifest["course_scope"]["exemptions"] = [
+                {"path": "tutorials/01_Demo.md", "reason": "迁移期维护示例"}
+            ]
+            (quality / "lesson-contracts.json").write_text(
+                json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+            )
+            passing = self.run_checker(root, "--require-v2-all")
+
+            self.assertEqual(failing.returncode, 1, failing.stdout + failing.stderr)
+            self.assertIn("lesson-contract-v2-incomplete", failing.stdout)
+            self.assertEqual(passing.returncode, 0, passing.stdout + passing.stderr)
+
     def test_reports_invalid_markdown_python(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

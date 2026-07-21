@@ -1,6 +1,13 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "01–11 章必须保留的可执行实验。Markdown 与 Notebook 同时删除实验也会被质量门禁发现。",
+  "course_scope": {
+    "include": [
+      "tutorials/[0-9][0-9]_*.md",
+      "mini_deerflow/*.md"
+    ],
+    "exemptions": []
+  },
   "chapters": {
     "01_Getting_Started": {
       "required_sync_ids": [
@@ -67,9 +74,18 @@
     },
     "07_StateGraph": {
       "required_sync_ids": [
+        "ch07-state-node-patch",
+        "ch07-serial-edge",
+        "ch07-conditional-edge",
+        "ch07-parallel-conflict",
+        "ch07-parallel-reducer",
+        "ch07-task-list-duplicates",
+        "ch07-task-list-merge",
         "ch07-explicit-react",
-        "ch07-stream-updates",
-        "ch07-loop-limit-failure"
+        "ch07-stream-modes",
+        "ch07-recursion-limit",
+        "ch07-loop-budget",
+        "ch07-mini-deerflow-migration"
       ]
     },
     "08_Engineering_Defense": {

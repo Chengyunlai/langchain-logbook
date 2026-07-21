@@ -1,99 +1,777 @@
-# 第 07 章：StateGraph 基础——State、Reducer、Node、Edge 与显式 ReAct
+# 第 07 章：把研究流程从 Prompt 搬进 StateGraph
+
+<!-- lesson-contract:v2 -->
 
 > **课程位置**：Graph 编排层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
-> **API 校准日期**：2026-07-13  
-> **本章工件**：`mini_deerflow.graph.create_explicit_react_graph()`
+> **本章工件**：一张从零搭建的研究流程图，以及 Mini DeerFlow 显式 ReAct 工厂
 
-## 1. 系统快照：Lead Agent 受治理，固定流程却仍靠 Prompt
+## 1. 上一刻系统：Agent 会调用工具，但流程仍是一句愿望
 
-第二部交付的 Lead Agent 已能检索、读取安全上下文并接受 Middleware 治理。但“先验证研究请求，再查资料，最后检查报告”仍写在 Prompt 中，模型可以跳过或改变顺序。
+上一章结束时，Lead Agent 已经能调用工具，也受到权限、预算和错误 Middleware 的治理。现在给它一句“先规划，再同时搜索文档与网页，最后汇总”，它大多时候会照做。
 
-`create_agent` 已经是生产可用的高层 Agent 工厂。DeerFlow 的 Lead Agent 也建立在它之上；本章学习显式 Graph，是为了接管属于业务规则的控制流，不是把所有 Agent 重写一遍。
+问题在“大多时候”。Prompt 是给模型的建议，不是应用可以证明的控制流。
 
-当业务要求固定阶段、并行分支、循环质量门、人工审批或故障恢复时，控制流本身就是业务规则。此时只靠 Prompt 说“先规划、再研究、最后检查”无法证明模型真的按顺序执行；`StateGraph` 把阶段、共享事实和转移条件变成可检查、可测试、可持久化的程序。
+我们还无法回答：规划是否一定先发生？两个搜索能否并行？它们同时写结果时由谁合并？汇总是否可能提前运行？
 
-<!-- diagram:id=07-create-agent-vs-explicit-graph -->
+这一章不从术语表开始。我们把同一个研究请求逐步写成可运行程序，每次只增加一个机制。你会先看到数据怎样流动，再为已经发生的问题命名。
+
 ```mermaid
 flowchart LR
-    Q["业务问题"] --> D{"控制流是否只是标准工具循环？"}
-    D -->|"是"| A["create_agent<br/>模型 ↔ 工具"]
-    D -->|"否"| G["StateGraph<br/>显式阶段与转移"]
-    A --> E["用 Middleware 扩展横切能力"]
-    G --> S["State + Reducer"]
-    G --> N["Node + Edge"]
-    G --> P["Checkpoint / Interrupt"]
+    A["上一刻：create_agent 工具循环"] --> B["单节点返回局部更新"]
+    B --> C["串行与条件边"]
+    C --> D["并行写冲突"]
+    D --> E["列表追加规则"]
+    E --> F["按 ID 合并规则"]
+    F --> G["显式 ReAct 与流事件"]
+    G --> H["循环预算"]
+    H --> I["迁移到 Mini DeerFlow"]
 ```
 
-**图的文本替代**：若业务只是标准模型—工具循环，优先使用 `create_agent` 并通过 Middleware 扩展；若顺序、分支、并行、循环或恢复本身属于业务规则，使用 StateGraph 显式声明 State、Node、Edge 和持久化边界。
+**图的文本替代**：本章从单节点开始，经过串行、分支和并行冲突，再引出两类合并规则。随后手写 ReAct 循环，观察 stream mode 与循环预算，最后才导入 Mini DeerFlow。
 
-## 2. Graph 的运行模型：State、Step 与局部更新
+## 2. 第一段路：让 State 沿节点和边前进
 
-### 2.1 State 是协议，不是全局可变字典
+先把模型和工具放在一边。研究请求暂时只是普通字符串，节点也是普通 Python 函数。这样运行结果若不符合预测，我们只需理解 Graph，不必同时猜测模型行为。
 
-State 描述线程内节点可以共同观察的事实。节点接收当前快照并返回**局部更新**，LangGraph 在 superstep 边界通过 reducer 合并更新。节点不应原地修改传入对象，也不应把数据库连接、API token 或模型实例塞进 State。
+<!-- lesson-lab:id=ch07-state-node-patch layer=concept kind=baseline concept=state-node-patch -->
+### 让一个节点只返回它负责的局部更新
 
-第 05 章的边界仍然成立：
+**运行前先预测**：`write_outline` 返回值中没有 `topic`，最终 State 还会保留输入主题吗？
 
-- State：会随图演进、需要 checkpoint 的线程事实；
-- Runtime Context：本次运行由应用注入、模型不可改写的配置和依赖；
-- Store：应用显式保存的跨线程数据；
-- 业务数据库：权威领域事务。
+```python sync=ch07-state-node-patch
+from typing import TypedDict
 
-### 2.2 Reducer 决定并发写入的语义
+from langgraph.graph import END, START, StateGraph
 
-没有 reducer 的字段默认使用覆盖语义；同一个 superstep 中若多个节点同时写该字段，LangGraph 不会替你猜“保留谁”，而会拒绝含糊更新。典型 reducer：
 
-```python
-from typing import Annotated, TypedDict
-import operator
-from langgraph.graph.message import add_messages
+class OutlineState(TypedDict):
+    topic: str
+    outline: str
 
-class ExampleState(TypedDict):
-    messages: Annotated[list, add_messages]
-    events: Annotated[list[str], operator.add]
-    current_status: str
+
+def write_outline(state: OutlineState) -> dict[str, str]:
+    patch = {"outline": f"提纲：{state['topic']} 的状态与控制流"}
+    print(f"[node:write_outline] input.topic = {state['topic']}")
+    print(f"[node:write_outline] patch = {patch}")
+    return patch
+
+
+outline_builder = StateGraph(OutlineState)
+outline_builder.add_node("write_outline", write_outline)
+outline_builder.add_edge(START, "write_outline")
+outline_builder.add_edge("write_outline", END)
+outline_graph = outline_builder.compile()
+
+print("[before]", {"topic": "LangGraph", "outline": ""})
+outline_result = outline_graph.invoke({"topic": "LangGraph", "outline": ""})
+print("[after]", outline_result)
 ```
 
-`messages` 需要理解消息 ID 与替换规则，所以用 `add_messages`；append-only 事件可用 `operator.add`；`current_status` 只允许当前节点覆盖。不要机械地给所有列表添加 `operator.add`：摘要、任务表和按 ID 去重的 Artifact 可能需要完全不同的 reducer。
+**观察结果**：
 
-## 3. Node 与 Edge 分别负责什么
+```text output=ch07-state-node-patch
+[before] {'topic': 'LangGraph', 'outline': ''}
+[node:write_outline] input.topic = LangGraph
+[node:write_outline] patch = {'outline': '提纲：LangGraph 的状态与控制流'}
+[after] {'topic': 'LangGraph', 'outline': '提纲：LangGraph 的状态与控制流'}
+```
 
-Node 是执行单元：读取 State/Runtime，调用确定性代码、模型或工具，然后返回 update 或 `Command`。Edge 是控制流：说明某个节点完成后，哪些节点可以进入下一 superstep。
+**发生了什么**：State 是一次图运行中的共享事实。节点读取当前快照，返回 patch（局部更新）；LangGraph 把 patch 合入 State，所以没被更新的 `topic` 仍然存在。
 
-常见边：
+**动手修改**：让节点再返回 `topic="被覆盖"`。运行前先判断这是修改输入对象，还是提交一个覆盖该字段的 patch。
+<!-- /lesson-lab -->
 
-- `add_edge(A, B)`：固定串行；
-- `add_conditional_edges(A, router)`：根据 State 选择后继；
-- 节点返回 `Command(goto=...)`：在同一个返回值中组合 State update 与路由；
-- 条件边返回 `Send(...)`：动态创建并行任务，第 08 章详解。
+不要把数据库连接、API Key 或模型对象塞进 State。State 会参与序列化、checkpoint 和 trace；运行依赖属于 Runtime Context，跨线程偏好属于 Store，权威业务事务仍属于数据库。
 
-节点要“小而完整”：它应有清晰输入输出与失败边界，而不是把整个业务塞进一个 `run_everything()`。反过来，也不要为每行 Python 创建节点；只有需要单独重试、观测、并行、审批或持久化的阶段才值得成为 Graph seam。
+<!-- lesson-lab:id=ch07-serial-edge layer=concept kind=baseline concept=serial-edge -->
+### 用两条固定边保证先规划、后总结
 
-## 4. 手写一个透明的 ReAct 循环
+**运行前先预测**：`summarize` 能否读到 `plan` 刚写入的 `query`？最终 State 会包含哪些字段？
 
-高层 `create_agent` 帮我们完成了模型调用、工具执行、`ToolMessage` 配对和循环。本章用一次显式实现拆开它，目的是看清 Graph 语义，而不是以后拒绝高层工厂。
+```python sync=ch07-serial-edge
+from typing import TypedDict
 
-<!-- diagram:id=07-explicit-react-loop -->
+from langgraph.graph import END, START, StateGraph
+
+
+class SerialResearchState(TypedDict):
+    objective: str
+    query: str
+    summary: str
+
+
+def plan_query(state: SerialResearchState) -> dict[str, str]:
+    patch = {"query": f"检索：{state['objective']}"}
+    print("[node:plan]", patch)
+    return patch
+
+
+def summarize_query(state: SerialResearchState) -> dict[str, str]:
+    patch = {"summary": f"已根据“{state['query']}”生成摘要"}
+    print("[node:summarize] read.query =", state["query"])
+    print("[node:summarize]", patch)
+    return patch
+
+
+serial_builder = StateGraph(SerialResearchState)
+serial_builder.add_node("plan", plan_query)
+serial_builder.add_node("summarize", summarize_query)
+serial_builder.add_edge(START, "plan")
+serial_builder.add_edge("plan", "summarize")
+serial_builder.add_edge("summarize", END)
+serial_graph = serial_builder.compile()
+
+serial_result = serial_graph.invoke(
+    {"objective": "解释 checkpoint", "query": "", "summary": ""}
+)
+print("[after]", serial_result)
+```
+
+**观察结果**：
+
+```text output=ch07-serial-edge
+[node:plan] {'query': '检索：解释 checkpoint'}
+[node:summarize] read.query = 检索：解释 checkpoint
+[node:summarize] {'summary': '已根据“检索：解释 checkpoint”生成摘要'}
+[after] {'objective': '解释 checkpoint', 'query': '检索：解释 checkpoint', 'summary': '已根据“检索：解释 checkpoint”生成摘要'}
+```
+
+**发生了什么**：Node（节点）拥有一步工作，Edge（边）拥有步骤之间的可达关系。`plan → summarize` 跨过两个 step；后一个节点读到的是前一步 patch 合并后的 State。
+
+**动手修改**：删除 `plan → summarize`，改成 `START` 同时连接两个节点。先预测 `summarize` 会读到什么，再运行观察。
+<!-- /lesson-lab -->
+
+固定边表达“必定接着做什么”。若后继取决于 State，需要一个只负责判断的 router。router 不返回 patch，也不写数据库；它只把已经存在的事实映射成下一站。
+
+<!-- lesson-lab:id=ch07-conditional-edge layer=concept kind=contrast concept=conditional-edge -->
+### 让纯 router 在拒绝与执行之间选择
+
+**运行前先预测**：空白请求会进入 `research`，还是直接进入 `reject`？router 会不会改写 `status`？
+
+```python sync=ch07-conditional-edge
+from typing import Literal, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class RoutedState(TypedDict):
+    objective: str
+    status: str
+    answer: str
+
+
+def validate_request(state: RoutedState) -> dict[str, str]:
+    status = "ready" if state["objective"].strip() else "invalid"
+    return {"status": status}
+
+
+def choose_path(state: RoutedState) -> Literal["research", "reject"]:
+    return "research" if state["status"] == "ready" else "reject"
+
+
+def research(state: RoutedState) -> dict[str, str]:
+    return {"answer": f"开始研究：{state['objective']}"}
+
+
+def reject(_: RoutedState) -> dict[str, str]:
+    return {"answer": "请求不能为空"}
+
+
+route_builder = StateGraph(RoutedState)
+route_builder.add_node("validate", validate_request)
+route_builder.add_node("research", research)
+route_builder.add_node("reject", reject)
+route_builder.add_edge(START, "validate")
+route_builder.add_conditional_edges("validate", choose_path)
+route_builder.add_edge("research", END)
+route_builder.add_edge("reject", END)
+route_graph = route_builder.compile()
+
+for objective in ("解释 reducer", "   "):
+    result = route_graph.invoke({"objective": objective, "status": "", "answer": ""})
+    print({"objective": objective, "status": result["status"], "answer": result["answer"]})
+```
+
+**观察结果**：
+
+```text output=ch07-conditional-edge
+{'objective': '解释 reducer', 'status': 'ready', 'answer': '开始研究：解释 reducer'}
+{'objective': '   ', 'status': 'invalid', 'answer': '请求不能为空'}
+```
+
+**发生了什么**：条件边读取 `validate` 已写入的 `status`，选择后继节点。State 的修改仍由节点完成；router 保持纯净，才不会在调试、恢复或可视化时偷偷产生副作用。
+
+**动手修改**：增加 `needs_clarification` 状态和第三条分支。不要在 router 中直接写 `answer`，而是新增一个拥有该 patch 的节点。
+<!-- /lesson-lab -->
+
+## 3. 第二段路：先让并行合并失败，再讨论 Reducer
+
+现在把固定流程扩成 `plan → search_docs / search_web → summarize`。两个搜索可以同时开始，这正是 Graph 比一条串行 Chain 更有价值的地方。
+
+但并行也带来一个此前不存在的问题：两个节点会在同一个 step 给 `results` 提交不同 patch。先运行没有合并协议的自然写法。
+
 ```mermaid
-stateDiagram-v2
-    [*] --> model
-    model --> tools: AIMessage 含 tool_calls
-    tools --> model: ToolMessage 已写入 State
-    model --> [*]: 无 tool_calls
+flowchart LR
+    P["plan"] --> D["search_docs"]
+    P --> W["search_web"]
+    D --> M{"同一 step 合并 results"}
+    W --> M
+    M --> S["summarize"]
 ```
 
-**图的文本替代**：Graph 从 model 节点开始；若模型消息带工具调用则进入 tools，工具结果以 ToolMessage 追加后回到 model；若没有工具调用则结束。
+**图的文本替代**：plan 完成后，文档搜索与网页搜索并行。两份 `results` patch 必须先在 step 边界合并，summarize 才能读取完整证据。
 
-事实源位于 `mini_deerflow.graph.react` 的 `tutorial:07-explicit-react-graph` region。
+<!-- lesson-lab:id=ch07-parallel-conflict layer=concept kind=failure concept=reducer pair=parallel-results -->
+### 让两个并行节点同时写同一个字段
+
+**运行前先预测**：`results` 会保留 docs、保留 web、自动拼接，还是拒绝这次更新？
+
+```python sync=ch07-parallel-conflict
+from typing import TypedDict
+
+from langgraph.errors import InvalidUpdateError
+from langgraph.graph import END, START, StateGraph
+
+
+class ConflictingState(TypedDict):
+    query: str
+    results: list[str]
+    summary: str
+
+
+observed_parallel_patches: dict[str, dict[str, list[str]]] = {}
+
+
+def search_docs(state: ConflictingState) -> dict[str, list[str]]:
+    patch = {"results": [f"docs:{state['query']}"]}
+    observed_parallel_patches["search_docs"] = patch
+    return patch
+
+
+def search_web(state: ConflictingState) -> dict[str, list[str]]:
+    patch = {"results": [f"web:{state['query']}"]}
+    observed_parallel_patches["search_web"] = patch
+    return patch
+
+
+conflict_builder = StateGraph(ConflictingState)
+conflict_builder.add_node("search_docs", search_docs)
+conflict_builder.add_node("search_web", search_web)
+conflict_builder.add_edge(START, "search_docs")
+conflict_builder.add_edge(START, "search_web")
+conflict_builder.add_edge("search_docs", END)
+conflict_builder.add_edge("search_web", END)
+conflict_graph = conflict_builder.compile()
+
+print("[before] results = []")
+try:
+    conflict_graph.invoke({"query": "checkpoint", "results": [], "summary": ""})
+except InvalidUpdateError as error:
+    assert isinstance(error, InvalidUpdateError)
+    for node_name in sorted(observed_parallel_patches):
+        print(f"[node:{node_name}] patch = {observed_parallel_patches[node_name]}")
+    print("InvalidUpdateError: results received multiple updates in one step")
+else:
+    raise AssertionError("并行同字段写入必须暴露冲突")
+```
+
+**观察结果**：
+
+```text output=ch07-parallel-conflict
+[before] results = []
+[node:search_docs] patch = {'results': ['docs:checkpoint']}
+[node:search_web] patch = {'results': ['web:checkpoint']}
+InvalidUpdateError: results received multiple updates in one step
+```
+
+**发生了什么**：这不是线程安全偶发错误，而是 State schema 没回答“多个更新如何成为一个值”。LangGraph 拒绝替业务猜测覆盖顺序。这个字段级合并函数就叫 Reducer（归并器）。
+
+**动手修改**：先不要加 reducer，只交换两个节点的注册顺序。预测它是否会让错误可靠消失，并用运行结果验证。
+<!-- /lesson-lab -->
+
+对于“搜索结果只追加、不修改旧项”的字段，最小答案是列表相加。`Annotated` 把字段类型和 reducer 绑定起来；每个并行 patch 仍是局部列表，step 边界再调用合并函数。
+
+<!-- lesson-lab:id=ch07-parallel-reducer layer=concept kind=repair concept=reducer pair=parallel-results -->
+### 用 `operator.add` 汇合只追加的搜索结果
+
+**运行前先预测**：输入中的空列表和两个并行 patch 合并后，`results` 有几个元素？
+
+```python sync=ch07-parallel-reducer
+import operator
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class AppendResultsState(TypedDict):
+    query: str
+    results: Annotated[list[str], operator.add]
+
+
+def docs_result(state: AppendResultsState) -> dict[str, list[str]]:
+    return {"results": [f"docs:{state['query']}"]}
+
+
+def web_result(state: AppendResultsState) -> dict[str, list[str]]:
+    return {"results": [f"web:{state['query']}"]}
+
+
+append_builder = StateGraph(AppendResultsState)
+append_builder.add_node("search_docs", docs_result)
+append_builder.add_node("search_web", web_result)
+append_builder.add_edge(START, "search_docs")
+append_builder.add_edge(START, "search_web")
+append_builder.add_edge("search_docs", END)
+append_builder.add_edge("search_web", END)
+append_graph = append_builder.compile()
+
+append_result = append_graph.invoke({"query": "checkpoint", "results": []})
+print("[before] results = []")
+print("[node:search_docs] patch =", {"results": ["docs:checkpoint"]})
+print("[node:search_web] patch =", {"results": ["web:checkpoint"]})
+print("[after] results =", sorted(append_result["results"]))
+```
+
+**观察结果**：
+
+```text output=ch07-parallel-reducer
+[before] results = []
+[node:search_docs] patch = {'results': ['docs:checkpoint']}
+[node:search_web] patch = {'results': ['web:checkpoint']}
+[after] results = ['docs:checkpoint', 'web:checkpoint']
+```
+
+**发生了什么**：`operator.add` 给“只追加日志或证据”提供了明确语义。它解决的是同一 step 的合并，不负责去重、替换、排序或验证业务身份。
+
+**动手修改**：把初始 `results` 改成 `['cached:checkpoint']`。先预测最终长度，再确认 reducer 也会合并输入 State 与新 patch。
+<!-- /lesson-lab -->
+
+列表类型相同，不代表业务语义相同。任务表中的同一个任务会从 `pending` 变成 `running`、`done`。若继续机械追加，State 会同时声称它处于多个状态。
+
+<!-- lesson-lab:id=ch07-task-list-duplicates layer=concept kind=failure concept=reducer pair=task-list-identity -->
+### 看见 `operator.add` 制造重复任务
+
+**运行前先预测**：两个节点更新不同任务后，列表长度是 2 还是 4？同一个 ID 会出现几次？
+
+```python sync=ch07-task-list-duplicates
+import operator
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class TaskItem(TypedDict):
+    id: str
+    status: str
+
+
+class AppendedTaskState(TypedDict):
+    tasks: Annotated[list[TaskItem], operator.add]
+
+
+def finish_docs(_: AppendedTaskState) -> dict[str, list[TaskItem]]:
+    return {"tasks": [{"id": "docs", "status": "done"}]}
+
+
+def finish_web(_: AppendedTaskState) -> dict[str, list[TaskItem]]:
+    return {"tasks": [{"id": "web", "status": "done"}]}
+
+
+task_append_builder = StateGraph(AppendedTaskState)
+task_append_builder.add_node("finish_docs", finish_docs)
+task_append_builder.add_node("finish_web", finish_web)
+task_append_builder.add_edge(START, "finish_docs")
+task_append_builder.add_edge(START, "finish_web")
+task_append_builder.add_edge("finish_docs", END)
+task_append_builder.add_edge("finish_web", END)
+task_append_graph = task_append_builder.compile()
+
+task_append_result = task_append_graph.invoke(
+    {"tasks": [{"id": "docs", "status": "pending"}, {"id": "web", "status": "pending"}]}
+)
+for task_id in ("docs", "web"):
+    statuses = sorted(
+        item["status"] for item in task_append_result["tasks"] if item["id"] == task_id
+    )
+    print(f"id={task_id} statuses={statuses}")
+print("task_count =", len(task_append_result["tasks"]))
+```
+
+**观察结果**：
+
+```text output=ch07-task-list-duplicates
+id=docs statuses=['done', 'pending']
+id=web statuses=['done', 'pending']
+task_count = 4
+```
+
+**发生了什么**：代码没有异常，但业务状态错了。`operator.add` 忠实完成了“追加”，只是任务表真正需要的是“同 ID 替换，新 ID 追加”。静默错误比异常更需要先写可观察输出。
+
+**动手修改**：把其中一个 patch 的 ID 改为 `pdf`。预测哪些项应追加、哪些项应替换，再写出你的合并规则。
+<!-- /lesson-lab -->
+
+自定义 reducer 接收旧值与本次更新，返回合并后的新值。它不是工具函数细节，而是 State 的领域协议：任务身份一旦从 `id` 改成复合键，旧 checkpoint 的解释也会随之改变。
+
+<!-- lesson-lab:id=ch07-task-list-merge layer=concept kind=repair concept=reducer pair=task-list-identity -->
+### 写一个按任务 ID 替换的 Reducer
+
+**运行前先预测**：保留初始顺序时，两个 `done` patch 会替换原位置，还是移动到列表末尾？
+
+```python sync=ch07-task-list-merge
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class MergedTaskItem(TypedDict):
+    id: str
+    status: str
+
+
+def merge_tasks(
+    current: list[MergedTaskItem] | None,
+    updates: list[MergedTaskItem] | None,
+) -> list[MergedTaskItem]:
+    merged = [dict(item) for item in (current or [])]
+    positions = {item["id"]: index for index, item in enumerate(merged)}
+    for update in updates or []:
+        if update["id"] in positions:
+            merged[positions[update["id"]]] = dict(update)
+        else:
+            positions[update["id"]] = len(merged)
+            merged.append(dict(update))
+    return merged
+
+
+class MergedTaskState(TypedDict):
+    tasks: Annotated[list[MergedTaskItem], merge_tasks]
+
+
+def complete_docs(_: MergedTaskState) -> dict[str, list[MergedTaskItem]]:
+    return {"tasks": [{"id": "docs", "status": "done"}]}
+
+
+def complete_web(_: MergedTaskState) -> dict[str, list[MergedTaskItem]]:
+    return {"tasks": [{"id": "web", "status": "done"}]}
+
+
+task_merge_builder = StateGraph(MergedTaskState)
+task_merge_builder.add_node("complete_docs", complete_docs)
+task_merge_builder.add_node("complete_web", complete_web)
+task_merge_builder.add_edge(START, "complete_docs")
+task_merge_builder.add_edge(START, "complete_web")
+task_merge_builder.add_edge("complete_docs", END)
+task_merge_builder.add_edge("complete_web", END)
+task_merge_graph = task_merge_builder.compile()
+
+task_merge_result = task_merge_graph.invoke(
+    {"tasks": [{"id": "docs", "status": "pending"}, {"id": "web", "status": "pending"}]}
+)
+print("tasks =", task_merge_result["tasks"])
+print("unique_ids =", len({item["id"] for item in task_merge_result["tasks"]}))
+```
+
+**观察结果**：
+
+```text output=ch07-task-list-merge
+tasks = [{'id': 'docs', 'status': 'done'}, {'id': 'web', 'status': 'done'}]
+unique_ids = 2
+```
+
+**发生了什么**：reducer 用 `id` 建立 identity，更新原位置并保留稳定顺序。此规则适合“当前任务表”，不适合必须保留全部历史的审计日志。
+
+**动手修改**：让两个并行节点同时更新 `docs` 为不同状态。你必须明确选择“固定优先级、拒绝冲突或保存版本”，不要依赖节点注册顺序碰运气。
+<!-- /lesson-lab -->
+
+## 4. 第三段路：拆开 `create_agent` 已替你完成的循环
+
+到这里，Graph 的 State、节点、边、条件分支和合并边界都已经可见。现在再看 ReAct，就不会把它误解成某个神秘 Agent 类：它只是 model 与 tools 两类节点之间的一条条件循环。
+
+`create_agent` 仍是标准工具循环的首选。我们手写一次，是为了知道 ToolMessage 为什么必须回到模型、条件边检查了什么，以及以后把确定性业务阶段放到循环外时应该接在哪里。
+
+<!-- lesson-lab:id=ch07-explicit-react layer=concept kind=baseline concept=explicit-react -->
+### 从零连接 model、tools 与条件循环
+
+**运行前先预测**：模型第一次返回 tool call 后，工具结果会直接成为最终回答吗？节点轨迹会经过几步？
 
 ```python sync=ch07-explicit-react
+import operator
+from typing import Annotated, Literal
+
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import tool
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+
+
+class ToolCallingFakeModel(GenericFakeChatModel):
+    def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+        del tools, tool_choice, kwargs
+        return self
+
+
+@tool
+def multiply(left: int, right: int) -> int:
+    """计算两个整数的乘积。"""
+    return left * right
+
+
+class LocalReactState(MessagesState):
+    node_trace: Annotated[list[str], operator.add]
+
+
+local_model = ToolCallingFakeModel(
+    messages=iter(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "multiply", "args": {"left": 6, "right": 7}, "id": "call-42"}],
+            ),
+            AIMessage(content="根据工具结果，答案是 42。"),
+        ]
+    )
+)
+bound_model = local_model.bind_tools([multiply])
+local_tool_node = ToolNode([multiply])
+
+
+def call_local_model(state: LocalReactState) -> dict[str, object]:
+    return {"messages": [bound_model.invoke(state["messages"])], "node_trace": ["model"]}
+
+
+def call_local_tools(state: LocalReactState) -> dict[str, object]:
+    update = local_tool_node.invoke(state)
+    return {"messages": update["messages"], "node_trace": ["tools"]}
+
+
+def route_local_model(state: LocalReactState) -> Literal["tools", "__end__"]:
+    return "tools" if state["messages"][-1].tool_calls else END
+
+
+react_builder = StateGraph(LocalReactState)
+react_builder.add_node("model", call_local_model)
+react_builder.add_node("tools", call_local_tools)
+react_builder.add_edge(START, "model")
+react_builder.add_conditional_edges("model", route_local_model)
+react_builder.add_edge("tools", "model")
+local_react_graph = react_builder.compile()
+
+local_react_result = local_react_graph.invoke({"messages": [("user", "计算 6 × 7")]})
+tool_message = next(
+    message for message in local_react_result["messages"] if isinstance(message, ToolMessage)
+)
+print("node_trace =", local_react_result["node_trace"])
+print("tool_message =", tool_message.content)
+print("final_answer =", local_react_result["messages"][-1].content)
+```
+
+**观察结果**：
+
+```text output=ch07-explicit-react
+node_trace = ['model', 'tools', 'model']
+tool_message = 42
+final_answer = 根据工具结果，答案是 42。
+```
+
+**发生了什么**：第一次 model patch 追加带 tool call 的 AIMessage；tools 节点执行函数并追加配对的 ToolMessage；条件边再回到 model，第二次模型调用才生成面向用户的答案。
+
+**动手修改**：把 `tools → model` 改成 `tools → END`。预测最终消息类型与内容，解释为什么原始工具输出不等于最终回答。
+<!-- /lesson-lab -->
+
+<!-- lesson-lab:id=ch07-stream-modes layer=concept kind=contrast concept=stream-modes -->
+### 对照 `updates` 与 `values` 看同一次执行
+
+**运行前先预测**：`updates` 每次包含局部 patch 还是完整 State？`values` 会不会包含之前节点写入的字段？
+
+```python sync=ch07-stream-modes
+import operator
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class StreamState(TypedDict):
+    count: int
+    trace: Annotated[list[str], operator.add]
+
+
+def step_one(state: StreamState) -> dict[str, object]:
+    return {"count": state["count"] + 1, "trace": ["one"]}
+
+
+def step_two(state: StreamState) -> dict[str, object]:
+    return {"count": state["count"] + 1, "trace": ["two"]}
+
+
+stream_builder = StateGraph(StreamState)
+stream_builder.add_node("one", step_one)
+stream_builder.add_node("two", step_two)
+stream_builder.add_edge(START, "one")
+stream_builder.add_edge("one", "two")
+stream_builder.add_edge("two", END)
+stream_graph = stream_builder.compile()
+
+for mode, chunk in stream_graph.stream(
+    {"count": 0, "trace": []}, stream_mode=["updates", "values"]
+):
+    if mode == "updates":
+        node_name, patch = next(iter(chunk.items()))
+        print(f"updates node={node_name} patch={patch}")
+    else:
+        print(f"values count={chunk['count']} trace={chunk['trace']}")
+```
+
+**观察结果**：
+
+```text output=ch07-stream-modes
+values count=0 trace=[]
+updates node=one patch={'count': 1, 'trace': ['one']}
+values count=1 trace=['one']
+updates node=two patch={'count': 2, 'trace': ['two']}
+values count=2 trace=['one', 'two']
+```
+
+**发生了什么**：`updates` 暴露本节点提交的 patch，适合解释“谁改了什么”；`values` 暴露合并后的完整快照，适合重建当前 UI。
+
+Gateway 以后会把二者投影成稳定 SSE，而不是直接泄露 Python 对象。
+
+**动手修改**：只订阅 `updates`，尝试仅靠最后一个 chunk 还原完整 State。记录你还缺哪些历史信息。
+<!-- /lesson-lab -->
+
+任何循环都需要终止条件。Prompt 中写“最多三次”不是程序保证；Graph 的 recursion limit 能阻止失控，但它只知道执行步数，不知道业务为何应该停止。
+
+<!-- lesson-lab:id=ch07-recursion-limit layer=concept kind=failure concept=recursion-limit pair=loop-budget -->
+### 让无条件循环撞上 recursion limit
+
+**运行前先预测**：图被终止前，`work` 节点至少执行一次吗？异常发生后还能否从返回值读取最终 State？
+
+```python sync=ch07-recursion-limit
+import operator
+from typing import Annotated, TypedDict
+
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import START, StateGraph
+
+
+class UnboundedState(TypedDict):
+    attempts: Annotated[list[int], operator.add]
+
+
+observed_attempts: list[int] = []
+
+
+def repeat_work(state: UnboundedState) -> dict[str, list[int]]:
+    attempt = len(state.get("attempts", [])) + 1
+    observed_attempts.append(attempt)
+    return {"attempts": [attempt]}
+
+
+unbounded_builder = StateGraph(UnboundedState)
+unbounded_builder.add_node("work", repeat_work)
+unbounded_builder.add_edge(START, "work")
+unbounded_builder.add_edge("work", "work")
+unbounded_graph = unbounded_builder.compile()
+
+try:
+    unbounded_graph.invoke({"attempts": []}, config={"recursion_limit": 3})
+except GraphRecursionError as error:
+    assert isinstance(error, GraphRecursionError)
+    print("observed_attempts =", observed_attempts)
+    print("GraphRecursionError: graph exceeded recursion_limit=3")
+else:
+    raise AssertionError("无条件循环必须被 recursion limit 终止")
+```
+
+**观察结果**：
+
+```text output=ch07-recursion-limit
+observed_attempts = [1, 2, 3]
+GraphRecursionError: graph exceeded recursion_limit=3
+```
+
+**发生了什么**：recursion limit 是运行时保险丝。它终止了执行，却没有产出“为什么结束”的业务状态；调用方只得到异常。真实系统还需要可解释、可测试的预算字段。
+
+**动手修改**：把 limit 改成 1 和 5，记录节点实际执行次数。不要把观察到的数值误当成所有复杂 Graph 的业务轮次。
+<!-- /lesson-lab -->
+
+<!-- lesson-lab:id=ch07-loop-budget layer=concept kind=repair concept=recursion-limit pair=loop-budget -->
+### 把业务预算写进 State 并正常结束
+
+**运行前先预测**：预算为 3 时，route 在第几次 patch 合并后选择 END？最终结果是异常还是带原因的 State？
+
+```python sync=ch07-loop-budget
+import operator
+from typing import Annotated, Literal, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class BoundedState(TypedDict):
+    attempts: Annotated[list[int], operator.add]
+    max_attempts: int
+    stop_reason: str
+
+
+def bounded_work(state: BoundedState) -> dict[str, object]:
+    attempt = len(state.get("attempts", [])) + 1
+    reason = "budget_exhausted" if attempt >= state["max_attempts"] else ""
+    return {"attempts": [attempt], "stop_reason": reason}
+
+
+def continue_or_stop(state: BoundedState) -> Literal["work", "__end__"]:
+    return END if state["stop_reason"] else "work"
+
+
+bounded_builder = StateGraph(BoundedState)
+bounded_builder.add_node("work", bounded_work)
+bounded_builder.add_edge(START, "work")
+bounded_builder.add_conditional_edges("work", continue_or_stop)
+bounded_graph = bounded_builder.compile()
+
+bounded_result = bounded_graph.invoke(
+    {"attempts": [], "max_attempts": 3, "stop_reason": ""},
+    config={"recursion_limit": 10},
+)
+print("attempts =", bounded_result["attempts"])
+print("stop_reason =", bounded_result["stop_reason"])
+```
+
+**观察结果**：
+
+```text output=ch07-loop-budget
+attempts = [1, 2, 3]
+stop_reason = budget_exhausted
+```
+
+**发生了什么**：业务预算负责“何时以及为何停止”，recursion limit 仍保留为更外层保险丝。两者不是二选一：前者产生领域结果，后者防止错误拓扑失控。
+
+**动手修改**：让预算由“尝试次数”改成“累计成本”。指出哪个字段属于 State，哪个价格表或权限依赖应由 Runtime Context 提供。
+<!-- /lesson-lab -->
+
+## 5. 工程迁移：把机制放回 Mini DeerFlow
+
+现在才导入项目代码。概念层已经回答 Graph 如何运行；工程层要回答谁拥有类型、如何保存、怎样限制工具更新，以及与 DeerFlow 的哪条调用链对应。
+
+<!-- lesson-lab:id=ch07-mini-deerflow-migration layer=migration kind=contrast concept=explicit-react -->
+### 对照 Mini DeerFlow 的显式 ReAct 与领域 Reducer
+
+**运行前先预测**：工程工厂的节点轨迹是否仍是 `model → tools → model`？同路径 Artifact 再次写入时是追加还是替换？
+
+```python sync=ch07-mini-deerflow-migration
+import operator
+
+from langchain_core.messages import AIMessage
+
 from mini_deerflow.graph import create_explicit_react_graph
 from mini_deerflow.models import create_offline_model
+from mini_deerflow.schemas import ArtifactRef
+from mini_deerflow.state import MiddlewareTraceEvent, merge_artifacts
 from mini_deerflow.tools import calculator
 
-react_model = create_offline_model(
+
+project_model = create_offline_model(
     [
         AIMessage(
             content="",
@@ -109,169 +787,104 @@ react_model = create_offline_model(
         AIMessage(content="结果是 42。"),
     ]
 )
-react_graph = create_explicit_react_graph(model=react_model, tools=[calculator])
-react_result = react_graph.invoke({"messages": [("user", "计算 6 × 7")]})
+project_graph = create_explicit_react_graph(model=project_model, tools=[calculator])
+project_result = project_graph.invoke({"messages": [("user", "计算 6 × 7")]})
 
-assert [event.as_text() for event in react_result["node_trace"]] == [
-    "model",
-    "tools",
-    "model",
-]
-assert react_result["messages"][-1].content == "结果是 42。"
-assert next(
-    message.content
-    for message in react_result["messages"]
-    if isinstance(message, ToolMessage)
-) == "42.0"
-```
-
-### 4.1 为什么 ToolNode 之后必须回到 model
-
-工具输出不是最终答案。工具节点需要生成与 `tool_call_id` 配对的 `ToolMessage`，再让模型基于工具证据生成回答。如果 tools 直接连到 `END`，调用方只能看到原始 JSON/数字，模型没有机会解释结果；如果没有 ToolMessage 配对，后续模型或 provider 会拒绝无效消息序列。
-
-### 4.2 条件函数应保持纯净
-
-`route_after_model()` 只读取最后一条消息并返回目标节点。不要在 router 中写数据库或修改 State：router 可能在调试、可视化或恢复时被多次调用，而且它没有稳定的 update/reducer 语义。需要“更新并跳转”时使用返回 `Command` 的节点。
-
-## 5. 不只看最终答案：观察 updates stream
-
-`invoke()` 适合获取最终 State；`stream(..., stream_mode="updates")` 会按节点给出局部更新，能直接看到 Graph 轨迹。
-
-```python sync=ch07-stream-updates
-stream_model = create_offline_model(
-    [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "calculator",
-                    "args": {"operation": "add", "left": 1, "right": 2},
-                    "id": "calc-3",
-                    "type": "tool_call",
-                }
-            ],
-        ),
-        AIMessage(content="3"),
-    ]
+artifacts = merge_artifacts(
+    [ArtifactRef(path="reports/answer.md", media_type="text/markdown")],
+    [ArtifactRef(path="reports/answer.md", media_type="application/json")],
 )
-stream_graph = create_explicit_react_graph(model=stream_model, tools=[calculator])
-react_updates = list(
-    stream_graph.stream(
-        {"messages": [("user", "1 + 2")]},
-        stream_mode="updates",
-    )
+trace = operator.add(
+    [MiddlewareTraceEvent(middleware="permission", hook="before_model")],
+    [MiddlewareTraceEvent(middleware="artifact", hook="after_model")],
 )
 
-assert [next(iter(update)) for update in react_updates] == ["model", "tools", "model"]
-assert [
-    event.as_text() for event in react_updates[1]["tools"]["node_trace"]
-] == ["tools"]
+print("node_trace =", [event.as_text() for event in project_result["node_trace"]])
+print("artifact_count =", len(artifacts))
+print("artifact_media_type =", artifacts[0].media_type)
+print("middleware_trace =", [event.as_text() for event in trace])
 ```
 
-`updates` 是局部 patch，不是每一步完整 State；需要完整快照时使用 `values`。未来 Gateway 将这些 runtime stream mode 适配为 SSE 产品事件，不能把 Python 内部对象直接暴露为长期外部协议。
+**观察结果**：
 
-## 6. 失败实验：循环必须有终止预算
-
-只要模型持续产生 tool call，显式 ReAct 就会继续循环。生产系统需要模型调用上限、业务轮次、deadline 或 Graph recursion limit；不能只在 Prompt 中要求“不要无限循环”。
-
-```python sync=ch07-loop-limit-failure
-from langgraph.errors import GraphRecursionError
-
-loop_messages = [
-    AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "name": "calculator",
-                "args": {"operation": "add", "left": 1, "right": 1},
-                "id": f"loop-{index}",
-                "type": "tool_call",
-            }
-        ],
-    )
-    for index in range(10)
-]
-loop_graph = create_explicit_react_graph(
-    model=create_offline_model(loop_messages),
-    tools=[calculator],
-)
-try:
-    loop_graph.invoke(
-        {"messages": [("user", "持续调用工具")]},
-        config={"recursion_limit": 3},
-    )
-except GraphRecursionError as error:
-    loop_error = error
-else:
-    raise AssertionError("无界工具循环必须被 recursion_limit 终止")
-
-assert "Recursion limit" in str(loop_error)
+```text output=ch07-mini-deerflow-migration
+node_trace = ['model', 'tools', 'model']
+artifact_count = 1
+artifact_media_type = application/json
+middleware_trace = ['permission:before_model', 'artifact:after_model']
 ```
 
-recursion limit 是最后一道保险，不是业务策略。第 06 章的 `ModelCallLimitMiddleware` 更接近 Agent 预算；复杂业务图还应在 State 中记录 attempt、deadline 和失败原因。
+**发生了什么**：工厂保留同一条 ReAct 拓扑，但增加类型化事件、公共工具契约和测试入口。
 
-## 7. State Schema 的工程检查清单
+`artifacts` 按工作区路径替换冲突，`middleware_trace` 才是 append-only；工程代码没有给所有列表套同一个 reducer。
+<!-- /lesson-lab -->
 
-设计字段时逐项回答：
+概念实验刻意省略了四类工程边界，Mini DeerFlow 必须补上：
 
-1. 它是否需要跨节点、跨暂停恢复？否则留在节点局部变量或 Runtime Context。
-2. 它是否可能被多个并行节点写入？若会，reducer 的冲突语义是什么？
-3. 它能否被默认 serializer 保存？连接、生成器、锁对象不能进入 State。
-4. 它是否含 Secret 或无界大对象？若含，改为安全引用或外部存储。
-5. 它是领域类型还是靠字符串编码的约定？优先使用 `ArtifactRef` 等可验证类型。
-6. 它被谁消费？没有消费者的“以后也许有用”字段应删除。
-
-## 8. Mini DeerFlow 与 DeerFlow 对照
-
-Mini DeerFlow 的显式 ReAct 是教学剖面；当前 DeerFlow Lead Agent 仍优先使用 `create_agent`，不会为了“更底层”而复制一套模型—工具图。对照阅读固定到 DeerFlow commit `2bd0f56a0f5a418d126cb4a18e23001f54ccf024`：
-
-| 本章概念 | DeerFlow 阅读入口 | 阅读问题 |
+| 边界 | 概念实验 | Mini DeerFlow |
 |---|---|---|
-| `ReactGraphState.messages` | `agents/thread_state.py::ThreadState` | 消息以外哪些线程事实需要 reducer？ |
-| model ↔ tools loop | `agents/lead_agent/agent.py::make_lead_agent` | 为什么当前实现选择 `create_agent`？ |
-| ToolMessage / Command update | `tools/builtins/*` | 哪些工具不仅返回文本，还更新业务 State？ |
-| updates/values stream | `runtime/runs/worker.py` | Graph mode 如何被适配为 Gateway SSE？ |
-| recursion / model limit | middleware chain | 预算在哪层 fail closed？ |
+| 类型 | 就地 `TypedDict` 与字符串 | `ThreadState`、`ArtifactRef`、类型化事件 |
+| 安全 | 无真实身份与权限 | Middleware 校验工具更新，Secret 不进 State |
+| 持久化 | 单进程内存运行 | checkpointer 保存可序列化 State |
+| 回归 | 页面输出与局部断言 | factory、reducer、恢复和权限测试 |
 
-不要把早期 DeerFlow research graph 文章当作当前主架构。学习显式 StateGraph 是为了理解 runtime 与复杂业务拓扑，阅读当前 DeerFlow 时仍应以真实 Lead Agent factory 为准。
+## 6. 什么时候用 `create_agent`，什么时候用显式 Graph
 
-## 9. 练习与自动验收
+`create_agent` 本身建立在 LangGraph 运行时之上。选择显式 Graph 不是因为“底层更高级”，而是因为某些控制流已经成为产品必须证明的业务规则。
+
+| 需求 | 优先选择 | 原因 |
+|---|---|---|
+| 标准 model ↔ tools 循环 | `create_agent` | 工厂已处理消息配对、工具执行与循环 |
+| 权限、限流、摘要、错误投影 | Agent Middleware | 横切治理不应污染业务拓扑 |
+| 固定阶段、条件分支、并行汇合 | `StateGraph` | 顺序和合并本身就是业务规则 |
+| 动态 fan-out、子图、人工暂停 | `StateGraph` | 需要显式状态与恢复边界 |
+| 两者同时存在 | Graph 外层 + `create_agent` 节点 | 确定性流程包住标准 Agent 循环 |
+
+阅读 DeerFlow 时也使用这个判断。当前 Lead Agent 的标准工具循环优先使用 `create_agent`；State schema、Middleware、Sandbox、Subagent 与 Gateway 围绕它建立 Harness。
+
+不要因为学会 StateGraph，就把成熟工厂重新手写一遍。
+
+## 7. 练习：从修改一个变量到扩展项目
 
 ### 练习 A：单点修改
 
-为 `ReactGraphState` 增加类型化 `model_attempts` reducer，并让模型节点每次追加一个 attempt 事件。解释为何它不应只是一个全局整数。
+给并行搜索结果加入 `source_id`。先用 `operator.add` 运行，再制造同一来源重复返回，最后设计“按来源替换”或“保留版本”的 reducer。写清 identity 与冲突策略。
 
 ### 练习 B：边界判断
 
-判断下列对象属于 State、Context、Store 还是业务数据库：当前 tool call、数据库连接、用户语言偏好、订单退款状态、checkpoint ID。
+把下列对象分别放入 State、Runtime Context、Store 或业务数据库：当前 tool call、数据库连接、用户语言偏好、退款事务、研究任务状态、checkpoint ID。每项都说明生命周期与所有者。
 
 ### 练习 C：项目扩展
 
-增加一个“工具连续失败两次即结束”的显式节点。失败计数必须由 ToolMessage 的结构化状态推导或显式更新，不能搜索自然语言回答中的“失败”二字。
+在显式 ReAct 图外增加 `validate_request → agent → quality_gate`。Agent 节点可以调用 `create_agent`，但验证与质量门必须是确定性节点；为每条条件边写一个失败用例。
 
-### 延迟回忆题
+### 延迟回忆
 
-合上讲义回答：Reducer 解决的是哪种冲突？为什么 router 不应产生副作用？`create_agent` 与显式 ReAct 的选择标准是什么？
+合上讲义回答：节点为什么返回 patch？Reducer 解决哪一刻的冲突？为什么 router 不应产生副作用？业务预算与 recursion limit 有什么不同？何时不应该手写 ReAct？
+
+## 8. 下一刻系统：控制流可见，动态并行仍未解决
+
+本章结束后，研究系统已经能显式表达 State、Node、Edge、条件分支、并行汇合、领域 reducer、ReAct 循环、stream mode 与终止预算。
+
+但搜索分支仍在代码中提前写死。下一章会让 planner 动态产生 section，再用 `Send` fan-out、`Command` 路由和 Subgraph 隔离把研究流程展开，同时保留本章建立的合并协议。
+
+运行本章验收：
 
 ```bash
+TMPDIR="$PWD/.tmp" uv run --locked --group dev python \
+  scripts/sync_lesson_notebooks.py tutorials/07_StateGraph.md --execute
 TMPDIR="$PWD/.tmp" uv run --locked --group dev pytest -q \
-  tests/test_mini_deerflow_graph_workflows.py
+  tests/test_notebook_sync.py tests/test_quality_cli.py tests/test_mini_deerflow_graph_workflows.py
 TMPDIR="$PWD/.tmp" uv run --locked --group dev python scripts/validate_tutorials.py
 ```
 
-## 10. 资料
+## 9. 资料与 DeerFlow 阅读入口
 
-资料访问日期：2026-07-13。
+资料访问日期：2026-07-21。
 
-- [LangGraph Graph API Overview](https://docs.langchain.com/oss/python/langgraph/graph-api)
-- [LangGraph Workflows and Agents](https://docs.langchain.com/oss/python/langgraph/workflows-agents)
-- [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming)
-- [DeerFlow ThreadState](https://github.com/bytedance/deer-flow/blob/main/backend/packages/harness/deerflow/agents/thread_state.py)
+- [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)：State、Node、Edge、Reducer 与执行步。
+- [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming)：`updates`、`values` 与其他 stream mode。
+- [LangGraph Graph API：recursion limit](https://docs.langchain.com/oss/python/langgraph/graph-api#recursion-limit)：运行时循环保险丝。
+- [DeerFlow ThreadState](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/agents/thread_state.py)：从字段 identity 与 reducer 开始阅读真实 Harness。
 
-## 本章交付：控制流已经可见，但仍只有一个循环
-
-本章交付显式 State、Reducer、Node、Edge 和 ReAct 控制流实验。Mini DeerFlow 保留高层 Lead Agent，同时获得表达确定性业务阶段的 Graph 语言。
-
-当前图仍只有一个模型—工具循环。下一章会把研究请求动态拆成多个 section，并用 Command、Send、Subgraph 和 reducer 表达拒绝、并行、汇合与修订。
-
-继续阅读：[第 08 章：把研究流程展开为显式控制流](./08_Engineering_Defense.md)。
+继续阅读：[第 08 章：用 Command、Send 与 Subgraph 展开研究流程](./08_Engineering_Defense.md)。

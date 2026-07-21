@@ -2,14 +2,18 @@
 
 ## Destination
 
-把全部 Web 章节和 Jupyter 练习改造成一条适合初学者动手推导的 LangChain / LangGraph 学习路线：每个新概念先在透明、最小、可运行的“概念实验室”中由真实失败引出，再迁移到 Mini DeerFlow。最终由未参与改写的初学者验收 Agent 从头盲读，证明学习者能解释机制、完成练习并读懂 Mini DeerFlow。
+把全部 Web 章节和 Jupyter 练习改造成一条适合初学者动手推导的 LangChain / LangGraph 学习路线。
+
+每个新概念先在透明、最小、可运行的“概念实验室”中由真实失败引出，再迁移到 Mini DeerFlow。
+
+最终由未参与改写的初学者验收 Agent 从头盲读，证明学习者能解释机制、完成练习并读懂 Mini DeerFlow。
 
 ## Notes
 
 - 本地图承载决策和后续实施。`task` 类型可以直接修改教程、Notebook、站点文章、同步工具和测试；每次只解决一个前沿任务。
 - 写作使用 `edit-article`：信息依赖先于术语顺序，每段不超过 240 个字符。
 - 主线是 LangChain / LangGraph 心智模型与最小实验；Mini DeerFlow 是第二层工程迁移和跨章整合，不再承担概念的首次解释。
-- 概念实验室原则上不导入 `mini_deerflow`，控制在 20–60 行；先展示错误或错误结果，再只增加当前概念，并打印 State、事件、patch、Reducer 或执行顺序。
+- 概念实验室不得导入 `mini_deerflow`，控制在 20–60 行；先展示错误或错误结果，再只增加当前概念，并打印 State、事件、patch、Reducer 或执行顺序。
 - 工程迁移必须明确指出 Mini DeerFlow 比最小实验增加了哪些安全、持久化、抽象和测试边界；保留现有工程深度，不以删减内容换取易读性。
 - 全部章节都进入改造范围。第 07 章先作为教学结构样章校准粒度，随后重写第 05、06 章并扩展到第 01–04、08–11 章、工程专题与综合实战。
 - 最终盲读使用全新子 Agent：不继承改写对话，不读取规划和实现讨论，只假设具备基础 Python；课程明确要求前不得查看 Mini DeerFlow 源码、测试答案或任务地图。
@@ -18,12 +22,13 @@
 
 ## Decisions so far
 
-- [审计全书概念实验与工程迁移的倒置点](./issues/01-audit-concept-migration-inversions.md) — 课程是“叙述 problem-first、执行 solution-first”；已按 P0/P1/P2 标出全书改造强度，并确认 Notebook 因果与可观察输出需要独立契约。
-- [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 固定“真实失败先于概念答案”的章节依赖，并定义 lesson-lab、稳定输出、Notebook 原序生成和概念/迁移自动边界。
+- [审计全书概念实验与工程迁移的倒置点](./issues/01-audit-concept-migration-inversions.md) — 已按 P0/P1/P2 标出全书改造强度，并确认 Notebook 因果与可观察输出需要独立契约。
+- [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 定义 lesson-lab、稳定输出、Notebook 原序生成和概念/迁移自动边界。
+- [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 12 个连续实验已跑通，并由 v2 同步器和 validator 锁定顺序、输出与两层边界。
 
 ## Frontier
 
-- [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 下一前沿；先让同步器支持新契约，再完成 StateGraph 样章的失败、修复、观察和工程迁移。
+- [由用户评审第 07 章样章的教学粒度](./issues/04-review-stategraph-sample.md) — 下一前沿；用已构建 Web 页面与 Notebook 检查节奏、解释密度和动手负担，再决定第 05、06 章的粒度。
 
 ## Not yet specified
 
