@@ -1,6 +1,6 @@
 # 从“万能 State”失败重写第 05 章 Context Engineering
 
-Status: open
+Status: resolved
 Triage: ready-for-agent
 Type: task
 Blocked by: 04
@@ -23,3 +23,17 @@ Context、State、Store 和业务数据库的判断表目前先于失败体验�
 - 概念实验不通过 `mini_deerflow.context` 等封装首次解释机制。
 - 同用户不同 Thread、跨 Thread Store 和不同用户隔离都有可观察输出。
 - 工程迁移保留现有安全与持久化边界。
+
+## Answer
+
+第 05 章已重写为 9 个连续 lesson lab。章节先让 `UniversalState` 同时暴露 Token 和不可序列化连接，再使用原生 `context_schema` 与 `Runtime` 拆开运行依赖和 Graph State。
+
+第二组实验先证明偏好放在 Thread State 后无法跨 Thread，再用原生 `InMemoryStore` 按认证用户 namespace 保存，并独立验证不同用户隔离。
+
+第三组实验用 SQLite 业务账户制造 Store 陈旧余额，随后通过 `AccountRepository` 恢复业务数据库的权威地位。独立 checkpoint 实验证明两个 `thread_id` 的状态互不污染。
+
+判断表已移动到全部失败与修复之后。Reducer 的首次解释继续归第 07 章；本章只说明 State 是可 checkpoint 的线程事实，不提前教授并行合并。
+
+最后一个 migration lab 才导入 Mini DeerFlow，对照 `RuntimeContext`、安全视图、类型化 Artifact、checkpoint guard 与 `UserPreferenceRepository`，保留原有安全和持久化深度。
+
+验证证据：9 个实验已离线执行并同步 Notebook；`make check` 通过 169 项测试（1 项外部集成跳过），教程 validator、Astro 构建、站内链接、发布契约与 SEO 检查全部通过。

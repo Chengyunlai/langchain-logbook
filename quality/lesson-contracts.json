@@ -48,13 +48,15 @@
     },
     "05_Agent_Middleware": {
       "required_sync_ids": [
-        "ch05-safe-context",
-        "ch05-checkpoint-safe-state",
-        "ch05-secret-state-failure",
+        "ch05-universal-state-failure",
+        "ch05-runtime-state-repair",
+        "ch05-preference-state-failure",
         "ch05-store-cross-thread",
         "ch05-store-user-isolation",
+        "ch05-stale-business-fact",
+        "ch05-business-database-repair",
         "ch05-thread-state-isolation",
-        "ch05-three-boundaries"
+        "ch05-mini-deerflow-context"
       ]
     },
     "06_Observability_Persistence": {

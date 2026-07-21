@@ -26,11 +26,11 @@
 - [定义双层案例章节契约与可观察反馈格式](./issues/02-define-two-layer-lesson-contract.md) — 定义 lesson-lab、稳定输出、Notebook 原序生成和概念/迁移自动边界。
 - [用双层案例重写第 07 章 StateGraph](./issues/03-rewrite-stategraph-as-concept-lab.md) — 12 个连续实验已跑通，并由 v2 同步器和 validator 锁定顺序、输出与两层边界。
 - [评审第 07 章双层案例样章](./issues/04-review-stategraph-sample.md) — 用户确认全书按样章方向改造；内部 marker 只存在于课程源，不进入 Web。
+- [从“万能 State”失败重写第 05 章 Context Engineering](./issues/05-rewrite-context-from-universal-state-failure.md) — 由真实失败推导四类数据边界，9 个实验已跑通。
 
 ## Frontier
 
-- [从“万能 State”失败重写第 05 章 Context Engineering](./issues/05-rewrite-context-from-universal-state-failure.md) — 下一前沿；从真实失败推导四类上下文。
-- [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 可并行前沿；从遗漏权限与重复治理代码推导 Middleware hook。
+- [从重复治理逻辑重写第 06 章 Middleware](./issues/06-rewrite-middleware-from-duplication.md) — 下一前沿；从遗漏权限与重复治理代码推导 Middleware hook。
 
 ## Not yet specified
 
