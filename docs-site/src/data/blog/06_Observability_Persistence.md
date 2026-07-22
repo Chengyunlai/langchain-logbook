@@ -1,5 +1,5 @@
 ---
-title: "第 06 章：Agent Middleware——从重复治理逻辑到统一生命周期"
+title: "第 06 章：用 Agent Middleware 收回散落的调用治理"
 description: "用 AgentMiddleware 统一治理 Prompt、模型、工具、PII、调用上限与失败。"
 pubDatetime: 2026-03-28T00:00:00.000Z
 featured: false
@@ -18,19 +18,19 @@ contentType: "main"
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 AgentMiddleware 实验与 Mini DeerFlow 默认治理链
 
-## 1. 上一刻系统：事实已经归位，规则却散落在调用点
+## 1. 事实已经归位，权限检查却还会漏
 
-第 05 章已经把身份、权限和依赖放入 Runtime Context，把线程事实留在 Graph State，把跨 Thread 偏好交给 Store。
+第 05 章已经把研究助手的身份、权限和依赖放入 Runtime Context，把线程事实留在 Graph State，再把跨 Thread 偏好交给 Store。
 
-现在每个工具都要检查权限、记录日志和转换异常；每次模型调用都要拼接安全上下文、选择模型并计算预算。
+但数据放对位置不会自动执行规则。每个工具仍要检查权限、记录日志和转换异常；每次模型调用仍要投影安全上下文、选模型和算预算。
 
-复制这些代码看似直接，却会在新增工具时遗漏，在不同路径上形成不一致顺序。
+把代码复制到调用点最省事，也最容易漏。新工具少一个检查，或两条路径的脱敏与日志顺序相反，都会让同一条规则产生不同结果。
 
-本章先运行一个没有 Middleware 的 Agent。它会真的执行一次未授权副作用。只有看到遗漏造成的结果后，我们才引入 hook 名称和生命周期图。
+所以先不讲 hook 名称。我们运行一个没有 Middleware 的 Agent，让未授权副作用真正发生，再根据这条失败路径找统一控制点。
 
-## 2. 让遗漏发生：工具自己治理自己
+## 2. 漏掉一次权限检查，副作用已经发生
 
-下面的两个工具都能读取当前权限。`search_docs` 做了检查，`publish_report` 却忘了。模型选择发布工具时，Agent runtime 不知道这是一条越权路径。
+下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
 
 
 ### 运行一个漏掉权限检查的发布工具
@@ -110,9 +110,9 @@ final_answer = 发布完成
 **动手修改**：把权限检查复制到 `publish_report`。再假设项目新增十个工具，列出 review 怎样证明没有任何遗漏。
 
 
-## 3. 第一个 Middleware：在工具调用边界统一短路
+## 3. `wrap_tool_call` 在副作用前统一拦截
 
-`wrap_tool_call` 接收工具请求与内层 handler。它可以先检查 Context；拒绝时直接返回 `ToolMessage`，允许时才调用 handler。
+失败路径给出了控制点：检查必须发生在真实工具之前。`wrap_tool_call` 同时拿到工具请求和内层 handler；它可先读 Context，拒绝时返回 `ToolMessage`，允许时才调用 handler。
 
 
 ### 用 `wrap_tool_call` 阻止未授权副作用
@@ -217,7 +217,7 @@ final_answer = 发布被拒绝，我不会声称已经完成。
 **动手修改**：给 Context 加入 `report:publish` 并重跑。确认允许路径只执行一次，再说明权限为何不能来自模型生成的参数。
 
 
-到这里，Middleware 的需求已经形成。现在再看生命周期图，hook 名称会对应已经见过的控制点，而不是一张需要死记的 API 表。
+这时再看生命周期图，hook 名称就会对应已经见过的控制点，无需把它当作一张孤立的 API 表来背。
 
 ```mermaid
 flowchart LR
@@ -234,9 +234,9 @@ flowchart LR
 
 **图的文本替代**：before hook 按注册顺序进入，after hook 逆序退出；wrap hook 像洋葱一样由列表前项包住后项。工具完成后回到下一轮模型调用。
 
-## 4. before/after：观察进入与退出顺序
+## 4. 注册顺序如何改变进入与退出路径
 
-`before_model` 适合在每次模型调用前检查或准备状态；`after_model` 适合读取模型结果后的事实。两者不是普通的从上到下列表。
+`before_model` 在每次模型调用前检查或准备状态，`after_model` 则读取模型结果。两者的组合像进入和退出调用栈，不是一张从上到下各跑一次的列表。
 
 
 ### 注册两个 Middleware 并观察 after 逆序退出
@@ -290,9 +290,9 @@ events = ['outer:before_model', 'inner:before_model', 'inner:after_model', 'oute
 **动手修改**：交换两个 Middleware 的注册顺序。先写出预测，再说明哪些治理职责的相对顺序必须由测试锁定。
 
 
-## 5. wrap_model_call：修改请求、选择模型或短路 handler
+## 5. `wrap_model_call` 何时改请求，何时短路
 
-before/after 位于模型节点两侧；`wrap_model_call` 直接包住模型 handler。它能用 `request.override()` 创建新请求，也能在预算耗尽时不调用内层模型。
+before/after 位于模型节点两侧，`wrap_model_call` 则直接包住 handler。它可用 `request.override()` 构造新请求，也可在预算耗尽时根本不调用内层模型。
 
 
 ### 只把安全 Context 投影进 system message
@@ -433,7 +433,7 @@ selected_answer = premium-model
 **动手修改**：传入未知 profile。确认回退行为，再决定生产系统应回退还是 fail closed，并写出理由。
 
 
-wrapper 还可以完全不调用 handler。调用预算就是最清楚的例子：超限时必须在产生费用之前终止。
+我们还需要证明 wrapper 能完全跳过 handler。调用预算最适合做这个实验：超限时必须在产生费用之前终止，而不是调用后再丢弃结果。
 
 
 ### 把模型调用上限设为零并验证短路
@@ -478,9 +478,9 @@ fixture_still_available = must-not-run
 **动手修改**：把上限改成 1，并让模型产生一次 tool call 后再回到模型。预测第二轮模型调用在哪里被拒绝。
 
 
-## 6. wrap_tool_call：把普通异常变成稳定工具协议
+## 6. 工具异常如何回到消息协议
 
-没有工具错误 Middleware 时，异常会中断整个 Agent。模型看不到与 tool call 配对的结果，也没有机会解释是超时、参数错误还是权限拒绝。
+没有工具错误 Middleware 时，异常会直接中断 Agent。消息历史里没有与 tool call 配对的结果，模型也就没有机会解释超时、参数错误或权限拒绝。
 
 
 ### 让原始工具异常直接终止 Agent
@@ -655,9 +655,9 @@ final_answer = 搜索暂时超时，请稍后重试。
 **动手修改**：让工具分别抛出 `ValueError` 与 `RuntimeError`。完成 error code、retryable、模型可见性和告警级别决策表。
 
 
-## 7. 同步与异步必须拥有同一业务语义
+## 7. 异步路径不能吞掉取消
 
-实现 `wrap_tool_call` 不等于异步路径自动受保护。自定义 Middleware 应显式实现 `awrap_tool_call`；同时不能把调用方取消转换成普通工具错误。
+同步 `wrap_tool_call` 正确，不代表异步路径自动受保护。自定义 Middleware 需要显式实现 `awrap_tool_call`，并且不能把调用方取消降格为普通工具错误。
 
 
 ### 验证异步取消不会被错误 Middleware 吞掉
@@ -733,9 +733,9 @@ NodeCancelledError: cancellation propagated
 **动手修改**：把捕获范围错误地扩大为 `BaseException`。解释它会怎样破坏取消、系统退出和运行时控制异常。
 
 
-## 8. 内置 Middleware：摘要与人工审批不是几行回调
+## 8. 摘要与审批为什么需要完整协议
 
-摘要会改变后续模型看到的 messages；HITL 会暂停 Graph，并要求 checkpointer、thread_id 和恢复命令共同工作。它们都属于 Agent 生命周期，但各自拥有更完整的协议。
+有些治理不适合缩成几行回调。摘要会替换后续模型看到的 messages；人机协同（HITL）会暂停 Graph，还需要 checkpointer、`thread_id` 和恢复命令共同工作。
 
 
 ### 触发摘要并检查来源标记
@@ -886,9 +886,9 @@ rejection_visible = True
 **动手修改**：把副作用错误地放到 interrupt 之前。解释恢复或重试为什么可能重复发布，以及幂等键应在哪里生成。
 
 
-## 9. Runnable listener 不是 Agent Middleware
+## 9. listener 观测 Runnable，不治理 Agent
 
-listener 适合观测任意 Runnable，不自动拥有 Agent State、Context 或工具循环。它的错误可能只破坏观测，而业务结果仍然成功。
+Runnable listener 适合做局部计时和日志。它不自动拥有 Agent State、Runtime Context 或工具循环；即使 listener 已经失败，业务函数仍可能返回成功结果。
 
 
 ### 给 listener 一个错误签名并只看业务结果
@@ -972,9 +972,9 @@ event_order = ['start:RunnableLambda', 'business']
 **动手修改**：增加 `on_end` 并记录顺序。比较 listener 事件与 `before_model/after_model` 分别属于哪一层生命周期。
 
 
-## 10. 工程迁移：Mini DeerFlow 的默认治理链
+## 10. Mini DeerFlow 如何固定治理顺序
 
-到这里才导入项目封装。概念实验已经证明每类 hook 的控制权；工程层要保证同步/异步对称、类型化 State、安全 Context、稳定错误协议和注册顺序。
+现在才导入项目封装。原生实验已经证明每类 hook 拥有什么控制权；Mini DeerFlow 要固定的是同步/异步对称、类型化 State、安全 Context、稳定错误协议和注册顺序。
 
 
 ### 运行默认治理链并检查脱敏与生命周期
@@ -1038,7 +1038,7 @@ final_answer = 已处理脱敏输入
 | 长上下文 | `SummarizationMiddleware` | 独立摘要模型、触发与保留预算 |
 | 人工审批 | `HumanInTheLoopMiddleware` | checkpointer、Thread、恢复协议 |
 
-## 11. Middleware 与显式 Graph 的边界
+## 11. 什么该放 Middleware，什么该进 Graph
 
 Middleware 适合横切每次模型或工具调用的治理：权限、脱敏、预算、重试、日志和错误投影。它不适合隐藏产品必须证明的阶段、并行、审批流程和长期状态机。
 
@@ -1051,7 +1051,7 @@ Middleware 适合横切每次模型或工具调用的治理：权限、脱敏、
 
 HITL 虽由 Middleware 提供，但它产生 Graph interrupt，并依赖 checkpoint 恢复。只配置 `interrupt_on` 而没有 Thread、恢复 API 和副作用测试，不能算完成审批功能。
 
-## 12. 从这里开始读 DeerFlow
+## 12. 沿组合顺序读 DeerFlow
 
 沿 Lead Agent factory 的组合顺序阅读，不要按 Middleware 文件名漫游：
 
@@ -1093,11 +1093,11 @@ DeerFlow 阅读入口固定到 commit `4af617835805dd7cd78162ebed02fd6b782ea8bf`
 
 合上讲义回答：`before_model` 与 `wrap_model_call` 的控制权有何不同？为什么权限拒绝仍需 ToolMessage？为什么取消不能被普通错误 Middleware 吞掉？何时应改用 StateGraph？
 
-## 14. 下一刻系统：调用已受治理，业务拓扑仍藏在 Prompt 中
+## 14. 调用治理完成后，业务拓扑仍是文字
 
-本章结束后，模型和工具调用拥有统一的权限、上下文、预算、错误、摘要与审批边界。同步与异步路径共享业务语义，Runnable listener 也不再被误称为 Agent Middleware。
+这个研究助手的模型和工具调用，现在共享权限、上下文、预算、错误、摘要与审批边界。同步和异步路径保持同一业务语义，listener 也回到更外层的 Runnable 观测位置。
 
-但“先规划、再并行搜索、最后汇总”仍只是 Prompt 中的愿望。第 07 章会把固定阶段、并行汇合、条件分支和循环预算写成显式 StateGraph。
+但“先规划、再并行搜索、最后汇总”仍只是 Prompt 里的文字。第 07 章会把固定阶段、并行汇合、条件分支和循环预算写成显式 StateGraph。
 
 运行本章验收：
 

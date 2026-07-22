@@ -1,36 +1,24 @@
 # LangChain / LangGraph Agent 工程实践
 
-这不是一组按 API 分类的文章。你会接手同一个研究助手，用连续的工程约束把它升级为可恢复、可审计、能够交付带引用报告的 Mini DeerFlow。
+这本书只做一个项目：研究助手。起初，它只能把问题交给模型，再返回一段文字。
 
-课程以仓库锁定版本为准。核心实验可以离线运行，Markdown、Notebook、测试和文档站共同验证同一套实现。
+学到最后，它会变成 Mini DeerFlow，能够检索资料、委派任务、等待审批，并在进程重启后继续工作。
+
+每一章都从上一次运行留下的问题开始。代码可以离线执行；Markdown 负责讲清原因，Notebook 负责让你亲手验证，测试负责守住已经建立的边界。
 
 [在线阅读](https://chengyunlai.github.io/langchain-logbook/) · [课程改造任务](https://github.com/Chengyunlai/langchain-logbook/blob/main/TODO.md) · [版本策略](./docs/version-policy.md) · [SEO 与搜索收录](./docs/seo.md)
 
-## 第一次在本地打开
-
-如果你正在使用 PyCharm，先阅读 [PyCharm 快速上手](./docs/getting-started-pycharm.md)。最短路径是：
-
-```bash
-make install-uv
-make setup
-make mini-deerflow
-```
-
-前两条命令准备 `uv`，再按 `uv.lock` 创建 `.venv` 并安装开发依赖；最后一条命令运行不需要 API Key 的离线 Mini DeerFlow。确认环境正常后，再从 [第 01 章](./tutorials/01_Getting_Started.md) 开始学习。
-
-LangChain Logbook 是一个独立维护的中文 Agent 工程课程与实验仓库。课程、Mini DeerFlow、测试、Notebook 和文档站共同演进，所有可发布内容都以当前仓库为事实源。
-
 ## 序章：接手研究交付任务
 
-假设团队收到下面的请求：
+一天，团队收到下面的请求：
 
 > 调研 LangGraph 如何恢复长任务，给出一份带来源的中文说明。报告发布前必须由负责人审批；中途重启后不能从头再来。
 
-你手上只有一个能接收字符串并返回自然语言的聊天模型。它可以解释概念，却还称不上业务系统。
+你手上只有一个聊天模型。它能解释 checkpoint，却不知道什么叫“任务已经发布”，也不会保存刚才做到哪一步。
 
-第一次运行很顺利。模型给出一段像样的回答，但程序不知道哪些句子是任务计划，无法验证来源，也无法判断报告是否已经发布。网络中断后，刚才的进度全部消失。
+第一次运行看起来很顺利。模型给出了一段像样的回答。可程序分不清哪些句子是计划，无法验证引用，也不知道负责人是否已经批准。网络一断，刚才的进度全部消失。
 
-这本书从这个现场开始。你不是旁观 API 演示，而是这个系统的实现者。每一章都要修改同一个 Mini DeerFlow，并交付一项后续章节可以直接复用的工件。
+我们就从这个现场开始。每一章只解决一个新暴露的问题，并留下后面可以继续使用的代码。你看到的不会是十几个互不相关的 Demo，而是同一个系统逐步长成。
 
 最终系统需要完成下面这条业务链：
 
@@ -53,7 +41,7 @@ flowchart LR
 
 ## 全书为什么分成四部
 
-四部对应系统能力的四次升级。顺序由依赖关系决定：没有稳定输入输出，就无法安全执行工具；没有受控 Agent，就很难设计业务图；没有可恢复的图，也谈不上长任务交付。
+这套系统要升级四次。顺序不能颠倒：输入输出还不稳定时，工具无法安全执行；Agent 尚未受控时，业务图只是把混乱画成节点；Graph 不能恢复时，长任务服务也无从谈起。
 
 ```mermaid
 flowchart LR
@@ -69,7 +57,7 @@ flowchart LR
 
 ### 第一部：让模型进入程序
 
-这一部暂时不要求你设计 Graph。目标是让概率性的模型拥有程序可以依赖的消息、事件、对象和知识边界。
+先别急着画 Graph。前三章只做一件事：让模型产生程序可以读取、验证和追踪的结果。
 
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
@@ -81,7 +69,7 @@ flowchart LR
 
 ### 第二部：让 Agent 成为受控运行时
 
-这一部建立标准的 `model → tool → model` 循环，再处理工具型 Agent 很快会暴露的所有权与治理问题。
+有了稳定的消息、对象和资料来源，模型就可以开始选择工具。第 04 章先把 `model → tool → model` 循环跑通，后两章再处理身份、权限和调用预算。
 
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
@@ -89,11 +77,11 @@ flowchart LR
 | [第 05 章](./tutorials/05_Agent_Middleware.md) | 身份、线程事实、长期偏好和连接对象混在一起 | Runtime Context、Graph State、Store 边界 |
 | [第 06 章](./tutorials/06_Observability_Persistence.md) | 权限、PII、限额和错误处理散落在工具与 Prompt 中 | 可组合、可测试的 AgentMiddleware 治理链 |
 
-`create_agent` 来自 LangChain，但返回的对象由 LangGraph runtime 支撑。第二部会让这种运行时特征逐步显现，同时保留高层 Agent 工厂带来的便利。
+这里会第一次看到 LangChain 和 LangGraph 的接缝：入口是 `create_agent`，真正驱动循环和状态演进的是 LangGraph runtime。
 
 ### 第三部：把业务流程写成可恢复的图
 
-通用工具循环擅长让模型决定下一步，却不适合表达必须执行的审批、并行研究和恢复规则。这一部开始显式设计业务拓扑。
+工具循环适合让模型选择下一步，却无法保证审批一定发生，也说不清三个研究任务何时汇合。到了这里，固定业务规则必须离开 Prompt，进入显式 Graph。
 
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
@@ -102,11 +90,13 @@ flowchart LR
 | [第 09 章](./tutorials/09_Multi_Agent_Eval.md) | 进程退出后研究进度丢失 | Checkpointer、Thread、SQLite 与跨重启恢复 |
 | [第 10 章](./tutorials/10_Human_In_The_Loop.md) | 发布前需要等待人工判断，恢复又可能重放副作用 | Interrupt、审批恢复与幂等意图记录 |
 
-第三部结束时，研究流程已经能暂停、恢复和重放。它仍然是一个上下文不断增长的单体图，尚未形成可隔离、可服务化的 Agent Harness。
+第三部结束时，研究流程已经可以暂停、恢复和重放。新的麻烦是上下文越来越长，文件和工具能力也缺少隔离。这正是第 11 章的起点。
 
 ### 第四部：扩展为可交付的 Agent 系统
 
-这一部处理长期运行系统的最后一组边界：谁拥有控制权、代码在哪里执行、客户端如何重连、质量如何证明，以及如何把这些经验迁移到 DeerFlow。
+最后一部把能运行的 Graph 变成可以交付的系统。我们会拆出 Subagent，给文件和命令加上 Sandbox，再为客户端增加 Run、Event 和可重放 SSE。
+
+完成 Mini DeerFlow 后，再用同一组问题阅读 DeerFlow：谁装配 Lead Agent，谁保存运行事实，task 怎样进入 Subagent，断线后事件又从哪里重放。
 
 | 内容 | 解决的问题 |
 | --- | --- |
@@ -121,11 +111,11 @@ flowchart LR
 
 ## LangChain、LangGraph 与 DeerFlow 各自在哪里
 
-LangChain 是本书的高层开发入口。模型初始化、消息、Prompt、Runnable、结构化输出、工具和 `create_agent` 都从这里进入。
+LangChain 提供高层开发入口：模型、消息、Prompt、Runnable、结构化输出、工具和 `create_agent`。
 
-LangGraph 负责有状态执行。进入 State、Reducer、Node、Edge、Command、Send、Checkpoint 和 Interrupt 后，你开始显式拥有业务控制流。
+LangGraph 负责有状态执行。State、Reducer、Command、Send、Checkpoint 和 Interrupt 让业务控制流从 Prompt 里显露出来。
 
-DeerFlow 是更完整的 Agent Harness 和产品运行时。它组合 Lead Agent、Middleware、Subagent、Sandbox、Skills、持久化与 Gateway；本书最后沿这些边界阅读它的真实源码。
+DeerFlow 把这些能力装进更完整的 Agent Harness 和产品运行时。本书不会照抄它的目录，而会沿 Lead、Middleware、Subagent、Sandbox 和 Gateway 的调用链阅读源码。
 
 ```text
 LangChain 高层入口
@@ -138,17 +128,17 @@ Agent Harness 与产品交付
   Subagent / Sandbox / Runtime / SSE / Eval / DeerFlow
 ```
 
-这三层并非互相替代。课程先使用高层抽象建立可运行结果，再在业务约束要求更多控制权时进入下一层。
+三者是叠加关系。我们先用高层接口得到可运行结果，业务需要更多控制权时，再向下一层深入。
 
 ## 每一章怎样阅读
 
-每章开头会给出一份“系统快照”：上一章已经能做什么，这一次运行暴露了什么新失败。
+每章开头都有一份系统快照：上一章已经能做什么，这一次运行又出了什么问题。
 
-正文先解释失败为何发生，再引入恰好足够的机制。真实供应商示例负责观察外部集成，确定性离线实验负责验证应用契约；两者解决的问题不同。
+先写下预测，再运行代码。看到输出后，再读解释。这样，Reducer、Checkpoint 或 Middleware 都会对应一个你亲眼见过的失败，而不是一条需要背诵的定义。
 
-章末不会只做知识摘要。你需要运行测试、完成一个故障实验，并记录系统新增工件与下一项限制。下一章从这项限制继续，不会重新开始一个 Demo。
+真实供应商示例用来观察外部集成；确定性离线实验用来验证应用契约。前者允许随机性，后者必须稳定，两种证据不要混在一起。
 
-如果只想浏览概念，可以阅读正文和图示。如果准备把能力迁移到自己的项目，请完成 Notebook、练习和自动验收。
+如果准备把能力迁移到自己的项目，请下载每章页面顶部的 Notebook，完成“动手修改”和章末测试。只读代码，很容易把“看懂了”误当成“会用了”。
 
 ## 运行 Mini DeerFlow
 
@@ -181,6 +171,8 @@ make install-uv
 make setup
 make install
 ```
+
+如果你使用 PyCharm，可先看 [PyCharm 快速上手](./docs/getting-started-pycharm.md)。无论使用哪种 IDE，都应让 Notebook 选择项目 `.venv` 里的 Python 内核。
 
 需要真实模型实验时，在 `.env` 中配置对应供应商的 API Key。核心离线实验和测试不依赖外部凭证。
 

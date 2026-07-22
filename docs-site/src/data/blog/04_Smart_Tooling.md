@@ -1,5 +1,5 @@
 ---
-title: "第 04 章：从工具意图到第一个完整 Agent 循环"
+title: "第 04 章：模型会调用工具之前，先把协议补完"
 description: "用工具契约与 create_agent 构建第一个可观察、可测试的 Lead Agent。"
 pubDatetime: 2026-03-30T00:00:00.000Z
 featured: false
@@ -18,13 +18,13 @@ contentType: "main"
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：Tool Schema、ToolMessage、`create_agent`、ToolRuntime 与 Mini DeerFlow Lead Agent
 
-## 1. 上一刻系统：程序会检索，模型还不能选择动作
+## 1. 检索管道为什么还不算 Agent
 
-前三章已经建立四项能力：模型调用可观察，自然语言请求可验证，资料可检索，source 能进入生成 Context。
+前三章已经把研究助手的输入输出收紧：消息可观察，请求能校验，检索结果保留 source。可它仍然只是一条固定管道。
 
-但第 03 章的 RAG 管道始终执行 `retrieve → model`。无论问题是“查官方资料”还是“2 × 7 等于多少”，应用代码都先检索一次。
+第 03 章无论收到“查官方资料”还是“2 × 7 等于多少”，都会执行 `retrieve → model`。连算术题也先检索，说明动作仍由程序写死。
 
-现在给模型有限行动权：它可以从应用批准的工具中选择一项并填写参数。模型不能注册新工具，不能自己提供用户身份，也不能绕过参数校验。
+这一章只交给模型一小块行动权：从应用批准的工具中选一项，再填参数。注册工具、注入身份和校验参数仍由应用掌握。
 
 ```mermaid
 sequenceDiagram
@@ -41,11 +41,11 @@ sequenceDiagram
     M-->>U: Final AIMessage
 ```
 
-**图的文本替代**：模型先用 AIMessage 表达工具意图。Agent runtime 校验并执行工具，再把结果包装成与 call ID 配对的 ToolMessage。模型看到完整消息历史后才生成最终回答。
+**图的文本替代**：模型用 AIMessage 提出工具调用。Agent runtime 校验、执行，再用同一 call ID 生成 ToolMessage。只有这条结果进入消息历史，模型才能继续回答。
 
-## 2. 第一处失败：普通整数类型没有表达业务上限
+## 2. `limit=100` 为什么能穿过工具边界
 
-Python 函数签名能说明 `limit` 是整数，却不能自动知道检索最多只允许三条。若工具直接接受 100，模型一次调用就可能放大延迟、成本和 Context 污染。
+先别急着绑定模型。Python 签名只说明 `limit` 是整数，它不知道业务最多允许三条。工具若接受 100，一次调用就会放大延迟、成本和 Context 污染。
 
 
 ### 让模型可见 Schema 接受任意正负整数
@@ -82,9 +82,9 @@ maximum_present = False
 limit_100_result = query=checkpoint;limit=100
 ```
 
-**发生了什么**：`@tool` 推导出了字段名和 Python 类型，却没有业务范围。模型能看到并填写 `limit`，工具也照常执行了 100。
+**发生了什么**：`@tool` 只推导出字段名和 Python 类型。`int` 证明 100 是整数，却没有表达“最多三条”，所以模型能填，工具也照常执行。
 
-Docstring 只能提示模型，不是确定性校验。参数边界必须进入 Schema，并在工具执行前拒绝非法值。
+我不会把这条上限只写在 docstring 里。Docstring 是给模型的提示，参数边界必须进入 Schema，并在工具执行前确定性拒绝非法值。
 
 **动手修改**：在 docstring 中写“最多 3 条”，但保持 Schema 不变。再次调用 100，解释自然语言提示为何不能替代边界校验。
 
@@ -142,9 +142,9 @@ Schema 无法完成授权。即使参数形状合法，当前用户是否能检�
 **动手修改**：让 query 只包含空格。观察 `min_length=1` 为何仍会通过，再增加去空格后的领域校验。
 
 
-## 3. `bind_tools` 只让模型表达意图
+## 3. `bind_tools` 只生成调用意图
 
-第 01 章已经看到：模型返回 `tool_calls` 不等于工具被执行。本节把这个结论放进真实消息协议，并亲手完成缺失的两步。
+第 01 章看过 `tool_calls`，这里要把它放回真实消息协议。先只调用绑定工具的模型，然后查执行日志；这能把“表达意图”和“执行动作”分开。
 
 
 ### 绑定工具后只得到 AIMessage
@@ -223,9 +223,9 @@ execution_log = []
 **动手修改**：把 tool call 名称改成不存在的工具。列出应用在执行前必须验证的三项事实：名称、参数与权限。
 
 
-## 4. 第二处失败：执行了函数，却没有把结果写回消息协议
+## 4. 函数执行了，消息历史为什么还是断的
 
-手写路由器可以调用函数，但模型的下一次输入必须包含 `ToolMessage`。否则消息历史里只有一个未完成的 tool call，结果与 call ID 无法对应。
+手写路由器调用 Python 函数并不难。难点是把结果写回 `ToolMessage`；少了这步，历史里只剩一个未完成的 tool call，模型无法知道结果属于哪个 call ID。
 
 
 ### 直接执行 args，留下孤立 tool call
@@ -335,16 +335,16 @@ tool_name = search_once_fixed
 final_answer = 恢复时继续使用同一个 thread_id。 [official/persistence.md]
 ```
 
-**发生了什么**：一次 ReAct 工具循环最小消息序列已经显式出现。真实第二次模型调用应接收前三条消息；这里固定 final，是为了先隔离消息协议，不把模型行为混进来。
+**发生了什么**：最小 ReAct 循环已经显式出现。真实的第二次模型调用应读取前三条消息；这里故意固定 final，是为了只验证消息协议，不让模型行为干扰证据。
 
-手写循环还要处理未知工具、参数错误、多个 tool call、重试、停止条件和 streaming。通用部分正是 `create_agent` 要接管的工作。
+协议看清之后，就没必要继续手写脚手架。未知工具、参数错误、多个 tool call、重试、停止条件和 streaming，都属于 `create_agent` 应接管的通用循环。
 
 **动手修改**：给 ToolMessage 故意填错 call ID。写一个检查函数，在第二次模型调用前拒绝未配对与重复配对。
 
 
-## 5. `create_agent` 自动运行同一协议
+## 5. 让 `create_agent` 接管重复循环
 
-`create_agent` 来自 LangChain，但返回的是由 LangGraph runtime 支撑的 compiled graph。它不与 LangGraph 对立，而是把通用 `model → tools → model` 拓扑封装成高层入口。
+`create_agent` 把刚才的 `model → tools → model` 循环封装成高层入口。它属于 LangChain API，运行时则由 LangGraph compiled graph 支撑；这是上下层关系，不是两套竞争循环。
 
 
 ### 第一次运行完整 `model → tool → model`
@@ -428,9 +428,9 @@ fake model 按脚本返回两条 AIMessage，它不证明模型会正确选工�
 **动手修改**：让第二条 AIMessage 继续调用同一工具，再准备第三条最终回答。预测消息序列和模型调用次数。
 
 
-## 6. 用 v2 updates 观察 Graph 节点，而不是只看终态
+## 6. `updates` 暴露了哪些 Graph 节点
 
-Agent 的 `invoke` 返回最终 State。学习控制流时还需要 `stream`：`updates` 模式展示每一步哪个节点产生了局部更新。
+`invoke` 只给最终 State，不足以判断工具是否真的执行。我更关心 `stream` 的 `updates`：它会显示每一步由哪个节点产生局部更新。
 
 
 ### 观察 model、tools、model 三步更新
@@ -513,9 +513,9 @@ updated_nodes = ['model', 'tools', 'model']
 **动手修改**：让模型直接回答、不产生 tool call。比较 `updated_nodes`，并说明为何最终文本测试看不出“是否绕过检索”。
 
 
-## 7. 第三处失败：让模型填写用户身份等于允许冒充
+## 7. `user_id` 为什么不能由模型填写
 
-工具参数分两类：query、path、operation 等可由模型选择；user ID、权限、工作区根目录和数据库连接由应用拥有。
+模型可以选 query、path 和 operation，因为它们表达任务意图。user ID、权限、工作区根目录和数据库连接由应用拥有；把这些字段放进工具 Schema，就等于允许模型冒充。
 
 
 ### 把 user_id 暴露给模型
@@ -645,9 +645,9 @@ model_supplied_user_id = False
 **动手修改**：在 context 增加 `permissions: frozenset[str]`，让工具拒绝缺少 `workspace:read` 的调用。确认 permissions 仍不进入模型 Schema。
 
 
-## 8. 第四处失败：错误输入字段也可能“成功”
+## 8. 错误的入口字段为何也能返回答案
 
-默认 Agent State 的入口是 `messages`。若调用方误用旧教程里的 `input`，额外字段可能被忽略；scripted model 仍返回回答，看起来成功，实际从未收到用户消息。
+默认 Agent State 的入口是 `messages`。调用方若沿用旧教程的 `input`，额外字段可能直接被忽略。scripted model 仍会返回答案，但它从未收到用户消息。
 
 
 ### 用 input 调用，结果里没有 HumanMessage
@@ -722,9 +722,9 @@ final_text = 离线回答
 **动手修改**：在 messages 前增加 SystemMessage。记录哪些系统指令应由 `system_prompt` 组合根拥有，而不应接受客户端任意注入。
 
 
-## 9. 工程迁移：把原生循环装进 Mini DeerFlow
+## 9. 把同一循环装进 Mini DeerFlow
 
-概念层已经亲手完成 tool schema、tool call、ToolMessage、`create_agent`、stream 和 Runtime Context。现在再看 Mini DeerFlow，重点不再是“它能跑”，而是项目额外固定了哪些接缝。
+现在才需要打开 Mini DeerFlow。原生实验已经证明 Tool Schema、tool call、ToolMessage、`create_agent`、stream 和 Runtime Context；工程迁移要查的是项目又固定了哪些接缝。
 
 ### 9.1 Lead Agent 工厂复用同一消息循环
 
@@ -1016,7 +1016,7 @@ final_answer_available = False
 
 `record_artifact` 已存在于项目 registry，但本章不把 `Command(update=...)` 当作新手第一次需要掌握的概念。第 08 章会在学习 State、Node 与路由之后，从零解释 Command 如何同时更新 State 与控制流，再回看 Artifact 工具。
 
-## 10. 工具设计的五个工程问题
+## 10. 每个工具上线前回答五个问题
 
 每增加一个工具，都要明确：
 
@@ -1028,7 +1028,7 @@ final_answer_available = False
 
 只读检索通常可以直接执行。写文件、发消息、扣款和删除资源不能因为“已经包装成 @tool”就变得安全。
 
-## 11. 练习：从一个工具扩展到自己的 Agent
+## 11. 练习：给自己的 Agent 增加一个工具
 
 ### 练习 A：计算器契约
 
@@ -1050,13 +1050,13 @@ final_answer_available = False
 
 合上讲义回答：`bind_tools` 没有负责哪几步？ToolMessage 为什么需要 call ID？`create_agent` 与 LangGraph 是什么关系？Runtime Context 为什么不能由模型填写？
 
-## 12. 下一刻系统：Agent 可以行动，事实所有权开始混乱
+## 12. Agent 能行动后，谁来拥有运行事实
 
-本章结束后，研究助手第一次拥有标准工具循环。它可以在批准的 registry 中选择检索或计算，工具结果进入 ToolMessage，v2 updates 暴露执行轨迹。
+研究助手现在有了标准工具循环。它能在批准的 registry 中选择检索或计算，用 ToolMessage 保留结果，再通过 v2 updates 显示执行轨迹。
 
-新的问题随之出现：user ID、工作区、当前计划、跨线程偏好和数据库连接都被口语化地称为“上下文”。如果全部塞进 messages 或 Graph State，持久化、权限与复用会迅速失控。
+但 user ID、工作区、当前计划、跨线程偏好和数据库连接，此时都容易被叫作“上下文”。把它们全塞进 messages 或 Graph State，持久化、权限和复用会立即失去边界。
 
-下一章不另起一个 Agent，而是在现有 Lead Agent 上为 Runtime Context、Graph State、Store 与业务数据库确定所有者和生命周期。
+下一章继续修这个 Lead Agent：为 Runtime Context、Graph State、Store 和业务数据库确定所有者与生命周期。
 
 运行本章验收：
 

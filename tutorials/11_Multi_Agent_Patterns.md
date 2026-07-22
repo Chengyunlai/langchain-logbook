@@ -1,4 +1,4 @@
-# 第 11 章：从被中间结果淹没的 Lead，到可控的 Subagent 委派
+# 第 11 章：别让 Lead 亲自搬运所有原始材料
 
 <!-- lesson-contract:v2 -->
 
@@ -6,18 +6,15 @@
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
 > **本章工件**：任务协议、上下文投影、控制权选择、SubagentExecutor、task tool 与 DelegationLedger
 
-## 1. 上一刻系统：一个 Agent 已经可靠，但所有工作都挤进了同一段历史
+## 1. 报告能交付了，主消息历史也快塞满了
 
-第 10 章让研究流程可以暂停、审批和恢复。现在 Lead Agent 要同时查资料、检查 Python 接口，再综合成报告。
+第 10 章让研究流程可以暂停、审批和恢复。现在，Lead Agent 既要查资料，又要检查 Python 接口，最后还要把两类结果综合成报告。
 
-如果它亲自接收每段网页、命令输出和工具轨迹，这些中间材料都会留在主消息历史。任务越长，最终综合面对的噪声越多，Secret 和内部记录也更容易被误传。
+若每段网页、命令输出和工具轨迹都先回到 Lead，这些中间材料就会留在主消息历史。任务越长，最终综合看到的噪声越多，Secret 与内部记录也越容易被误传。
 
-先不要急着创建“多个 Agent”。本章会从一个可见失败出发，逐步回答四个问题：
+先不要急着创建“多个 Agent”。我们先确认普通函数为什么还不够，以及 specialist 应该看到和返回什么。
 
-1. 为什么普通函数或工具还不够？
-2. specialist 应该看见什么，又返回什么？
-3. Router、Handoff、Subgraph 和 Subagent-as-tool 的控制权有何不同？
-4. 并发、超时和大输出为什么必须进入协议？
+随后再比较四种模式由谁持有控制权，并决定并发、超时和大输出该由谁约束。
 
 ```mermaid
 flowchart LR
@@ -31,20 +28,9 @@ flowchart LR
 
 **图的文本替代**：Lead 保留用户会话和最终控制权。它只把最小任务请求交给临时 specialist；specialist 不继承主历史，只返回稳定、有界的结果。
 
-### 学习目标
+## 2. 分工已经完成，原始材料却全回到了 Lead
 
-完成本章后，你能够：
-
-- 从上下文污染推导任务请求、结果协议和输入白名单；
-- 用控制权而不是“节点数量”区分四种多 Agent 模式；
-- 用 `Command` 做单路由，用 `Send` 做并行 fan-out/fan-in；
-- 解释为什么 Subgraph 不自动提供上下文隔离；
-- 把并发上限、timeout、部分失败和输出预算放在执行 seam；
-- 沿 `Lead Agent → task tool → SubagentExecutor → specialist` 阅读 DeerFlow。
-
-## 2. 第一处失败：Lead 保存了不该长期保存的原始材料
-
-研究和代码检查都可以先用普通函数完成。问题不在函数能否运行，而在它们的原始结果被塞进了哪里。
+研究和代码检查当然可以先写成普通函数。下面两个函数都会成功，问题出在返回之后：它们的原始结果被塞进了哪里？
 
 <!-- lesson-lab:id=ch11-context-pollution-failure layer=concept kind=failure concept=delegation-boundary pair=bounded-delegation -->
 ### 原始 specialist 输出直接进入 Lead 历史
@@ -79,7 +65,7 @@ secret_in_synthesis_input = True
 raw_results_still_in_history = True
 ```
 
-**发生了什么**：函数已经完成分工，但没有形成委派边界。原始结果和 Secret 都进入 Lead 的长期输入；后续每轮综合仍要付出读取、存储和误用成本。
+**发生了什么**：函数完成了分工，却没有建立委派边界。原始结果与 Secret 都进入 Lead 的长期输入，后续每轮综合都要再次承担读取、存储和误用成本。
 
 **动手修改**：把每段原始输出扩大到 10000 字符。说明为什么“换更大上下文窗口”只会推迟失败，而不会建立权限和生命周期边界。
 <!-- /lesson-lab -->
@@ -146,14 +132,14 @@ raw_research_in_result = False
 artifact_count = 1
 ```
 
-**发生了什么**：Subagent 的核心不是“再调用一次模型”，而是稳定的输入、执行和返回边界。完整材料可以落到 Artifact；Lead 只持有综合所需的摘要和引用。
+**发生了什么**：Subagent 的价值在于稳定的输入、执行和返回边界。完整材料落到 Artifact repository，Lead 只持有综合所需的摘要与引用。
 
 **动手修改**：尝试构造 33 字符摘要和 3 个 artifact。记录 Pydantic 在模型调用前拒绝了哪两个越界输入。
 <!-- /lesson-lab -->
 
-## 3. 输入隔离必须靠投影，不能靠“请忽略 Secret”
+## 3. 复制父上下文，也复制了不该暴露的 Secret
 
-有了协议，仍可能在调用 specialist 时偷懒：把父上下文复制一份，再告诉它只使用其中几个字段。复制已经发生，Prompt 约定不能撤销数据暴露。
+有了请求与结果协议，还差输入边界。最省事的写法是复制父上下文，再在 Prompt 里要求 specialist 只使用几个字段。可数据已经复制，文字约定无法撤销暴露。
 
 <!-- lesson-lab:id=ch11-parent-context-leak-failure layer=concept kind=failure concept=context-projection pair=allowlist-projection -->
 ### 深拷贝仍然复制了完整主上下文
@@ -188,7 +174,7 @@ message_count = 2
 secret_visible = True
 ```
 
-**发生了什么**：对象隔离不等于权限隔离。新 dict 仍包含所有数据；specialist 是否“自觉不用”不能成为安全不变量。
+**发生了什么**：新字典与父字典是两个对象，但内容仍然相同。权限边界不能依赖 specialist “自觉不用”已经收到的数据。
 
 **动手修改**：把 messages 改成 100 条，再观察 child 的键和值。说明深拷贝为何还会增加内存成本。
 <!-- /lesson-lab -->
@@ -240,14 +226,14 @@ internal_notes_visible = False
 secret_visible = False
 ```
 
-**发生了什么**：投影从空对象构造新输入，只复制明确允许的字段。它建立的是数据最小化边界；真正工具调用仍需在服务端重新校验身份和权限。
+**发生了什么**：投影从空对象开始，只复制 allowlist 中的字段。它建立了数据最小化边界；真正调用工具时，服务端仍要重新检查身份与权限。
 
 **动手修改**：把 auth_token 加入 allowlist，观察它确实会泄漏。然后在 `project_context` 中拒绝以 token、secret 或 key 结尾的字段名。
 <!-- /lesson-lab -->
 
-## 4. 先问谁拥有下一步控制权，再选择多 Agent 模式
+## 4. 选哪种模式，先看谁决定下一步
 
-“有多个节点”不等于“有多个 Agent”。模式的分界点是：谁决定下一步、谁持有用户会话、是否需要独立上下文。
+多画几个节点不会自动得到多 Agent 系统。真正的分界点有三个：谁决定下一步，谁持有用户会话，specialist 是否需要独立上下文。
 
 ```mermaid
 flowchart TD
@@ -321,7 +307,7 @@ trace = ['router:coding', 'coding']
 specialist_runs = 1
 ```
 
-**发生了什么**：`Command(update=..., goto=...)` 把路由结果写入 State，并只选择一个后继节点。Router 适合分类后固定执行，不要求 Lead 在结果回来后继续动态规划。
+**发生了什么**：`Command(update=..., goto=...)` 一边记录路由结果，一边只选择一个后继节点。Router 适合分类后进入固定分支，不要求 Lead 等结果回来再规划。
 
 **动手修改**：把 query 改成“比较 checkpoint 文档”。先预测 route，再运行；确认 trace 中仍只有一个 specialist。
 <!-- /lesson-lab -->
@@ -383,7 +369,7 @@ result_names = ['coding', 'research']
 answer = coding+research
 ```
 
-**发生了什么**：`Send` 为每个分支构造输入，`Annotated[list, operator.add]` 负责 fan-in。并行执行不等于上下文隔离；你传进 Send 的字段仍由应用决定。
+**发生了什么**：`Send` 为每个分支构造输入，`Annotated[list, operator.add]` 在 fan-in 时合并结果。并行只改变调度，传入哪些上下文字段仍由应用决定。
 
 **动手修改**：删除 results 的 reducer，再运行两个分支。记录 LangGraph 为什么拒绝同一 superstep 对同一 key 的并发更新。
 <!-- /lesson-lab -->
@@ -450,7 +436,7 @@ second_trace = ['coding:answered']
 triage_ran_again = False
 ```
 
-**发生了什么**：Handoff 把 active owner 写进状态。目标 Agent 不只是返回一次结果，而是接管后续对话；若 Lead 必须统一审阅和综合，这种所有权就不合适。
+**发生了什么**：Handoff 把 active owner 写进 State。目标 Agent 不再只返回一次结果，而是接管后续对话。若最终必须回到 Lead 统一审阅和综合，这种所有权就不合适。
 
 **动手修改**：去掉第二轮的 active_agent。观察 triage 再次运行，并解释持久化会话中该字段应该由谁保存。
 <!-- /lesson-lab -->
@@ -506,7 +492,7 @@ messages_visible = True
 secret_visible = True
 ```
 
-**发生了什么**：Subgraph 提供嵌套拓扑、复用和 checkpoint 可见性，不自动提供最小上下文。需要隔离时，应使用不同 Schema 或 adapter 显式投影输入和输出。
+**发生了什么**：Subgraph 提供嵌套拓扑、复用和 checkpoint 可见性，但不会自动缩小上下文。需要隔离时，应使用不同 Schema 或 adapter 显式投影输入与输出。
 
 **动手修改**：在父图和子图之间增加 adapter，只传 query。不要只在子节点中忽略字段；要让未授权数据根本不进入子图输入。
 <!-- /lesson-lab -->
@@ -567,14 +553,14 @@ first_prompt_leaked_to_second = False
 lead_regains_control = True
 ```
 
-**发生了什么**：临时 Subagent 的生命周期是一笔委派，不是第二条长期会话。Lead 收到结果后继续决定下一步；若 specialist 需要长期直接服务用户，应选择 Handoff。
+**发生了什么**：临时 Subagent 的生命周期只有一笔委派。Lead 收到结果后继续决定下一步；若 specialist 要长期直接服务用户，应选择 Handoff。
 
 **动手修改**：故意把 `fresh_messages` 提升为全局 list。运行两次后观察串线，并解释为什么“给每个 specialist 一个永久历史”改变了产品语义。
 <!-- /lesson-lab -->
 
-## 5. 执行器不是薄转发：它必须守住运行边界
+## 5. 执行器要替 Lead 守住四条运行边界
 
-协议和输入投影解决“传什么”。执行器还要解决“同时跑多少、等多久、失败怎样回来、结果能有多大”。这些约束不能只写在 Prompt 里。
+协议与输入投影解决“传什么”。执行器还要回答四个运行问题：同时跑多少，最多等多久，失败如何返回，结果可以多大。这些约束不能只写在 Prompt 里。
 
 ### 5.1 并发上限要放在所有调用都会经过的 seam
 
@@ -618,7 +604,9 @@ peak_concurrency = 4
 all_completed = True
 ```
 
-**发生了什么**：`gather` 负责等待和聚合，不负责资源配额。模型同轮产生多少 tool calls，执行器就可能同时启动多少后端请求。Notebook 已经有运行中的事件循环，所以本章异步实验统一直接 `await`；如果把同一段逻辑移到 `.py` 脚本，才在最外层写 `asyncio.run(run_unbounded())`。
+**发生了什么**：`gather` 负责等待和聚合，不负责资源配额。模型同轮产生多少 tool calls，执行器就可能同时启动多少后端请求。
+
+Notebook 已有运行中的事件循环，所以本章直接 `await`。把同一段逻辑移到 `.py` 脚本时，才在最外层使用 `asyncio.run(run_unbounded())`。
 
 **动手修改**：把任务数改为 20。即使本地仍能完成，也要说明供应商 rate limit、连接池和 Sandbox 资源会怎样放大风险。
 <!-- /lesson-lab -->
@@ -662,7 +650,7 @@ peak_concurrency = 2
 result_order = ['done:0', 'done:1', 'done:2', 'done:3']
 ```
 
-**发生了什么**：Semaphore 位于真实执行入口，所以不依赖模型遵守提示。它限制同时运行数，不限制队列长度、CPU、子进程或外部副作用。
+**发生了什么**：Semaphore 位于真实执行入口，不依赖模型遵守提示。它只限制同时运行数，不会限制队列长度、CPU、子进程或外部副作用。
 
 **动手修改**：把容量改为 1 和 4，分别观察峰值。再写下生产系统还需要的队列长度与租户配额。
 <!-- /lesson-lab -->
@@ -720,7 +708,7 @@ visible_result_count = 0
 slow_was_pending = True
 ```
 
-**发生了什么**：fast 已经产生成功事实，但裸异常越过批量边界，调用方只得到 exception。没有逐任务结果协议，Lead 无法利用部分证据，也无法区分失败与超时。
+**发生了什么**：fast 已经成功，裸异常却越过批量边界，调用方只得到一个 exception。没有逐任务结果协议，Lead 无法利用部分证据，也分不清失败与超时。
 
 **动手修改**：给 gather 加 `return_exceptions=True`。观察列表形状改善了什么，再解释为什么裸 Exception 仍不是稳定业务协议。
 <!-- /lesson-lab -->
@@ -770,7 +758,7 @@ success_value = ok:success
 failure_value = RuntimeError
 ```
 
-**发生了什么**：每个 task 都有自己的 failure boundary；批量层只聚合稳定结果。`timed_out` 必须独立于 `failed`，因为它表达的是执行预算耗尽，不是业务已失败。
+**发生了什么**：每个 task 都有自己的 failure boundary，批量层只聚合稳定结果。`timed_out` 表示执行预算耗尽，和业务明确失败的 `failed` 是两种终态。
 
 **动手修改**：把 timeout 调到 0.1 秒。观察第三个结果转为 completed，并说明 event-loop timeout 为什么不能证明阻塞式外部进程已被强杀。
 <!-- /lesson-lab -->
@@ -810,7 +798,7 @@ full_summary_present = True
 message_chars = 303
 ```
 
-**发生了什么**：状态仍写着 completed，但消息、checkpoint 和 trace 都会复制完整输出。长度问题被推迟到下一轮模型调用，而不是在产生结果的边界显式暴露。
+**发生了什么**：状态虽然写着 completed，消息、checkpoint 和 trace 却都复制了完整输出。长度问题被推迟到下一轮模型调用，没有在结果产生处暴露。
 
 **动手修改**：把 summary 扩大到 10000 字符。比较 ToolMessage、checkpoint 和 trace 可能产生的重复存储。
 <!-- /lesson-lab -->
@@ -855,7 +843,7 @@ artifact_refs = 2
 digest_chars = 64
 ```
 
-**发生了什么**：越界被提升为显式状态，Lead 可以选择压缩、按需读取 Artifact 或向用户声明证据缺口。digest 只用于比较完整内容身份，不能恢复原文，也不是数字签名。
+**发生了什么**：输出越界成为显式状态。Lead 可以选择压缩、按需读取 Artifact，或向用户说明证据缺口。digest 只用来比较内容身份，不能恢复原文，也不是数字签名。
 
 **动手修改**：只改变最后一个字符并重新计算 digest。确认 digest 改变，再说明完整内容应由 Artifact repository 保存，而不是靠 digest 保存。
 <!-- /lesson-lab -->
@@ -908,14 +896,14 @@ messages_recorded = False
 secret_recorded = False
 ```
 
-**发生了什么**：Delegation record 记录“谁执行、终态如何、输入边界是否生效、输出身份是什么”，不复制主会话。它与业务 State、模型消息和完整 trace 是不同数据产品。
+**发生了什么**：Delegation record 记录谁执行、终态如何、输入边界是否生效、输出身份是什么，但不复制主会话。它与业务 State、模型消息和完整 trace 属于不同数据边界。
 
 **动手修改**：加入 tenant_id 和 error_code，但不要加入完整 exception。写下 retention 和 PII 删除策略应由哪一层负责。
 <!-- /lesson-lab -->
 
-## 6. 把原生机制迁入 Mini DeerFlow
+## 6. 现在再看 Mini DeerFlow 如何收拢这些边界
 
-到这里，学习者已经从零写过输入投影、控制权模式、Semaphore、部分失败和输出预算。下面才引入 Mini DeerFlow，观察它如何把同一机制收进可复用工程边界。
+到这里，我们已经从零写过输入投影、控制权模式、Semaphore、部分失败和输出预算。现在再进入 Mini DeerFlow，看它怎样把这些机制收进可复用的工程边界。
 
 ```mermaid
 sequenceDiagram
@@ -998,7 +986,7 @@ ledger_context_keys = [('locale', 'request_id'), ('locale', 'request_id')]
 secret_in_ledger = False
 ```
 
-**发生了什么**：Registry 只描述稳定名称、handler 和 policy。Executor 创建新的 `SubagentInvocation`，只投影 allowlist；built-in handler 每次 `create_agent(..., checkpointer=False)`，不持有长期历史。
+**发生了什么**：Registry 只描述稳定名称、handler 和 policy。Executor 每次新建 `SubagentInvocation`，只投影 allowlist；built-in handler 使用 `checkpointer=False` 创建临时 Agent，不保留长期历史。
 
 **动手修改**：在 registry 中增加 reviewer，并重复注册同名 specialist。记录重复名称为何必须在组合根启动时失败，而不能静默覆盖。
 <!-- /lesson-lab -->
@@ -1034,7 +1022,7 @@ auth_token_exposed = False
 max_concurrency_metadata = 2
 ```
 
-**发生了什么**：模型只选择 specialist 并描述任务。RuntimeContext、Registry、Semaphore 和 Ledger 都留在应用层；这是可测试、不可由模型绕过的执行 seam。
+**发生了什么**：模型只选择 specialist 并描述任务。Runtime Context、Registry、Semaphore 和 Ledger 都留在应用层，形成可测试且不能由模型绕过的执行接缝。
 
 **动手修改**：向 args 添加未知字段。观察工具 Schema 如何拒绝或忽略它，并把期望行为写成测试，避免升级后静默变化。
 <!-- /lesson-lab -->
@@ -1107,7 +1095,7 @@ final_answer = 我已读取 Subagent 结果，并完成综合。
 secret_in_tool_message = False
 ```
 
-**发生了什么**：Lead 的第一次模型响应选择 task；工具返回结构化结果；第二次模型响应负责最终综合。控制权始终回到 Lead，这正是 Subagent-as-tool 与 Handoff 的根本差异。
+**发生了什么**：Lead 的第一次模型响应选择 task，工具返回结构化结果，第二次模型响应负责最终综合。控制权始终回到 Lead，这一点把 Subagent-as-tool 与 Handoff 区分开来。
 
 **动手修改**：让模型同轮发出 research 和 coding 两个 task call。检查两条 ToolMessage，再说明并发上限由哪里执行。
 <!-- /lesson-lab -->
@@ -1189,7 +1177,7 @@ messages_visible = False
 secret_policy_rejected = True
 ```
 
-**发生了什么**：Executor 按 spec 投影输入，`SubagentSpec` 还拒绝 secret-shaped allowlist。字段名检查只是第二道护栏；授权仍必须由真实工具和服务端执行。
+**发生了什么**：Executor 按 spec 投影输入，`SubagentSpec` 还会拒绝形似 Secret 的 allowlist。字段名检查只是一道护栏；真实授权仍由工具和服务端执行。
 
 **动手修改**：加入 sandbox_id 允许字段并重新运行。解释为什么传句柄比复制工作区内容更适合隔离边界。
 <!-- /lesson-lab -->
@@ -1242,7 +1230,7 @@ statuses = ['completed', 'completed', 'completed', 'completed']
 summaries = ['done:0', 'done:1', 'done:2', 'done:3']
 ```
 
-**发生了什么**：同一 Executor 的所有 dispatch 都经过一个 Semaphore。`dispatch_many` 并发提交，但 `gather` 按请求顺序返回，因此结果顺序不依赖完成时序。
+**发生了什么**：同一 Executor 的所有 dispatch 都经过一个 Semaphore。`dispatch_many` 并发提交，`gather` 按请求顺序返回，所以结果顺序不依赖完成时序。
 
 **动手修改**：把一个 handler 改成阻塞式 `time.sleep`。观察 event loop 受阻，并说明何时必须升级到进程、容器或远程 worker。
 <!-- /lesson-lab -->
@@ -1295,7 +1283,7 @@ failure_error = RuntimeError: subagent handler failed
 timeout_has_budget_message = True
 ```
 
-**发生了什么**：Executor 是异常归一化边界。异常类型被保留，供应商原始文本被丢弃；timeout 独立表达预算耗尽；同批成功结果仍可用于综合。
+**发生了什么**：Executor 负责归一化异常。它保留异常类型，丢弃可能包含敏感信息的供应商原文；timeout 单独表示预算耗尽，同批成功结果仍能交给 Lead。
 
 **动手修改**：请求未知 agent_name。观察它返回 failed 而不是让 KeyError 越过 Lead 工具循环。
 <!-- /lesson-lab -->
@@ -1360,7 +1348,7 @@ digest_chars = 64
 truncated = True
 ```
 
-**发生了什么**：Mini DeerFlow 把概念实验中的预算规则提升到统一结果协议。完整大输出应由 Sandbox/Artifact provider 保存，Lead 只按需读取。
+**发生了什么**：Mini DeerFlow 把概念实验里的预算规则放进统一结果协议。完整大输出由 Sandbox/Artifact provider 保存，Lead 只在需要时读取。
 
 **动手修改**：只让 artifact 数量越界、摘要不过界。确认状态仍是 output_too_large，并检查 error 明确指出哪项预算超限。
 <!-- /lesson-lab -->
@@ -1400,12 +1388,12 @@ messages_in_ledger = False
 secret_in_ledger = False
 ```
 
-**发生了什么**：同一个 demo_executor 先执行两个直接委派，又通过 task tool 执行一次 Lead 委派。Ledger 记录 task 终态和安全输入键，不是 Graph Checkpointer、模型历史或完整 trace 的替代品。
+**发生了什么**：同一个 demo executor 先执行两次直接委派，又通过 task tool 执行一次 Lead 委派。Ledger 只记录 task 终态和安全输入键，不替代 Checkpointer、模型历史或完整 trace。
 
 **动手修改**：把 Ledger 替换为持久化 repository 接口草图。列出 tenant ownership、retention、PII policy 和事务边界，不要直接永久保存所有 Prompt。
 <!-- /lesson-lab -->
 
-## 7. 四种模式放在一起比较
+## 7. 回到控制权，比较四种模式
 
 | 模式 | 下一步控制权 | 会话所有者 | 是否天然隔离上下文 | 典型用途 |
 |---|---|---|---:|---|
@@ -1418,9 +1406,9 @@ secret_in_ledger = False
 
 任务持续数分钟、用户需要断线重连或取消时，应升级为 task repository、worker lease、start/status/result API 和 durable event。单纯 `asyncio.create_task()` 不会提供这些语义。
 
-## 8. 为什么 DeerFlow 使用 Lead Agent + task/subagent
+## 8. 沿着 task 调用链读 DeerFlow
 
-本章校准的 DeerFlow 源码固定在提交 `216309426fc6f954689ebee138af117029e43f8b`。建议按下面顺序阅读：
+本章引用的 DeerFlow 源码固定在提交 `216309426fc6f954689ebee138af117029e43f8b`。不要从目录开始漫游，先按下面的 task 调用顺序阅读：
 
 ```mermaid
 flowchart TD
@@ -1435,9 +1423,9 @@ flowchart TD
 
 **图的文本替代**：从 Lead 组合根找到 task；沿 task 进入 registry 和 executor；观察临时 Agent、超时和结果投影；最后回到限制同轮委派数量的 middleware。
 
-DeerFlow 不是“固定翻译小组”。Lead 在长期会话中动态决定是否调用 `task(description, prompt, subagent_type)`；每个 subagent 有自己的 Prompt、tools、skills、模型和预算。
+DeerFlow 的 specialist 不是固定流水线。Lead 在长期会话中动态决定是否调用 `task(description, prompt, subagent_type)`；每个 subagent 拥有自己的 Prompt、tools、skills、模型和预算。
 
-Mini DeerFlow 没有复制 DeerFlow 的线程池、Gateway、SSE 和完整 runtime。它保留了读懂大项目所需的稳定骨架：单一 task 接口、registry、隔离 invocation、受控并发、终态协议和有界 ledger。
+Mini DeerFlow 没有复制 DeerFlow 的线程池、Gateway、SSE 和完整 runtime。它只保留读懂这条调用链所需的骨架：单一 task 接口、registry、隔离 invocation、受控并发、终态协议和有界 ledger。
 
 | DeerFlow | Mini DeerFlow | 本轮有意延后 |
 |---|---|---|
@@ -1449,7 +1437,7 @@ Mini DeerFlow 没有复制 DeerFlow 的线程池、Gateway、SSE 和完整 runti
 | workspace inheritance | 只传 sandbox_id 句柄 | 生产容器 Sandbox |
 | delegation journal | 有界进程内 Ledger | DB repository 与 SSE journal |
 
-## 9. 动手练习：让边界发生一次可观察变化
+## 9. 练习：亲手改变一条委派边界
 
 ### 练习 A：增加 reviewer specialist
 
@@ -1513,13 +1501,15 @@ uv run --locked pytest -q \
 - [ ] Ledger 不保存主 messages 或 Secret；
 - [ ] Web 与 Notebook 的实验顺序、代码和 stdout 一致。
 
-## 11. 本章交付：从“多画几个节点”上升到 Agent Harness
+## 11. Lead 最终只保留一条有界委派链
 
-本章没有从 Mini DeerFlow 封装开始。学习者先亲手经历 Lead 上下文污染，再建立 TaskRequest、TaskResult、输入投影、控制权选择和执行预算。
+我们先让 Lead 的上下文被原始材料污染，再建立 TaskRequest、TaskResult、输入投影、控制权选择和执行预算。到这一步，Subagent 才不再只是“另一次模型调用”。
 
-随后，同一组机制被迁入 Mini DeerFlow：Registry 描述能力，Executor 守住运行边界，task tool 暴露单一接口，Lead 在 ToolMessage 返回后继续综合，Ledger 保存有界终态。
+同一组机制随后进入 Mini DeerFlow：Registry 描述能力，Executor 守住运行边界，task tool 暴露单一接口，Lead 在 ToolMessage 返回后继续综合，Ledger 保存有界终态。
 
-下一篇进入[Mini DeerFlow 工程架构总览](../mini_deerflow/ARCHITECTURE.md)。阅读时不要只找类名，要沿着本章已经建立的五条责任边界追踪：组合根、模型接口、执行 seam、持久化事实和外部能力。
+现在可以用控制权区分 Router、Handoff、Subgraph 与 Subagent-as-tool，用 `Command` 和 `Send` 表达路由与并行，并解释 Subgraph 为何不自动隔离上下文。并发、超时、部分失败和输出预算也都有了明确所有者。
+
+下一篇进入[Mini DeerFlow 工程架构总览](../mini_deerflow/ARCHITECTURE.md)。不要只找类名，沿着已经建立的五条责任边界追踪：组合根、模型接口、执行接缝、持久化事实和外部能力。
 
 ## 参考资料
 

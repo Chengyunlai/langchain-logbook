@@ -1,4 +1,4 @@
-# 第 05 章：Context Engineering——先决定事实由谁拥有
+# 第 05 章：为运行事实划清所有权（Context Engineering）
 
 <!-- lesson-contract:v2 -->
 
@@ -6,13 +6,13 @@
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 Runtime Context、Graph State、Store 与 Mini DeerFlow 数据边界
 
-## 1. 上一刻系统：工具会运行，所有信息却挤在一个袋子里
+## 1. 一个“上下文”袋子装不下所有事实
 
-第 04 章的 Lead Agent 已经能调用检索工具。接入真实用户后，它还需要知道用户身份、权限、语言偏好、当前计划、工作区、数据库连接和短期 Token。
+第 04 章的研究助手已经能选择检索工具。接入真实用户后，同一个 Lead Agent 还需要身份、权限、语言偏好、当前计划、工作区、数据库连接和短期 Token。
 
-把这些值都叫“上下文”没有错，却不足以指导设计。它们由不同组件拥有，存活时间不同，也不应该拥有相同的读写权限。
+把这些值统称为“上下文”，对写代码没有帮助。它们的提供者、存活时间和读写权限都不同，也不该进入同一个存储边界。
 
-本章不先给分类表。我们从一个看似省事的 `UniversalState` 开始，让泄漏、序列化、跨 Thread 和陈旧业务事实依次发生，再从证据推导边界。
+这里先不背分类表。我们把所有值塞进一个看似省事的 `UniversalState`，依次观察泄漏、序列化失败、跨 Thread 丢失和业务事实过期。
 
 ```mermaid
 flowchart LR
@@ -27,13 +27,13 @@ flowchart LR
     F --> I["Graph State 只保留线程事实"]
 ```
 
-**图的文本替代**：万能 State 会造成四类失败。身份、权限和运行依赖进入 Runtime Context；线程内演进事实留在 Graph State。
+**图的文本替代**：万能 State 会引出四类失败。身份、权限和运行依赖应进入 Runtime Context；当前 Thread 中演进的事实留在 Graph State。
 
 跨 Thread 偏好进入 Store；账户余额等权威事实留在业务数据库。
 
-## 2. 第一处失败：万能 State 同时破坏安全与持久化
+## 2. 万能 State 泄漏 Token，也存不下连接
 
-初学者很容易写出一个大字典：节点只收一个参数，调试时也能在一个地方看到所有值。问题是 State 会被节点共享，也可能进入 checkpoint、trace 和调试快照。
+一个大字典很诱人：节点只收一个参数，调试时也能一次看全。但 State 会在节点间共享，还可能进入 checkpoint、trace 和调试快照；放进去就等于扩大了可见面。
 
 <!-- lesson-lab:id=ch05-universal-state-failure layer=concept kind=failure concept=context-boundaries pair=universal-state -->
 ### 把身份、Token 和数据库连接一起塞进 State
@@ -84,13 +84,13 @@ TypeError: sqlite3.Connection is not checkpoint serializable
 **动手修改**：先只删除 `connection`，再预测 Token 是否已经安全。列出仍能读取 `auth_token` 的组件。
 <!-- /lesson-lab -->
 
-失败暴露的不是某个 serializer 用法，而是所有权问题：谁提供身份和连接？节点能不能修改它们？它们是否需要随线程恢复？
+这不是 serializer 的用法问题。真正要回答的是：身份和连接由谁提供，节点能否修改，以及它们是否需要随 Thread 恢复。
 
-## 3. 最小修复：Context 由应用注入，State 由图演进
+## 3. 把运行依赖与线程事实分开
 
-Runtime Context 是一次运行需要、但不由 Agent 自己决定的配置与依赖。Graph State 是节点共同读写、需要随当前 Thread 演进的事实。
+这时再命名两条数据通道。运行时上下文（Runtime Context）保存一次运行需要、但不由 Agent 决定的配置与依赖。Graph State 保存节点共同读写、随当前 Thread 演进的事实。
 
-下面仍不导入 Mini DeerFlow。我们直接使用 LangGraph 的 `context_schema` 和 `Runtime`，观察两条数据通道怎样进入同一个节点。
+我们继续用原生 LangGraph，直接通过 `context_schema` 和 `Runtime` 把两条数据通道送入同一节点。先看证据，还不需要 Mini DeerFlow 封装。
 
 <!-- lesson-lab:id=ch05-runtime-state-repair layer=concept kind=repair concept=context-boundaries pair=universal-state -->
 ### 用原生 Runtime 拆开运行依赖与线程事实
@@ -170,9 +170,9 @@ Context 不会自动进入 Prompt。应用仍要选择哪些安全字段可以�
 **动手修改**：尝试在节点中改写 `runtime.context.user_id`，观察 frozen dataclass 如何阻止修改。再解释为什么真正鉴权仍必须发生在服务端。
 <!-- /lesson-lab -->
 
-## 4. 第二处失败：线程 State 不是跨线程记忆
+## 4. 换一个 Thread，偏好为什么消失
 
-语言和引用风格常被称为“用户记忆”。把它们放进 State，在当前 Thread 内确实能工作；当同一用户新建另一个 Thread，旧 checkpoint 不会自动参与。
+语言和引用风格常被叫作“用户记忆”。它们放在 State 里时，当前 Thread 确实能读到；同一用户新建 Thread 后，旧 checkpoint 却不会自动加入这次运行。
 
 <!-- lesson-lab:id=ch05-preference-state-failure layer=concept kind=failure concept=store pair=preference-lifetime -->
 ### 把用户偏好放进 Thread State 后切换会话
@@ -225,14 +225,14 @@ thread_b_language = <missing>
 
 **发生了什么**：Checkpointer 按 `thread_id` 保存 Graph State。相同 `user_id` 只是普通字段，不会让两个 Thread 自动共享 State。
 
-这正是正确的消息隔离，却不符合“用户偏好跨会话复用”的生命周期。我们需要一个不绑定单一 Thread、由应用显式读写的边界。
+这个结果正好证明了 Thread 隔离。偏好若要跨会话复用，就需要另一个不绑定单一 Thread、由应用显式读写的边界。
 
 **动手修改**：把两个 config 改成相同 `thread_id`。预测结果后说明：这为什么不能作为跨 Thread 偏好的修复方案？
 <!-- /lesson-lab -->
 
-## 5. Store：应用选择哪些事实值得跨 Thread 保存
+## 5. 用 Store 显式保存跨 Thread 偏好
 
-LangGraph Store 使用 namespace 和 key 显式读写数据。Store 不会自动复制全部 State；应用必须决定保存什么、按谁隔离、何时删除。
+长期存储（Store）用 namespace 和 key 显式读写数据。它不会自动复制 State；应用必须自己决定保存什么、按谁隔离，以及何时删除。
 
 <!-- lesson-lab:id=ch05-store-cross-thread layer=concept kind=repair concept=store pair=preference-lifetime -->
 ### 用同一用户 namespace 跨 Thread 读取偏好
@@ -351,9 +351,9 @@ unknown = None
 **动手修改**：故意用请求参数中的 `user_id` 替代认证 Context。描述攻击者如何读取另一个用户的 namespace，以及 Gateway 应在哪里拒绝。
 <!-- /lesson-lab -->
 
-## 6. 第三处失败：Store 不是业务数据库
+## 6. 余额写进 Store 后为什么会过期
 
-既然 Store 能跨 Thread，很容易继续把余额、订单状态或权限也存进去。这会制造第二份“看起来像真的”业务事实，却没有事务、约束和统一更新路径。
+Store 能跨 Thread，不代表它适合存余额、订单状态或权限。一旦复制这些值，系统就有了第二份业务事实，却没有事务、约束和统一更新路径来保证它可信。
 
 <!-- lesson-lab:id=ch05-stale-business-fact layer=concept kind=failure concept=business-database pair=business-authority -->
 ### 把账户余额复制进 Store 后观察陈旧值
@@ -469,9 +469,9 @@ stored_preference = {'language': 'zh-CN'}
 **动手修改**：让 Repository 返回退款状态，并要求工具执行退款。指出读取、权限检查、幂等键、事务和审计分别应由哪一层拥有。
 <!-- /lesson-lab -->
 
-## 7. Thread 隔离：Checkpoint 保存当前会话，不保存整个用户
+## 7. 两个 Thread 必须拥有两份 checkpoint
 
-现在回到 Graph State。两个 Thread 可以使用同一个 compiled graph 和 checkpointer，但必须通过不同 `thread_id` 得到独立快照。
+现在回到 Graph State。两个 Thread 可以共用 compiled graph 和 checkpointer，但必须使用不同的 `thread_id` 取得独立快照。
 
 <!-- lesson-lab:id=ch05-thread-state-isolation layer=concept kind=contrast concept=thread-state -->
 ### 用两个 thread_id 保存互不相同的研究问题
@@ -528,9 +528,9 @@ questions_isolated = True
 **动手修改**：故意让两个请求共用同一个 `thread_id`。观察第二次输入怎样继承旧 snapshot，并解释为什么产品 Thread 必须绑定认证用户。
 <!-- /lesson-lab -->
 
-## 8. 现在再给判断表：按所有权与生命周期分类
+## 8. 用五个问题决定数据去处
 
-前面的失败提供了四个问题。分类任何数据前，依次问：谁提供？谁能改？要活多久？是否需要恢复？哪个系统拥有权威真相？
+前面的失败已经足够支撑判断表。放置任何数据前，依次问：谁提供，谁能改，要活多久，是否需要恢复，以及哪个系统拥有权威真相。
 
 | 数据 | 位置 | 由谁提供或修改 | 生命周期与理由 |
 |---|---|---|---|
@@ -557,9 +557,9 @@ Checkpointer 保存 Thread State 的 step 快照，用于恢复和 time travel�
 
 Store 没有自动获得订单唯一约束、余额一致性和领域事务。Agent 工具应调用真正的领域服务，不要把“长期可保存”误写成“业务权威”。
 
-## 9. 工程迁移：Mini DeerFlow 怎样固化这些边界
+## 9. Mini DeerFlow 如何守住这四条边界
 
-概念层已经用原生 API 证明了边界。现在再看 Mini DeerFlow：它没有发明新的上下文种类，而是给类型、安全视图、namespace policy 和 checkpoint guard 建立稳定公共接口。
+原生 API 已经证明四条数据边界。Mini DeerFlow 不再增加新分类；它要做的是用类型、安全视图、namespace policy 和 checkpoint guard 把这些判断固定为公共接口。
 
 <!-- lesson-lab:id=ch05-mini-deerflow-context layer=migration kind=contrast concept=context-boundaries -->
 ### 对照安全 Context、ThreadState 与偏好 Repository
@@ -632,7 +632,7 @@ preferences = {'language': 'zh-CN', 'citation_style': 'source-first'}
 | 跨 Thread 偏好 | `UserPreferenceRepository` | namespace policy、字段校验、未知用户空值 |
 | 权威业务事实 | 产品 Repository / Gateway 依赖 | 事务、幂等、审计，不复制到 Store |
 
-## 10. 从这里开始读 DeerFlow
+## 10. 沿事实所有权读 DeerFlow
 
 不要先搜索 Prompt 中出现了哪些用户信息。沿调用链寻找所有权：
 
@@ -672,11 +672,11 @@ DeerFlow 阅读入口固定到 commit `4af617835805dd7cd78162ebed02fd6b782ea8bf`
 
 合上讲义回答：数据库连接为什么属于 Context？Checkpoint 与 Store 的主键分别是什么？跨 Thread 为什么不等于跨用户？Store 为什么不能成为余额的权威来源？
 
-## 12. 下一刻系统：事实各归其位，治理逻辑仍然散落
+## 12. 事实归位后，治理代码开始重复
 
-本章结束后，身份、权限和依赖由 Runtime Context 注入；消息、计划和 Artifact 属于当前 Thread State；偏好由 Store 跨 Thread 保存；业务事务继续由数据库负责。
+这个研究助手的身份、权限和依赖现在由 Runtime Context 注入；消息、计划和 Artifact 属于当前 Thread State；偏好进 Store；业务事务仍由数据库负责。
 
-新的问题随之出现：每个模型和工具调用都要重复检查权限、计数、日志与异常。第 06 章会先让这些重复和遗漏真实发生，再用 Agent Middleware 把横切治理收回统一边界。
+接下来的问题不在数据放哪里，而在每次模型和工具调用都要重复检查权限、计数、日志与异常。第 06 章会先让遗漏发生，再用 Agent Middleware 收回这些调用治理。
 
 运行本章验收：
 

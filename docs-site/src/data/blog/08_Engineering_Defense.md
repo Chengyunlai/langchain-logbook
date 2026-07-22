@@ -1,5 +1,5 @@
 ---
-title: "第 08 章：从固定边到动态研究工作流"
+title: "第 08 章：研究计划变长时，Graph 怎么跟着展开"
 description: "用 Command、Send、Subgraph 与 Reducer 表达条件、循环和动态并行。"
 pubDatetime: 2026-03-26T00:00:00.000Z
 featured: false
@@ -18,16 +18,17 @@ contentType: "main"
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x
 > **本章工件**：Command、Send、Subgraph、显式循环、Functional API 与 Mini DeerFlow 研究图
 
-## 1. 上一刻系统：会画固定图，还表达不了动态任务
+## 1. 第三个研究任务没有进入图
 
-第 07 章已经从零实现 State、Node、Edge、条件边、Reducer 和显式 ReAct Graph。现在把研究计划真正放进图：拒绝空目标，按运行时 sections 动态研究，汇总草稿，质量不够时修订。
+第 07 章把研究流程写进了 StateGraph，但搜索节点仍在编译前固定。现在 planner 返回三个 section，图里却只有两个 worker。第三项不会报错，只会悄悄消失。
 
-固定边能表达编译前已知的拓扑，却会遇到四个新问题：
+修好任务数量后，另外三个问题也会露出来：
 
-1. 节点更新状态后，另一个 router 又重复判断一次；
-2. section 数量运行时才知道，不能预先画固定数量的 worker；
-3. review 只需草稿，却意外看到父图全部 State；
-4. 循环有返回边，却没有可观察进度和终止条件。
+1. intake 和 router 各自保存了一份拒绝规则；
+2. review 只需草稿，却能看到父图全部 State；
+3. 修订虽然画了返回边，却没有任何状态在推动它结束。
+
+这不是再认识一组 API。我们继续改造同一个研究助手，每次先让错误出现，再为那一处控制流选择 Command、Send 或 Subgraph。
 
 ```mermaid
 flowchart TD
@@ -47,14 +48,14 @@ flowchart TD
     F --> E
 ```
 
-**图的文本替代**：intake 用 Command 同时写状态与选路；plan 用 Send 为每个 section 创建运行时任务；结果经 reducer 汇合；review 子图只读取局部 State，低分修订后重试，高分结束。
+**图的文本替代**：intake 用 Command 同时写状态与选路；plan 根据 section 数量发出 Send；结果经 reducer 汇合。review 子图只读取审查字段，低分时修订，高分时结束。
 
-## 2. 第一处失败：节点与 router 各写一份判断规则
+## 2. 同一个拒绝规则为什么写了两遍
 
-条件边适合“只读取现有 State 并决定下一站”。若一个节点已经判断并写入状态，随后 router 又重新读取原始输入判断，两个条件会逐渐漂移。
+intake 已经判断目标是否合法，并把结果写进 `status`。紧接着，router 又从原始 `objective` 判断一次。最初两处逻辑看起来相同，直到其中一处加上 `strip()`。
 
 
-### 空白目标被 intake 拒绝，却被 router 送进 plan
+### intake 已经拒绝，router 却继续规划
 
 **运行前先预测**：intake 使用 `strip()`，router 只判断字符串真假；输入三个空格时，最终 status 会是什么？
 
@@ -112,13 +113,13 @@ trace = ['intake:reject', 'plan']
 
 **发生了什么**：同一个业务决定出现两份实现。intake 认为空白目标无效，router 却把非空字符串送进 plan，最终状态自相矛盾。
 
-不要为了使用 Command 而使用 Command。若节点只更新、router 只路由且规则不重复，条件边仍然清晰。这里需要 Command，是因为判断、更新和下一跳属于一个原子业务决定。
+如果节点只更新、router 只读取更新后的 State，条件边依然清楚。这里的问题是两处都在判断同一件事。接受或拒绝请求时，状态更新和下一跳应由同一个节点决定。
 
 **动手修改**：只修 router 的 `strip()`，让测试变绿。然后再增加一个“目标最少 5 个字符”的规则，观察两处修改为何仍会反复漂移。
 
 
 
-### 用 Command 同时返回 patch 与 goto
+### 让 Command 只保存一次决定
 
 **运行前先预测**：intake 返回 `Command(update=..., goto=...)` 后，还需要额外 conditional edge 吗？
 
@@ -176,19 +177,19 @@ separate_router = False
 
 **发生了什么**：一个节点拥有一次判断，并把 State patch 与下一跳一起返回。类型参数列出可能目的地，也帮助 Graph 可视化发现动态边。
 
-`Command` 还支持 `graph` 与 `resume`。跨图导航和 interrupt 恢复分别在后续子图、HITL 章节出现；不要把四种能力一次塞进同一个例子。
+`Command` 还支持 `graph` 与 `resume`，分别用于跨图导航和 interrupt 恢复。这里先不用它们，因为当前故障只有一个：拒绝规则出现了两个所有者。
 
 **动手修改**：增加 `needs-info` 路径，并同步修改 `Literal`。故意漏掉类型中的目标，观察运行与静态可读性分别受到什么影响。
 
 
-## 3. 第二处失败：固定 worker 数量吞掉第三个 section
+## 3. 图里只有两个 worker，计划却有三个 section
 
-静态 edge 在 compile 前确定。若为 `worker_0`、`worker_1` 各画一条边，输入恰好两个 section 时可用；第三个任务不会自动长出新节点。
+静态 edge 在编译前确定。`worker_0` 和 `worker_1` 可以处理恰好两个 section，运行时多出来的任务却不会自动长出新节点。
 
-第 07 章已经证明并行写同一字段必须有 reducer。本节复用这个前置知识，只增加动态任务数量这一项机制。
+第 07 章已经为并行 `findings` 定义了 reducer。现在合并规则不变，只把“有多少个任务”从图定义移到本次研究计划里。
 
 
-### 两个固定 worker 只处理前两个任务
+### 第三个 section 被静默漏掉
 
 **运行前先预测**：输入三个 section，而图里只有两个固定 worker，最终哪个 section 会消失？
 
@@ -241,7 +242,7 @@ missing = ['thread_id']
 
 
 
-### 用 Send 为每个 section 创建运行时任务
+### 一个节点定义可以接收三个 Send
 
 **运行前先预测**：三个 Send 会复制三个永久节点，还是复用同一个 `research_section` 定义？
 
@@ -309,17 +310,17 @@ permanent_worker_nodes = 1
 
 **发生了什么**：`Send` 在运行时为同一个节点定义创建三个 task，每个 task 拿到不同输入。它们仍属于同一 Graph superstep，结果通过 findings reducer 合并。
 
-`Send` 不是任意后台线程 API。外部服务并发上限、deadline、取消和部分失败仍需单独设计。
+`Send` 只负责在 Graph 运行时创建 task，不替你处理外部服务的并发上限、deadline、取消和部分失败。这些约束仍要由应用显式设计。
 
 **动手修改**：输入空 sections。决定应直接结束、返回业务失败，还是调用默认研究任务，并把规则放在 fan-out 之前。
 
 
-## 4. 第三处失败：普通 review 函数看到了整个父 State
+## 4. 审查节点为什么能看到 `secret`
 
-把所有逻辑都写成父图节点最省代码，却会扩大耦合。质量审查只需 draft 与 revision count，不应读取 objective、用户身份或内部 secret。
+初稿生成后要做质量审查。这个步骤只需要 draft 和 revision count，但普通父图节点会收到整个 State，连 objective、用户身份和内部 secret 都在接口里。
 
 
-### review 节点收到父图全部字段
+### 没有使用 `secret`，不代表它不可见
 
 **运行前先预测**：普通节点直接接收 ParentState 时，`secret` 会不会出现在可见 keys 中？
 
@@ -376,7 +377,7 @@ quality_score = 1
 
 
 
-### 用独立 ReviewState 编译子图
+### 用 ReviewState 划出审查边界
 
 **运行前先预测**：子图声明的 State 只有 draft、score 和 seen keys 时，父图 secret 会不会进入子图？
 
@@ -442,17 +443,17 @@ quality_score = 1
 
 **发生了什么**：compiled subgraph 只建立自己声明的 channels。父子共享的 draft 与输出字段可以流动，objective 和 secret 不进入 ReviewState。
 
-Subgraph 不等于 Subagent。Subgraph 是固定拓扑和 State 边界；Subagent 通常拥有独立 Prompt、模型、工具与上下文裁剪，并由 Lead 动态委派。第 11 章再引入后者。
+Subgraph 是固定拓扑和 State 边界。Subagent 还会拥有独立 Prompt、模型、工具和上下文裁剪，并由 Lead 动态委派。第 11 章才需要后一种能力。
 
 **动手修改**：让 ReviewState 需要父图没有的 rubric。增加一个 adapter node 显式构造子图输入，避免靠同名 key 猜测转换。
 
 
-## 5. 第四处失败：有返回边，却没有进度
+## 5. 修订回来了，什么在推动它结束
 
-画出循环不难，难的是证明它会结束。若 review 永远返回低分，revise 又不改变任何决定条件，Graph 只能等 recursion limit 强制中止。
+给 `revise` 画一条返回 `review` 的边很容易。若 review 永远低分，revise 又没有改变决定条件，这张图只是在重复同一状态，最后由 recursion limit 强制中止。
 
 
-### review 与 revise 永远回到同一状态
+### 返回边不等于有效进度
 
 **运行前先预测**：review 永远给 0 分、revise 不更新计数时，Graph 能自行终止吗？
 
@@ -509,7 +510,7 @@ business_terminal_state = False
 
 
 
-### 让修订次数推动可判定终止
+### 把修订次数变成可观察进度
 
 **运行前先预测**：review 在 revision_count 达到 2 时通过，节点顺序会怎样重复？
 
@@ -568,17 +569,17 @@ trace = ['review:0', 'revise:1', 'review:0', 'revise:2', 'review:1', 'finish']
 
 **发生了什么**：循环拥有可观察进度、可判定终止和 Graph 级最后护栏。生产系统还应设置最大修订次数、deadline 与升级人工路径。
 
-若质量完全由同一个模型自由自评，进度数字也可能失真。业务终止应结合确定性规则、独立 evaluator、预算或人工判断。
+如果质量完全由同一个模型自由自评，计数增加也不能证明内容变好。真实终止条件还应结合确定性规则、独立 evaluator、预算或人工判断。
 
 **动手修改**：加入 `max_revisions=1`，让未达标任务以 `needs_review` 结束，而不是继续循环或伪装 completed。
 
 
-## 6. Functional API：为过程式函数增加 durable task 语义
+## 6. 已有的过程式函数也要能恢复
 
-Graph API 适合显式共享 State 与可视化拓扑。已有代码若本来就是“调用几个函数并收集 futures”，Functional API 可以用 `@entrypoint` 与 `@task` 增加持久执行语义。
+研究助手并非所有流程都需要共享 State。有些旧代码只是调用几个函数，再收集返回值。为了获得持久执行语义，不必先把它们改画成图；Functional API 提供了 `@entrypoint` 和 `@task`。
 
 
-### 用 task future 保持普通函数阅读方式
+### task 返回 future，entrypoint 负责收集
 
 **运行前先预测**：调用 task 后立即得到字符串，还是先得到 future，再由 entrypoint 收集结果？
 
@@ -616,14 +617,14 @@ graph_builder_written = False
 **动手修改**：让一个 task 抛出异常。先观察默认 fail-fast，再决定在哪里聚合 partial result，而不是无条件吞掉异常。
 
 
-## 7. 工程迁移：Mini DeerFlow 组合完整研究拓扑
+## 7. 把四处修复装回 Mini DeerFlow
 
-概念实验已经分别证明 Command、Send、Subgraph、循环和 Functional task。现在再运行项目工作流，观察这些原语如何共享领域 State、类型与事件。
+单独的实验都已通过，但研究助手需要让它们在一张图里协作。下面从一次完整交付开始，再分别检查拒绝路径、动态任务、审查子图和 Functional task 策略。
 
-### 7.1 一次运行串起全部 Graph 形状
+### 7.1 先跑完一次研究交付
 
 
-### 运行确定性研究交付
+### 初稿低分后，只修订一次
 
 **运行前先预测**：初稿第一次 review 不通过时，最终会修订几次？两个 section 是否都进入 findings？
 
@@ -662,10 +663,10 @@ terminal_event = finalize
 **发生了什么**：一个项目图组合串行 intake/plan、Command 拒绝路径、Send fan-out、findings reducer、review 子图和修订循环。`ResearchFinding` 与 `WorkflowEvent` 让并行结果和轨迹保持结构化。
 
 
-### 7.2 Command 在 fan-out 前拒绝无效请求
+### 7.2 空请求不能启动任何研究任务
 
 
-### 证明拒绝路径没有偷偷运行 worker
+### 用 trace 证明 worker 没有运行
 
 **运行前先预测**：空白 objective 被拒绝后，Reducer 字段 findings 会不存在，还是以空列表出现？
 
@@ -696,10 +697,10 @@ research_ran = False
 **发生了什么**：Reducer channel 即使没有任务更新，也可能以单位元空列表出现在终态。可靠断言是 findings 为空且 trace 无 research，而不是依赖 key 恰好不存在。
 
 
-### 7.3 stream 显示 Send task 与质量循环
+### 7.3 从 stream 数出动态任务和修订次数
 
 
-### 从 updates 计数动态节点执行
+### 同名节点出现三次，不是三份永久节点
 
 **运行前先预测**：三个 section 会产生几个同名 `research_section` update？review 为什么出现两次？
 
@@ -736,10 +737,10 @@ finalize_updates = 1
 **发生了什么**：同名 research node 被三个 Send task 复用；review 两次来自一次修订循环，不是两个永久 review 子图。
 
 
-### 7.4 xray 展开子图而不改变运行协议
+### 7.4 调试时展开 review 子图
 
 
-### 查看 review 内部 score 节点
+### 普通视图折叠，xray 显示内部节点
 
 **运行前先预测**：普通 graph view 会把 review 当一个节点，`xray=True` 是否能看到内部 score？
 
@@ -768,10 +769,10 @@ expanded_has_research = True
 **发生了什么**：子图对父图是一个可复用节点边界，调试时仍可展开内部拓扑。控制流封装与可观察性并不冲突。
 
 
-### 7.5 Functional task 固化 retry、cache 与失败聚合
+### 7.5 瞬时失败和永久失败不能共用重试策略
 
 
-### 区分瞬时失败与永久失败
+### Timeout 重试，ValueError 直接记录失败
 
 **运行前先预测**：flaky 第一次 Timeout 后会尝试几次？ValueError 是否会被同一 retry policy 重试？
 
@@ -803,13 +804,13 @@ second_statuses = ['completed', 'completed']
 
 **发生了什么**：只对 TimeoutError 有限重试；永久 ValueError 变成类型化失败；第二次 stable/flaky 复用 task cache。
 
-Cache 适合 TTL 内输入决定输出的读取任务，不能替代副作用幂等。错误聚合保留 topic、status 和 error type，也不等于吞异常。
+Cache 适合在 TTL 内由输入决定输出的读取任务，不能代替副作用幂等。失败结果保留 topic、status 和 error type，调用方仍能定位具体错误。
 
 
-### 7.6 回收第 04 章延后的 Artifact Command
+### 7.6 `record_artifact` 为什么同时更新两处状态
 
 
-### 工具结果同时形成 ToolMessage 与 State patch
+### 一次工具返回，同时补消息并登记产物
 
 **运行前先预测**：`record_artifact` 只告诉模型“成功”，还是也把 ArtifactRef 写进 Agent State？
 
@@ -868,7 +869,7 @@ final_answer = 产物已经登记。
 
 **发生了什么**：工具返回 `Command(update=...)`，既补上与 call ID 配对的 ToolMessage，也更新 artifacts State。第 04 章先学习消息循环；现在已有 StateGraph 基础，才解释这个双重效果。
 
-真正写文件、校验路径、审计和隔离仍属于 Sandbox。登记引用不等于文件已安全落盘。
+这里登记的只是 ArtifactRef。真正写文件、校验路径、审计和隔离仍属于 Sandbox；State 里出现路径，不能证明文件已经安全落盘。
 
 
 | 最小概念 | Mini DeerFlow 增加的工程边界 |
@@ -880,7 +881,7 @@ final_answer = 产物已经登记。
 | Functional task | 有限 retry、TTL cache、类型化 partial failure |
 | Artifact Command | ToolMessage 配对、ArtifactRef reducer、后续 Sandbox 接缝 |
 
-## 8. 如何选择 conditional edge、Command、Send 与 Subgraph
+## 8. 先看故障发生在哪一层
 
 | 需求 | 优先机制 | 原因 |
 | --- | --- | --- |
@@ -890,17 +891,17 @@ final_answer = 产物已经登记。
 | 局部拓扑需要独立 State Schema | Subgraph | 缩小状态与复用边界 |
 | 已有过程式函数需要 durable task | Functional API | 保留普通代码阅读方式 |
 
-机制可以组合，但每次组合都要说明所有权。一个节点同时返回 Command、创建 Send、写多个 reducer 字段并调用外部副作用，通常说明模块边界过深或难以测试。
+这些机制可以组合，前提是每个决定都有明确所有者。若一个节点既返回 Command、又创建 Send、还写多个 reducer 字段并调用外部副作用，它已经很难单独测试。
 
-## 9. 并行、循环与副作用的工程约束
+## 9. 图能运行，不代表结果可重放
 
-并行完成顺序不应决定业务语义。Mini DeerFlow 测试比较 section 集合，synthesize 再显式排序。如果必须保留计划顺序，应保存 sequence number，而不是依赖 scheduler 恰好按提交顺序结束。
+并行完成顺序不应决定报告顺序。Mini DeerFlow 的测试比较 section 集合，synthesize 再显式排序。若必须保留计划顺序，就保存 sequence number，不能依赖 scheduler 恰好按提交顺序结束。
 
-循环至少需要：可观察进度、可判定终止、强制预算。若循环内包含发消息、写文件或扣费，重放与重试还要求幂等键；recursion limit 无法解决重复副作用。
+循环至少需要可观察进度、可判定终止和强制预算。若循环中还会发消息、写文件或扣费，重放与重试就必须携带幂等键；recursion limit 无法阻止重复副作用。
 
-Reducer 也是领域规则。`operator.add` 只适合“保留全部”的 append-only 语义；按 ID 去重、最大版本、last-write-wins 或冲突即失败都需要显式实现。
+Reducer 仍是领域规则。`operator.add` 只适合保留全部记录；按 ID 去重、选择最大版本、last-write-wins 或冲突即失败，都需要单独写明。
 
-## 10. 练习：扩展同一个研究图
+## 10. 练习：继续破坏这张研究图
 
 ### 练习 A：部分失败
 
@@ -922,11 +923,11 @@ Reducer 也是领域规则。`operator.add` 只适合“保留全部”的 appen
 
 合上讲义回答：Command 何时优于条件边？Send 为什么仍需要 Reducer？Subgraph 与 Subagent 有什么不同？recursion limit 为什么不是业务终止策略？
 
-## 11. 下一刻系统：研究拓扑完整，进程退出仍会清空现场
+## 11. 研究拓扑完整了，重启后仍找不到现场
 
-本章结束后，研究请求可以动态 fan-out，结果按领域规则汇合，局部 review 拥有独立 State，修订循环也有可观察进度。
+现在，研究计划可以按 section 数量动态展开，结果按领域规则汇合。review 只看自己的 State，修订循环也留下了可检查的进度。
 
-但这些状态仍只活在当前进程。下一章会给同一 Graph 注入 Checkpointer，用真实 SQLite 关闭与重开实验区分 checkpoint、thread、snapshot 和 time travel。
+不过，这些状态仍只活在当前进程。下一章会给同一张 Graph 注入 Checkpointer，并真正关闭、重开 SQLite，检查 checkpoint、thread、snapshot 和 time travel 各自保存了什么。
 
 运行本章验收：
 

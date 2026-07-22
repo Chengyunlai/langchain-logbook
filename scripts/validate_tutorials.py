@@ -474,7 +474,11 @@ def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list
 def _stream_output(cell: dict[str, object]) -> str:
     rendered: list[str] = []
     for output in cell.get("outputs", []):
-        if not isinstance(output, dict) or output.get("output_type") != "stream":
+        if (
+            not isinstance(output, dict)
+            or output.get("output_type") != "stream"
+            or output.get("name") != "stdout"
+        ):
             continue
         text = output.get("text", "")
         rendered.append("".join(text) if isinstance(text, list) else str(text))

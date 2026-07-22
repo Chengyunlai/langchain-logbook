@@ -1,5 +1,5 @@
 ---
-title: "Mini DeerFlow 工程架构总览"
+title: "Mini DeerFlow 是怎样装成一套应用的"
 description: "先看懂 Mini DeerFlow 的组合根、数据边界、能力边界与交付边界。"
 pubDatetime: 2025-01-01T00:00:00Z
 featured: false
@@ -16,37 +16,25 @@ contentType: "main"
 > 适用范围：课程第 01–11 章、Lead Agent 核心、Sandbox/Subagent/MCP/Skills、Runtime/API/SSE、测试/评测/观测与最终综合实战  
 > 核心入口：[`app.py`](https://github.com/Chengyunlai/langchain-logbook/blob/main/mini_deerflow/app.py)；LangGraph 工具入口：[`../langgraph.json`](https://github.com/Chengyunlai/langchain-logbook/blob/main/langgraph.json)
 
-## 系统快照：前 11 章已经有零件，现在要确认它们只组成一套应用
+## 前 11 章的零件，不能各自留在 Demo 里
 
 前 11 章分别交付模型、Schema、检索、Lead Agent、Context、State、Middleware、Graph、持久化、审批和 Subagent。若每个专题都自行创建模型、Store 和工具表，课程最终仍会产生多套平行 Demo。
 
-第 11 章结束时，`task` 已经能把研究任务交给隔离 Subagent。可它还悬着一个新问题：谁创建 Lead、task、Executor、Store 和 Checkpointer？如果 CLI、Notebook、API 各装一套，前面建立的边界会在入口处重新分裂。
+第 11 章结束时，`task` 已经能把研究任务交给隔离 Subagent。现在要追问：谁创建 Lead、task、Executor、Store 和 Checkpointer？
 
-本篇先固定 Mini DeerFlow 的组合根、依赖方向和四类数据边界。后续专题都从这里继续：Lead 核心 → Sandbox/扩展 → Runtime/Gateway → 评测/观测 → Capstone → DeerFlow 源码导读。
+若 CLI、Notebook 和 API 各装一套，前面建立的边界会在入口处重新分裂。
 
-这份文档回答的不是“每个目录里有什么文件”，而是三个更重要的问题：
+本篇先固定 Mini DeerFlow 的组合根、依赖方向和四类数据边界。模型、工具、Graph、Middleware 与 Subagent 要在这里组成同一套应用，外层协议不能反向渗入 Agent Harness。
 
-1. 已经在 Notebook 中学过的模型、工具、Graph、Middleware 和 Subagent，怎样组成一个真实应用？
-2. 哪些数据属于 Graph State，哪些属于 Runtime Context、Store 或产品数据库？
-3. Sandbox、可选扩展、SSE Gateway、评测与观测怎样组合，才不会让核心 Agent 反向依赖外层协议或平台对象？
+Mini DeerFlow 保留一组可以迁移的关系：Lead Agent 运行在 LangGraph runtime 上，Middleware 治理生命周期，工具与 Subagent 提供受控能力。
 
-Mini DeerFlow 不复制 DeerFlow 的全部产品复杂度。它保留能够迁移的核心关系：一个 Lead Agent 通过 LangGraph runtime 运行；Middleware 治理生命周期；工具与 Subagent 承担受控能力；Checkpointer/Store 分别负责线程内恢复和跨线程记忆；API 只是外层 adapter。
+Checkpointer 和 Store 各自保存不同事实，API 只是外层 adapter。
 
-### 本篇怎样读
+第一次只追一条主链：`build_application → _assemble_graph → create_lead_agent → graph.invoke`。沿途确认工具在哪里创建、注册和授权，再给 State、Runtime Context、Store 与产品数据库分类。
 
-这不是一张需要背诵的目录表。请按“运行 → 找入口 → 跟装配 → 跟一次调用 → 给数据分类”的顺序读。
+Sandbox、Runtime 和 Evaluation 暂时只看接口。后续专题会继续沿这些接缝展开，并解释 `make_graph()` 与 `build_application()` 为何拥有不同生命周期。
 
-第一次阅读只追一条主链：`build_application → _assemble_graph → create_lead_agent → graph.invoke`。遇到 Sandbox、Runtime 或 Evaluation 先记下接口，不要立刻钻进实现；后续专题会逐条展开。
-
-读完后，你应当能回答：
-
-- 为什么 `app.py` 是组合根，而 `agents/lead_agent.py` 不是；
-- 一个新工具应在哪创建、在哪注册、在哪授权；
-- State、Runtime Context、Store 和产品数据库分别保存什么；
-- `make_graph()` 与 `build_application()` 为什么不能随意合并；
-- 从 Mini DeerFlow 的哪个入口开始，才能顺着相同关系阅读 DeerFlow。
-
-## 0. 先运行，不要先浏览目录
+## 0. 先看一轮离线对话
 
 先执行一条确定性离线对话：
 
@@ -61,7 +49,7 @@ uv run --locked --group dev python -m mini_deerflow \
 {"profile": "offline", "tools": ["search_knowledge", "calculator", "read_workspace_file", "write_workspace_file", "record_artifact", "task"], "final_text": "离线工具循环已完成；请查看 ToolMessage 中的引用。", "middleware_events": 6}
 ```
 
-先从这行输出提出问题，而不是从文件名猜答案：
+先从输出提问，不要从文件名猜答案：
 
 1. `profile` 从哪份配置进入模型工厂？
 2. 六个工具由谁合并成一张表？
@@ -96,11 +84,11 @@ same_store = True
 same_checkpointer = True
 ```
 
-这里最重要的不是类名，而是最后两行：组合根没有在 Agent factory 内偷换 Store 或 Checkpointer。测试传入的活依赖就是应用真正使用的实例。
+最值得看的不是类名，而是最后两行。组合根没有在 Agent factory 内偷换 Store 或 Checkpointer；测试传入的活依赖，就是应用真正使用的实例。
 
 **动手修改**：用 `dataclasses.replace()` 只替换 model，再调用 `build_application()`。如果你必须复制整套工厂才能换模型，依赖注入边界就没有成立。
 
-## 1. 从章节零件到应用组合根
+## 1. 只能有一个地方决定怎样装配
 
 此前每章分别验证一个能力，这对学习原理是必要的，但它还不等于一个应用。真实应用必须有一个地方决定：
 
@@ -110,9 +98,11 @@ same_checkpointer = True
 - Subagent registry、并发限制和 ledger 使用哪个实例；
 - 一次运行的 `thread_id`、`request_id`、用户身份和权限由谁提供。
 
-这个唯一装配位置叫 **Composition Root（组合根）**。本项目把组合根集中在 `app.py`：`build_application()` 服务本地 CLI/测试，`make_graph()` 服务 Agent Server/Studio，二者复用同一个内部装配函数。业务模块只声明自己需要什么，不在 import 时读取 Secret、猜测 provider 或连接外部服务。
+这个唯一装配位置叫组合根（Composition Root）。本项目把它集中在 `app.py`。
 
-先看一个常见的错误演进。CLI 自己创建模型和工具，Notebook 再创建一份，API 为了持久化又复制第三份。三条路径都能回答问题，却可能使用不同 Middleware 顺序、不同权限表和不同 Store。
+`build_application()` 服务本地 CLI 与测试，`make_graph()` 服务 Agent Server/Studio。二者复用同一个内部装配函数。业务模块只声明依赖，不在 import 时读取 Secret、猜测 provider 或连接外部服务。
+
+常见的错误是：CLI 自己创建模型和工具，Notebook 再创建一份，API 为了持久化又复制第三份。三条路径都能回答问题，却可能使用不同 Middleware 顺序、权限表和 Store。
 
 这种错误很难靠单次演示发现。它通常表现为“Notebook 明明能用，API 却没有 task”“测试替换了模型，线上仍在读取环境变量”“CLI 保存的偏好在 Gateway 看不见”。
 
@@ -147,7 +137,9 @@ flowchart LR
 
 **图的文本替代**：配置和活依赖进入唯一组合根。组合根创建 Middleware、工作区工具、可选扩展和 SubagentExecutor，再把 `task` 加入 registry，调用 `create_lead_agent()` 得到 compiled graph。
 
-本地应用绑定独享的内存持久化；内存与 SQLite Checkpointer 复用同一份显式领域类型 allowlist，避免组合根退回宽松反序列化。`langgraph.json` 调用不绑定本地持久化的 `make_graph()`，让 Agent Server 注入它管理的 Checkpointer 与 Store。
+本地应用绑定独享的内存持久化。内存与 SQLite Checkpointer 复用同一份领域类型 allowlist，避免组合根退回宽松反序列化。
+
+`langgraph.json` 调用不绑定本地持久化的 `make_graph()`，让 Agent Server 注入它管理的 Checkpointer 与 Store。
 
 这里刻意把“配置”和“依赖”分开：
 
@@ -155,7 +147,7 @@ flowchart LR
 - `ApplicationDependencies` 是活的对象，例如模型实例、知识索引、Store 和 Checkpointer。测试可以用 `dataclasses.replace()` 替换一个依赖，而不复制整套 Agent 工厂。
 - `RuntimeContext` 属于一次调用。用户、权限和工作区不能让模型通过请求正文自行选择。
 
-## 2. 系统边界与依赖方向
+## 2. HTTP 可以依赖 Harness，Harness 不能反过来
 
 课程把系统分成三层。这里的“层”表示依赖方向，不表示一定要部署为三个进程。
 
@@ -171,13 +163,17 @@ flowchart TB
     HARNESS -. "禁止反向 import" .-> API
 ```
 
-**图的文本替代**：客户端进入 API adapter，API 调用 runtime，runtime 调用 Agent Harness，Harness 建立在 LangChain/LangGraph 以及若干 provider 接口之上。Harness 不得反向导入 API；测试会扫描并阻止这种依赖倒置。
+**图的文本替代**：客户端进入 API adapter，API 调用 runtime，runtime 再调用 Agent Harness。Harness 建立在 LangChain/LangGraph 和 provider 接口之上，不得反向导入 API。
 
-为什么禁止 Harness 反向依赖 API？如果一个工具为了读取 HTTP header 而 import FastAPI request，Notebook、CLI、测试和 Agent Server 就都被某个传输协议绑死。正确做法是 API 验证身份后，把允许暴露的运行事实构造成 `RuntimeContext`。
+若工具为了读取 HTTP header 而 import FastAPI request，Notebook、CLI、测试和 Agent Server 都会被某个传输协议绑死。
 
-当前 `api/` 和 `runtime/` 已实现本地单 worker Gateway：SQLite thread/run/event repository、后台执行、取消、interrupt 恢复、SSE 重放与 FastAPI adapter。它不是生产多 worker 调度器；完整边界与限制见 [`RUNTIME_GATEWAY.md`](/langchain-logbook/posts/runtime_gateway/)。核心工具没有为 HTTP 增加反向依赖。
+API 应先验证身份，再把允许暴露的运行事实构造成 `RuntimeContext`。
 
-## 3. 包结构与每个模块的责任
+当前 `api/` 和 `runtime/` 实现了本地单 worker Gateway，包括 SQLite thread/run/event repository、后台执行、取消、interrupt 恢复、SSE 重放和 FastAPI adapter。
+
+它不是生产多 worker 调度器。完整边界见 [`RUNTIME_GATEWAY.md`](/langchain-logbook/posts/runtime_gateway/)，核心工具没有为 HTTP 增加反向依赖。
+
+## 3. 目录只在生命周期不同处拆开
 
 ```text
 mini_deerflow/
@@ -207,9 +203,11 @@ mini_deerflow/
 └── eval_demo.py           # 真实离线 Agent 的可执行质量评测
 ```
 
-这些目录不是为了追求“企业项目长相”。只有当一个边界具有不同生命周期、不同替换原因或不同安全责任时，才值得单独存在。例如 `state.py` 和 `context.py` 必须分开，因为前者会进入 checkpoint/trace，后者可以包含不可持久化的调用级身份与 Secret。
+目录拆分来自生命周期、替换原因和安全责任。
 
-### 3.1 把前 11 章放回代码，而不是重新学一套名词
+例如 `state.py` 与 `context.py` 必须分开：前者会进入 checkpoint/trace，后者可以包含不可持久化的调用级身份与 Secret。
+
+### 3.1 每个模块都能回到前 11 章
 
 | 已学概念 | 进入 Mini DeerFlow 的入口 | 第一次阅读只回答什么 |
 |---|---|---|
@@ -227,7 +225,7 @@ mini_deerflow/
 
 这张表是导航，不是新的学习顺序。若某一行回答不出来，回到对应章节的失败/修复实验；不要通过随机翻遍整个 package 来补概念。
 
-### 3.2 第一次源码阅读只打开四处
+### 3.2 第一次只打开四处
 
 按下面顺序打开代码，每处只带一个问题：
 
@@ -238,7 +236,7 @@ mini_deerflow/
 
 读到第四处后再回来看目录树，你会看到“不同生命周期的边界”，而不是二十多个陌生文件夹。
 
-## 4. 一次离线调用的真实时序
+## 4. 一条消息如何穿过整套应用
 
 <!-- diagram:id=mini-deerflow-minimal-run-sequence -->
 ```mermaid
@@ -267,9 +265,11 @@ sequenceDiagram
     App-->>User: 最终文本与可观察状态
 ```
 
-**图的文本替代**：应用先生成运行标识与 Runtime Context，再以 `thread_id` 调用 compiled graph。Middleware 包裹模型和工具调用；离线模型先产生检索 tool call，权限 middleware 放行后工具返回带 source 的结果，模型给出最终消息，Checkpointer 保存线程状态，应用返回完整 state。
+**图的文本替代**：应用生成运行标识与 Runtime Context，再以 `thread_id` 调用 compiled graph。Middleware 包裹模型和工具调用，Checkpointer 保存线程状态，应用最终返回完整 State。
 
-注意，离线模型不是“假的 Agent 循环”。模型回答是脚本化的，但 tool call、工具执行、Middleware、State reducer、Checkpointer 和 compiled LangGraph 都是真实运行路径。它把不确定且收费的模型决策替换成确定 fixture，让测试能精确定位框架和业务错误。
+离线模型的回答是脚本化的，但 tool call、工具执行、Middleware、State reducer、Checkpointer 和 compiled LangGraph 都走真实路径。
+
+它只把不确定且收费的模型决策换成确定 fixture，让测试可以精确定位框架与业务错误。
 
 ### 4.1 用代码把时序图和运行对象对上
 
@@ -306,7 +306,7 @@ auth_token_in_state = False
 
 **运行前先预测**：把第二次调用的 thread_id 改成新值，`state_for()` 读到的是同一条历史还是新线程？先写判断，再运行第 09 章已经学过的 snapshot 检查。
 
-## 5. 四类数据不能混装
+## 5. 同样叫“保存”，其实有四个所有者
 
 | 数据类别 | 当前类型/实现 | 生命周期 | 典型内容 | 不能放什么 |
 |---|---|---|---|---|
@@ -315,7 +315,9 @@ auth_token_in_state = False
 | Cross-thread Store | `UserPreferenceRepository` + `BaseStore` | 同一用户跨线程 | 显式保存的语言、回答粒度、引用风格 | 整段聊天历史、隐藏推理、Secret |
 | Product Runtime Data | `SqliteRuntimeRepository` | 跨进程/服务 | run 状态、取消、SSE event | 直接冒充 LangGraph checkpoint |
 
-`Checkpointer` 和 `Store` 都能“保存东西”，但它们不是同一种 memory。Checkpointer 让图从某个线程状态恢复；Store 让不同线程读取应用定义的长期事实；run/event repository 则服务于 API、调度和产品状态。DeerFlow 源码阅读中最常见的误区，就是把这三者都叫数据库然后忽略语义差异。
+`Checkpointer` 让图从线程状态恢复，Store 让多个线程读取应用定义的长期事实，run/event repository 服务 API、调度和产品状态。
+
+把它们都叫“数据库”或“memory”，会抹掉生命周期与授权差异。
 
 ### 5.1 给新字段找位置的四问法
 
@@ -326,11 +328,13 @@ auth_token_in_state = False
 3. 它是否是用户明确保存、跨线程复用的事实？是则进入 Store 的应用 namespace。
 4. 它是否服务 API 调度、重放或取消？是则进入产品 Runtime repository。
 
-例如 `auth_token` 只属于可信调用，而且不可进入 checkpoint，所以放 Context；`preferred_locale` 经用户确认后可跨线程复用，所以放 Store；`run.status` 服务 Gateway 状态机，所以放 Runtime repository。
+`auth_token` 只属于可信调用且不可进入 checkpoint，因此放 Context。
+
+`preferred_locale` 经用户确认后可跨线程复用，放 Store；`run.status` 服务 Gateway 状态机，放 Runtime repository。
 
 **动手判断**：分别为 `approval_decision`、`Last-Event-ID`、`artifact path` 和 `database connection` 选择边界，并写出排除另外三处的理由。
 
-## 6. `langgraph.json` 是部署接口，不是业务架构
+## 6. `langgraph.json` 只声明怎样加载 Graph
 
 根目录的 `langgraph.json` 注册：
 
@@ -348,18 +352,24 @@ auth_token_in_state = False
 
 Manifest 表达三件事：从 `pyproject.toml` 安装本地 package；用 `make_graph()` 构建 `mini_deerflow` graph；本地开发时从 `.env` 读取变量。
 
-官方 Application structure 允许入口指向 compiled graph 或 factory。Agent Server 会注入它管理的 Checkpointer 与 Store，graph 不应自行配置二者；本地开发则区分轻量 `langgraph dev` 与 Docker 化 `langgraph up`。
+官方 Application structure 允许入口指向 compiled graph 或 factory。Agent Server 会注入它管理的 Checkpointer 与 Store，Graph 不应自行配置二者。
+
+本地开发则区分轻量 `langgraph dev` 与 Docker 化的 `langgraph up`。
 
 本项目选择 factory，是因为离线 fake model 内部保存一次性脚本迭代器：不同 run 必须获得新模型实例。`make_graph()` 每次创建新的离线依赖，并把本地 Store/Checkpointer 留空。
 
-`build_application()` 默认绑定独享的内存 Store，以及 `create_memory_checkpointer()` 创建的安全 Checkpointer；Runtime 重建测试再替换为 SQLite provider。接入真实无状态模型后，应重新评估进程级 compiled graph 与生命周期管理。
+`build_application()` 默认绑定独享的内存 Store和安全的内存 Checkpointer。Runtime 重建测试再替换为 SQLite provider。
 
-但 manifest 不负责决定工具权限、State schema、Middleware 顺序或业务恢复策略，这些必须留在可测试的 Python 组合根中。当前课程不把 `langgraph-cli[inmem]` 强塞进核心依赖；需要 Studio/Agent Server 时可显式安装 CLI。Runtime 专题对比两条部署路线：
+接入真实无状态模型后，应重新评估进程级 compiled graph 与生命周期管理。
+
+Manifest 不负责决定工具权限、State schema、Middleware 顺序或恢复策略。这些都留在可测试的 Python 组合根中。
+
+课程不把 `langgraph-cli[inmem]` 放进核心依赖；需要 Studio/Agent Server 时再显式安装 CLI。Runtime 专题对比两条部署路线：
 
 - 直接使用 Agent Server：复用官方 thread/run/SSE 基础设施；
 - 自建 Gateway：只在产品确实需要自定义认证、repository、协议兼容或运行调度时选择。
 
-## 7. 后续任务的明确落点
+## 7. 后续专题从哪些接缝继续
 
 | 后续任务 | 在现有骨架中的落点 | 保持不变的接缝 |
 |---|---|---|
@@ -373,7 +383,7 @@ Manifest 表达三件事：从 `pyproject.toml` 安装本地 package；用 `make
 
 未注册的文件、命令、MCP 或 Skill 能力不得在 Prompt 中声称为可用。执行不可信代码时，应以容器或远程 provider 替换实现，保持 `SandboxProvider` 接缝不变。
 
-## 8. 与当前 DeerFlow 的对应关系
+## 8. 把这条依赖链映射到 DeerFlow
 
 本轮对照 DeerFlow 提交 [`4af6178`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf)，校准日期为 2026-07-14。提交号只是阅读锚点，不表示课程复制其实现。
 
@@ -391,9 +401,11 @@ Manifest 表达三件事：从 `pyproject.toml` 安装本地 package；用 `make
 | `runtime/` + `api/` | [`Gateway`](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/app/gateway/app.py) 与 `deerflow/runtime/runs/` | Harness 与产品运行时分层；Gateway 管 thread/run/SSE |
 | `langgraph.json` | [DeerFlow manifest](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/langgraph.json) | 标准工具入口可以和默认 Gateway 服务入口并存 |
 
-DeerFlow 的关键阅读技巧是先沿依赖方向走：`langgraph.json / Gateway → make_lead_agent → middleware/tools/state → runtime provider`，不要从某个庞大的工具实现随机开始。Mini DeerFlow 先把相同关系缩小并写进测试，学习者看到真实仓库时才知道哪些复杂度属于业务，哪些来自 LangGraph。
+阅读 DeerFlow 时先沿依赖方向走：`langgraph.json / Gateway → make_lead_agent → middleware/tools/state → runtime provider`。不要从某个庞大的工具实现随机开始。
 
-## 9. 常见失败方式与骨架中的防线
+Mini DeerFlow 把同一关系缩小并写进测试，用来区分业务复杂度与 LangGraph 机制。
+
+## 9. 出错时先沿依赖方向定位
 
 | 失败方式 | 可观察后果 | 当前防线 |
 |---|---|---|
@@ -405,7 +417,7 @@ DeerFlow 的关键阅读技巧是先沿依赖方向走：`langgraph.json / Gatew
 | 把 `langgraph.json` 当成完整部署 | 忽略认证、持久化、取消和产品数据 | 文档明确 manifest 与 runtime/Gateway 的职责差异 |
 | 离线测试绕开 Agent runtime | 测试只证明字符串拼接 | fake model 驱动真实 tool loop、middleware 和 checkpoint |
 
-### 9.1 遇到问题时沿依赖方向诊断
+### 9.1 一条固定的诊断顺序
 
 - 工具没出现：先查 `_assemble_graph()` 的 tool registry，不先改 Lead Prompt。
 - 权限错误：先查 API/应用构造的 Runtime Context，再查 Middleware 和工具服务端校验。
@@ -455,9 +467,11 @@ make test
 make check
 ```
 
-最小对话的通过标准不是“进程没报错”。测试还断言：首条消息被规范化为 `HumanMessage`；真实工具循环完成；Middleware trace 可见；`task` 已由组合根注册；注入另一个模型时无需复制工厂；manifest 指向可导入的 compiled graph；Harness 不反向依赖 API。
+最小对话通过后，测试还会检查首条消息被规范化为 `HumanMessage`、真实工具循环完成、Middleware trace 可见，以及 `task` 已由组合根注册。
 
-## 11. 下一步：验证 Lead Agent 纵切面
+它也验证模型可替换、manifest 可导入，并阻止 Harness 反向依赖 API。
+
+## 11. 下一步：让这些接缝一起承受一次恢复
 
 架构图只能说明依赖方向，不能证明跨重建恢复、Artifact 冲突和 Middleware 顺序真的正确。下一篇会沿同一个组合根执行两轮任务，并用失败实验验证这些核心业务接缝。
 

@@ -1,4 +1,4 @@
-# Mini DeerFlow 专题实战：把 Lead Agent 变成可恢复的核心业务
+# 两轮调用之后，Lead Agent 还能保住哪些事实
 
 > 验证环境：Python 3.12；LangChain / LangGraph 精确 patch 以 `uv.lock` 为唯一事实源  
 > API 状态：current；LangGraph v2 stream 为当前推荐统一 envelope  
@@ -8,7 +8,9 @@
 
 兼容 minor 窗口和升级门禁见 [`docs/version-policy.md`](../docs/version-policy.md)。本文不重复手写精确 patch，避免依赖升级后出现互相冲突的第四套版本事实。
 
-这不是一章新的 API 清单，而是一次纵向集成：把已经分别学过的 State、Tools、Middleware、Checkpointer 和 Streaming 放进同一条业务路径。完成后，你应该能回答一个更接近真实项目的问题：**为什么这个 Agent 在进程重建后仍知道上一轮发生了什么，又怎样证明恢复、权限、摘要和产物合并没有互相破坏？**
+现在把 State、Tools、Middleware、Checkpointer 和 Streaming 放进同一条业务路径。我们要验证一个真实问题：进程重建后，Agent 为什么仍知道上一轮发生了什么？
+
+最终输出还不够。恢复、权限、摘要和产物合并必须各自留下证据，并且不能互相破坏。
 
 上一篇架构总览只追了 `build_application → _assemble_graph → create_lead_agent → graph.invoke`。本专题继续沿这条链，不从目录重新开始，也不引入新的 Agent 框架。
 
@@ -16,30 +18,11 @@
 
 如果下面某个词仍只能背定义，先回到对应章节的失败/修复实验。这里的任务是把边界一起受压，不是用 Mini DeerFlow 封装替你第一次理解它们。
 
-## 系统快照：组合根已经存在，核心业务接缝还没有一起受压
+## 组合根已经存在，现在让所有接缝一起受压
 
-一个能调用工具的 Agent 仍可能不是核心业务。只要发生以下任一情况，它就更像一次性 Demo：
+下面只使用一个验收场景：同一 thread 连续运行两轮，中间关闭应用与 SQLite 连接。第二轮必须恢复消息，合并同路径 Artifact，并继续经过同一条治理链。
 
-- 第二轮输入换了进程或 graph 实例，第一轮消息与产物就消失；
-- 两次工具都登记同一路径的产物，State 中出现两个互相矛盾的版本；
-- 对话不断增长，却没有摘要预算，最终把模型上下文撑爆；
-- 工具返回任意 `Command(update=...)`，不安全路径直接进入 checkpoint；
-- UI 直接依赖 LangGraph 原始 stream tuple，升级 stream mode 后解析错位；
-- 只能展示最终回答，无法看到 Middleware 和 Graph 实际经过哪些节点。
-
-Mini DeerFlow 的核心闭环把这些问题放到同一个验收场景中，而不是为每个问题各写一个互不相干的示例。
-
-### 学习目标
-
-完成本专题后，你能够：
-
-- 用 `thread_id` 和 Checkpointer 让重新构建的应用恢复同一线程；
-- 为 Artifact 设计有业务语义的 reducer，而不是机械追加列表；
-- 解释 Runtime Context、Thread State、Store 和 RunDescriptor 在一次多轮调用中的不同责任；
-- 按顺序组合摘要、动态上下文、PII、权限、工具错误、Artifact 校验和调用上限；
-- 把 LangGraph v2 `StreamPart` 转成应用稳定事件；
-- 导出 compiled graph 的 Mermaid 文本，用拓扑而不是猜测检查运行路径；
-- 沿同样边界阅读 DeerFlow 的 `make_lead_agent`、`ThreadState` 和 middleware chain。
+随后再把长上下文、不安全 `Command(update=...)` 和 v2 stream 放进这条链。恢复、Reducer、Middleware 和事件 adapter 都要留下可观察证据，最终还能沿同样边界阅读 DeerFlow。
 
 ### 前置工件检查
 
@@ -49,25 +32,11 @@ make mini-deerflow
 
 成功时会看到 `profile=offline`、当前工具列表、最终文本和 Middleware event 数量。这个命令不需要 API Key；它用确定性模型驱动真实的 `create_agent` / LangGraph 工具循环。
 
-只运行本专题验收：
+## 0. 最终工厂不是一次写出来的
 
-```bash
-uv run --locked --group dev pytest -q \
-  tests/test_mini_deerflow_lead_agent_core.py
-```
+这条纵切面按 Red → Green → Refactor 建立。先让应用真正重建一次，再整理其余边界；不要求先读懂全部源码。
 
-## 0. 先看演进方法：四次红灯，而不是一次粘贴最终工厂
-
-这一专题按 **Red → Green → Refactor（红灯 → 最小通过 → 重构解释）** 建立纵切面。下面的四个阶段对应真实验收测试，不要求你先读懂全部源码再运行。
-
-| 阶段 | 先制造的可观察失败 | 最小实现边界 | 通过后才做的重构 |
-|---|---|---|---|
-| A：恢复与 reducer | 重建 application 后没有 `state_for()`；同路径 Artifact 重复 | SQLite checkpointer、领域类型 allowlist、`merge_artifacts()` | 把 thread/request identity 和 serializer 信任边界写进文档 |
-| B：治理链 | 长线程不摘要；非法 Artifact Command 进入 State；默认顺序未锁定 | 独立 summary model、Artifact 校验、精确 Middleware 顺序测试 | 解释 hook 嵌套方向和职责顺序 |
-| C：稳定事件 | application 没有 `stream()`；事件中的 Message 不能 `json.dumps()` | v2 updates、严格 JSON 投影、`StreamEvent.as_dict()` | 把 Graph runtime 事件与未来 SSE wire protocol 分层 |
-| D：拓扑证据 | 只能从代码猜 graph 是否包含 model/tools | `draw_mermaid()` 从 compiled graph 导出真实拓扑 | 用静态图 + 动态 lifecycle trace 交叉验证 |
-
-### 0.1 阶段 A：先证明“对象重建后还能继续”
+### 0.1 先证明对象重建后还能继续
 
 先只写业务断言，不先设计 repository 大全。测试创建两个独立的 SQLite 连接和两个 application 实例；二者共享 thread，但 request 不同：
 
@@ -89,13 +58,17 @@ with open_sqlite_checkpointer(path) as saver:
     snapshot = app_2.state_for(second_run)
 ```
 
-第一次运行这个测试时，红灯是 `MiniDeerFlowApplication` 没有 `state_for()`；加入 SQLite 后还会暴露自定义 `ArtifactRef` / `MiddlewareTraceEvent` 的反序列化信任问题。此时只实现三件事：
+第一次运行时，`MiniDeerFlowApplication` 还没有 `state_for()`。加入 SQLite 后，自定义 `ArtifactRef` 和 `MiddlewareTraceEvent` 又暴露出反序列化信任问题。
+
+此时只实现三件事：
 
 1. `state_for()` 隐藏 `StateSnapshot` 内部结构，只返回 values；
 2. `open_sqlite_checkpointer()` 显式 allowlist 已审查的领域类型；
 3. `merge_artifacts()` 用 path 作为 identity，替换冲突而不是追加重复项。
 
-绿色标准不是“没有异常”，而是两个 HumanMessage 都存在、同路径 Artifact 只有一个且第二轮 media type 胜出、snapshot 与 invocation 结果一致。完整测试是 `test_thread_resumes_after_application_rebuild_and_merges_artifact_conflicts`。
+绿色标准包含三项：两个 HumanMessage 都存在；同路径 Artifact 只有一个，且第二轮 media type 胜出；snapshot 与 invocation 结果一致。
+
+完整测试名是 `test_thread_resumes_after_application_rebuild_and_merges_artifact_conflicts`。
 
 只跑这一阶段：
 
@@ -105,7 +78,15 @@ uv run --locked --group dev pytest -q \
   -k thread_resumes
 ```
 
-### 0.2 阶段 B：再把长上下文和工具 State update 放进治理链
+第一轮红灯定位了恢复与 Reducer。剩余三轮仍沿同一条业务链推进：
+
+| 阶段 | 先制造的可观察失败 | 最小实现边界 | 通过后才做的重构 |
+|---|---|---|---|
+| B：治理链 | 长线程不摘要；非法 Artifact Command 进入 State；默认顺序未锁定 | 独立 summary model、Artifact 校验、精确 Middleware 顺序测试 | 解释 hook 嵌套方向和职责顺序 |
+| C：稳定事件 | application 没有 `stream()`；事件中的 Message 不能 `json.dumps()` | v2 updates、严格 JSON 投影、`StreamEvent.as_dict()` | 把 Graph runtime 事件与未来 SSE wire protocol 分层 |
+| D：拓扑证据 | 只能从代码猜 graph 是否包含 model/tools | `draw_mermaid()` 从 compiled graph 导出真实拓扑 | 用静态图 + 动态 lifecycle trace 交叉验证 |
+
+### 0.2 再把长上下文和工具更新放进治理链
 
 第二次红灯分成两个独立失败：把摘要阈值调低时，`ApplicationSettings` 不认识摘要预算；让测试工具返回越界路径时，非法 `Command(update=...)` 没有在工具边界被拒绝。
 
@@ -124,7 +105,9 @@ assert [type(item).__name__ for item in middleware] == [
 ]
 ```
 
-然后分别最小实现：摘要模型与 Lead 模型使用独立依赖；Artifact middleware 校验工具返回的 update；结构化错误 middleware 在外层把校验错误投影成 `invalid_tool_input`。`record_artifact` 继续通过隐藏的 `ToolRuntime` 读取 `tool_call_id` 并产生 `ToolMessage`，模型 schema 中不会出现 runtime 参数。
+随后分别实现：摘要模型与 Lead 模型使用独立依赖；Artifact middleware 校验工具 update；外层错误 middleware 把校验错误投影成 `invalid_tool_input`。
+
+`record_artifact` 通过隐藏的 `ToolRuntime` 读取 `tool_call_id` 并产生 `ToolMessage`，模型 schema 中不会出现 runtime 参数。
 
 这一阶段的绿色标准有三条：摘要消息带 `lc_source=summarization`；主模型仍完成 model → tool → model；越界路径只产生 error ToolMessage，State 中没有 Artifact。只跑相关测试：
 
@@ -134,9 +117,11 @@ uv run --locked --group dev pytest -q \
   -k 'summarizes or artifact_tracking or middleware_chain_order'
 ```
 
-### 0.3 阶段 C：让事件真的能进入 JSON adapter
+### 0.3 让事件真正通过 JSON adapter
 
-只把 v2 envelope 包成 dataclass 还不够。第一次增加下面的断言时，红灯是 `StreamEvent` 没有 `as_dict()`；即使机械加入该方法，Graph update 中的 `AIMessage`、`ToolMessage` 与 Pydantic State 值仍不是标准 JSON 数据：
+把 v2 envelope 包成 dataclass 还不够。第一次增加断言时，`StreamEvent` 还没有 `as_dict()`。
+
+即使机械加入该方法，Graph update 中的 `AIMessage`、`ToolMessage` 和 Pydantic State 值仍不是标准 JSON 数据：
 
 ```python
 events = list(application.stream("流式解释 Agent", run=run))
@@ -144,11 +129,13 @@ for event in events:
     json.dumps(event.as_dict(), ensure_ascii=False, allow_nan=False)
 ```
 
-最小实现固定 `version="v2"` 与 `stream_mode=["updates"]`，再在 `normalize_stream_part()` 中递归投影 Mapping、Sequence、Pydantic model、dataclass、Enum、时间和 UUID。未知对象不调用含糊的 `str(value)`，而是立即报出数据路径，迫使新增领域类型建立显式协议投影。
+最小实现固定 `version="v2"` 和 `stream_mode=["updates"]`。`normalize_stream_part()` 再递归投影 Mapping、Sequence、Pydantic model、dataclass、Enum、时间与 UUID。
+
+未知对象不会退回含糊的 `str(value)`，而是立即报出数据路径，要求新增领域类型建立显式协议投影。
 
 绿色标准包括：每个事件可严格 JSON 序列化；model/tools update 仍可按节点读取；旧 tuple 继续带迁移提示失败；未知 event type 保留以便前向兼容。
 
-### 0.4 阶段 D：最后补静态拓扑，而不是用图代替测试
+### 0.4 最后再导出静态拓扑
 
 最后才添加：
 
@@ -162,11 +149,11 @@ assert "tools(tools)" in diagram
 
 完成四阶段后再运行整个专题文件。这样一旦失败，你能先判断它属于恢复、治理、协议还是拓扑，而不是面对一个庞大工厂的模糊红灯。
 
-## 1. 先建立边界：核心业务不是“一个更大的 Prompt”
+## 1. 核心业务不能只靠一个更大的 Prompt
 
 ### 1.1 核心 Lead Agent 是什么
 
-本项目中的核心 Lead Agent 是：**由应用组合根拥有、以 `ThreadState` 保存线程事实、由 Middleware 治理模型和工具生命周期、通过 Checkpointer 恢复、并向调用方输出稳定事件的 compiled LangGraph**。
+本项目的 Lead Agent 由应用组合根拥有，以 `ThreadState` 保存线程事实，由 Middleware 治理模型和工具生命周期，通过 Checkpointer 恢复，并向调用方输出稳定事件。
 
 这个定义包含五个所有权判断：
 
@@ -187,11 +174,13 @@ assert "tools(tools)" in diagram
 
 ### 1.3 什么时候需要这条纵切面
 
-当 Agent 需要多轮工具调用、线程恢复、Artifact、权限或长上下文时，应尽早建立这条纵切面。如果你的业务只是一次无状态分类，并且结果可以完整重算，普通 model/Runnable 可能更直接，不必为了“用了 LangGraph”引入 thread 和 checkpoint。
+需要多轮工具调用、线程恢复、Artifact、权限或长上下文时，应尽早建立这条纵切面。
 
-## 2. 运行时发生了什么
+若业务只是一次可重算的无状态分类，普通 model/Runnable 更直接，没有必要引入 thread 和 checkpoint。
 
-先看结论：一次运行并不是“输入进模型、文本出来”，而是应用身份、Graph State、Middleware hook、工具 Command 和 checkpoint 共同推进的状态转移。
+## 2. 恢复发生在模型调用之前
+
+一次运行不是“输入进模型、文本出来”。应用身份、Graph State、Middleware hook、工具 Command 和 checkpoint 会共同推进状态转移。
 
 <!-- diagram:id=lead-agent-core-runtime -->
 ```mermaid
@@ -229,9 +218,11 @@ sequenceDiagram
 
 模型产生 tool call 后，工具路径经过权限、错误和 Artifact 校验。结果通过 reducer 合并进 State，在 superstep 边界写 checkpoint，最终 state 或 v2 事件经应用边界返回。
 
-关键点是“恢复发生在模型调用之前”。第二个应用实例只要重新连接同一个 Checkpointer，并使用同一个 `thread_id`，Graph 就会把第一轮 State 作为第二轮输入的一部分。它不是从最终文本猜历史，而是读取 checkpoint。
+恢复发生在模型调用之前。第二个应用实例重新连接同一 Checkpointer，并使用同一 `thread_id`，Graph 就会把第一轮 State 带入第二轮。
 
-## 3. 最小实验：同一线程跨应用实例恢复
+它读取的是 checkpoint，不是从最终文本猜测历史。
+
+## 3. 关掉第一个应用，再运行第二轮
 
 下面的代码可以直接运行。它没有复用测试内部 helper，也不会在仓库留下 SQLite 文件；`TemporaryDirectory` 退出后会清理实验数据。
 
@@ -353,13 +344,15 @@ snapshot_matches = True
 
 ### 3.2 为什么显式 serializer allowlist
 
-State 中含有 `ArtifactRef`、`MiddlewareTraceEvent`、审批决定和研究工作流事件等课程领域类型。LangGraph 的 `JsonPlusSerializer` 不应反序列化任意 Python 类型，因为“从数据库恢复构造器”本身就是安全边界。
+State 中含有 `ArtifactRef`、`MiddlewareTraceEvent`、审批决定和研究工作流事件等领域类型。
+
+LangGraph 的 `JsonPlusSerializer` 不应反序列化任意 Python 类型，因为“从数据库恢复构造器”本身就是安全边界。
 
 `create_memory_checkpointer()` 与 `open_sqlite_checkpointer()` 复用同一份显式 allowlist，不启用全局 pickle fallback，也不允许所有模块。这样从内存 Demo 切到 SQLite 时，不会悄悄改变类型信任策略。
 
 这不是说 Pydantic model 天然危险，而是反序列化器必须知道哪些构造器是应用信任的。以后 State 新增自定义类型时，要么将它归一化为 JSON 数据，要么显式审查并更新 allowlist。
 
-## 4. Artifact reducer：冲突必须有业务答案
+## 4. 同一路径出现两次，Reducer 必须做决定
 
 列表字段最容易写成：
 
@@ -397,9 +390,11 @@ flowchart LR
 
 **图的文本替代**：当前 State 有 `a.md` 和 `b.json`；更新包含新版 `a.md` 与新路径 `c.md`。Reducer 在 `a.md` 原位置替换类型，保留 `b.json`，最后追加 `c.md`。
 
-这与数据库“按主键 upsert”相似，但类比到此为止：Reducer 发生在 Graph channel 合并时，不负责检查工作区文件是否真的存在，也不提供跨进程事务。文件存在性属于 Sandbox/Artifact repository。
+它看起来像数据库按主键 upsert，但职责不同。Reducer 只在 Graph channel 合并时处理 State，不检查工作区文件是否存在，也不提供跨进程事务。
 
-## 5. Middleware chain：顺序就是业务语义
+文件存在性属于 Sandbox/Artifact repository。
+
+## 5. Middleware 换个顺序，业务语义也会改变
 
 默认治理链按下面顺序装配：
 
@@ -427,7 +422,9 @@ outer:after_model
 
 ### 5.1 为什么摘要使用独立模型依赖
 
-`SummarizationMiddleware` 可能在主模型调用前额外调用一次模型。如果离线主模型和摘要模型共享同一个脚本 iterator，摘要会消费本应属于 Lead Agent 的下一条响应，随后工具循环出现难以理解的错位。因此 `ApplicationDependencies` 显式区分：
+`SummarizationMiddleware` 可能在主模型之前额外调用一次模型。若离线主模型与摘要模型共享脚本 iterator，摘要会提前消费 Lead 的下一条响应，工具循环随后错位。
+
+因此 `ApplicationDependencies` 显式区分两者：
 
 - `model`：决定 Lead Agent 下一步调用工具还是结束；
 - `summary_model`：只把旧消息压缩成带 `lc_source=summarization` 的摘要消息。
@@ -443,9 +440,11 @@ outer:after_model
 3. 用 checkpoint safety guard 检查可序列化 payload；
 4. 校验失败时由外层 `StructuredToolErrorMiddleware` 转成模型可读的 `invalid_tool_input`，而不是把非法 State 写入 checkpoint。
 
-它不负责扫描磁盘、创建文件或证明 Sandbox 隔离。`record_artifact` 始终只登记引用；实际文件操作已由 [`SANDBOX_EXTENSIONS.md`](./SANDBOX_EXTENSIONS.md) 中的线程工作区工具实现，两者仍通过 `ArtifactRef` 而不是宿主路径耦合。
+它不扫描磁盘、创建文件或证明 Sandbox 隔离。`record_artifact` 始终只登记引用。
 
-## 6. 稳定流式事件与 Graph 可视化
+实际文件操作由 [`SANDBOX_EXTENSIONS.md`](./SANDBOX_EXTENSIONS.md) 中的工作区工具完成，两者通过 `ArtifactRef` 耦合，不交换宿主路径。
+
+## 6. 同一份事件要同时服务 CLI、测试和 SSE
 
 调用方不应该在每个页面重复解析上游 envelope。应用提供：
 
@@ -504,27 +503,27 @@ flowchart LR
     E -. "Runtime adapter" .-> SSE["SSE envelope"]
 ```
 
-**图的文本替代**：compiled graph 输出 v2 `StreamPart`，normalizer 把统一 envelope 与其中的领域对象转成严格 JSON-safe 的课程 `StreamEvent`；CLI 和测试现在直接消费它，后续 SSE adapter 继续复用，不重新猜测 tuple 形状或重复序列化 Message。
+**图的文本替代**：compiled graph 输出 v2 `StreamPart`。normalizer 把 envelope 与领域对象转成严格 JSON-safe 的 `StreamEvent`。
 
-`draw_mermaid()` 则从真实 compiled graph 导出 Mermaid。它会显示 model、tools 以及拥有 graph node hook 的 Middleware。`wrap_model_call` 或 `wrap_tool_call` 不一定成为独立节点，所以“图上没有一个 middleware 名称”不表示它没有运行；生命周期测试和 stream updates 负责补足动态证据。
+CLI、测试和后续 SSE adapter 复用同一事件，不再猜测 tuple 形状或重复序列化 Message。
 
-## 7. 失败实验：让错误可见
+`draw_mermaid()` 从真实 compiled graph 导出 Mermaid，显示 model、tools 和拥有 graph node hook 的 Middleware。
 
-### 7.1 换 thread_id 后声称“恢复失败”
+wrap hook 不一定成为独立节点。图上没有名称，不等于它没有运行；生命周期测试和 stream updates 负责提供动态证据。
 
-错误版本在第二轮生成了新的 `thread_id`。可观察现象是 `state_for()` 只含第二轮消息。根因不是 SQLite 丢数据，而是 Checkpointer 正确地创建了另一个线程。
+## 7. 沿第二轮运行回查五个根因
 
-防回归断言应检查两个 `HumanMessage` 都存在，并分别检查 thread 和 request ID：thread 相同，request 不同。
+前三种错误都表现为“第二轮事实不对”，但修复位置不同：
 
-### 7.2 每次重建都换一个 SQLite 文件
+| 可观察现象 | 真正根因 | 防回归证据 |
+|---|---|---|
+| `state_for()` 只含第二轮消息 | 第二轮换了 `thread_id`，Checkpointer 正确创建了新线程 | 两个 HumanMessage 都存在；thread 相同、request 不同 |
+| 重建后找不到第一轮 checkpoint | 第二轮连接了另一个 SQLite 文件 | 后端路径与 thread identity 同时稳定 |
+| 同一路径出现两条 Artifact | `operator.add` 只会追加，不理解路径 identity | 两次独立 tool update 后，新事实覆盖旧事实 |
 
-如果 graph 实例和 saver 都重建，但第二轮连接 `other.sqlite`，自然找不到第一轮 checkpoint。恢复依赖的是持久化后端和 thread identity，不是 Python 变量名相同。
+前两种错误属于恢复地址，第三种属于 State merge。Prompt 无法修复任何一种。
 
-### 7.3 用 `operator.add` 合并 Artifact
-
-可观察现象是同一路径出现两条记录。Prompt 无法可靠修复，因为冲突发生在 State merge，而不是模型文字生成。修复必须进入 reducer，并用两个独立 tool update 证明新事实覆盖旧事实。
-
-### 7.4 让工具写 `../outside.md`
+### 工具把 Artifact 写出 workspace
 
 错误工具返回：
 
@@ -536,27 +535,37 @@ Command(update={
 
 可观察结果是 error `ToolMessage`，其中 `error=invalid_tool_input`；State 中没有 Artifact。路径校验失败没有被吞掉，也没有让整个 Agent 进程崩溃。
 
-### 7.5 把 v2 event 当旧 tuple 解包
+### 调用方仍按旧 tuple 解包事件
 
-`for chunk, metadata in app.stream(...)` 会错误理解统一 envelope。正确做法是先读取 `event.type`，再针对该类型缩小 `data`。`normalize_stream_part()` 会直接拒绝旧 tuple，并给出 `type/ns/data` 迁移提示。
+`for chunk, metadata in app.stream(...)` 会错误理解统一 envelope。应先读取 `event.type`，再针对类型缩小 `data`。
+
+`normalize_stream_part()` 会拒绝旧 tuple，并给出 `type/ns/data` 迁移提示。
 
 ## 8. 工程权衡与适用边界
 
-### 8.1 SQLite 是本地 durable seam，不是生产 HA 答案
+### 8.1 SQLite 只证明本地持久恢复
 
-SQLite 足以证明新连接可以恢复 checkpoint，也适合单机开发。但多 worker、高可用、备份、租户隔离和连接池属于部署选择。Agent Server 会管理自己的 Checkpointer/Store，因此 `make_graph()` 仍不绑定本地 saver。
+SQLite 足以证明新连接可以恢复 checkpoint，也适合单机开发。多 worker、高可用、备份、租户隔离和连接池属于部署选择。
+
+Agent Server 会管理自己的 Checkpointer/Store，因此 `make_graph()` 不绑定本地 saver。
 
 ### 8.2 摘要减少上下文，不等于保存全部事实
 
-摘要是有损压缩。必须保留的订单号、审批结果或 Artifact identity 应进入结构化 State/业务数据库，不能只存在摘要文本中。`summary_keep_messages` 还要给最近的 tool call/ToolMessage 保留完整配对，否则模型可能看到不完整协议。
+摘要是有损压缩。订单号、审批结果和 Artifact identity 等关键事实应进入结构化 State 或业务数据库，不能只存在摘要文本中。
+
+`summary_keep_messages` 还要保留最近的 tool call/ToolMessage 配对，避免模型看到残缺协议。
 
 ### 8.3 Artifact 的 path identity 是当前领域选择
 
-当前 reducer 假设“同一路径代表同一逻辑产物”。如果未来需要版本历史，应为 Artifact 增加稳定 `artifact_id` 和 version，而不是偷偷改成保留重复路径。Reducer 规则是领域契约，修改时必须考虑旧 checkpoint migration。
+当前 reducer 假设“同一路径代表同一逻辑产物”。若未来需要版本历史，应增加稳定 `artifact_id` 和 version，不能悄悄改成保留重复路径。
+
+Reducer 是领域契约，修改时必须考虑旧 checkpoint migration。
 
 ### 8.4 Updates stream 不是最终 SSE 协议
 
-`StreamEvent` 稳定的是 `type / namespace / data` 字段和严格 JSON 数据类型；`updates.data` 内部仍按 graph node/state 字段演进，不把所有子键冻结成公共网络 API。Runtime 专题已在外层处理 message chunks、interrupt、error、heartbeat、event id、取消和断线重连；这不会倒过来冻结 Graph 内部每个 node update 的业务子键。
+`StreamEvent` 稳定的是 `type / namespace / data` 与严格 JSON 类型。`updates.data` 仍可随 graph node/state 演进，不会把所有子键冻结成公共网络 API。
+
+Runtime 在外层处理 interrupt、error、heartbeat、event ID、取消和断线重连，也不会倒过来冻结内部 node update。
 
 ## 9. 动手练习
 
@@ -598,6 +607,15 @@ SQLite 足以证明新连接可以恢复 checkpoint，也适合单机开发。�
 
 ## 10. 自动验收
 
+先只运行 Lead 纵切面：
+
+```bash
+uv run --locked --group dev pytest -q \
+  tests/test_mini_deerflow_lead_agent_core.py
+```
+
+再把与它相邻的治理和事件契约一起运行：
+
 ```bash
 uv run --locked --group dev pytest -q \
   tests/test_mini_deerflow_lead_agent_core.py \
@@ -615,24 +633,23 @@ uv run --locked --group dev pytest -q \
 - [ ] Mermaid 同时包含 model 与 tools 节点；
 - [ ] Middleware before/wrap/after 的进入和退出顺序有精确断言。
 
-## 11. 本专题交付与下一任务接口
+## 11. 下一篇继续使用哪些接缝
 
-本专题新增：
+现在，`merge_artifacts()` 负责路径冲突，安全 Checkpointer 负责跨实例恢复，独立摘要模型与 `ArtifactTrackingMiddleware` 守住长上下文和工具更新。
 
-- `merge_artifacts()`：按路径 deduplicate/replace 的 State reducer；
-- `open_sqlite_checkpointer()`：带领域类型 allowlist 的本地持久化配置；
-- `summary_model` 与摘要预算：默认组合根中的长上下文治理；
-- `ArtifactTrackingMiddleware`：工具 Command 的 Artifact/State 安全边界；
-- `state_for()`、`stream()`、`StreamEvent.as_dict()`、`draw_mermaid()`：应用级恢复、JSON-safe 事件和拓扑 seam；
-- 一个跨应用重建、跨两轮工具调用的端到端测试。
+应用边界还提供 `state_for()`、`stream()`、`StreamEvent.as_dict()` 与 `draw_mermaid()`。跨两轮的端到端测试把这些接缝放在同一条恢复链上。
 
-后续 [`SANDBOX_EXTENSIONS.md`](./SANDBOX_EXTENSIONS.md) 已经在这些 seam 上实现 Sandbox、MCP 与 Skills。Sandbox 工具返回的 Artifact 仍经过同一 reducer 和 Middleware；它没有绕过本专题建立的 State 安全边界。
+后续 [`SANDBOX_EXTENSIONS.md`](./SANDBOX_EXTENSIONS.md) 会在这些接缝上实现 Sandbox、MCP 与 Skills。
+
+Sandbox 工具返回的 Artifact 仍经过同一 reducer 和 Middleware，不会绕过这里建立的 State 安全边界。
 
 ## 12. DeerFlow 映射与继续阅读
 
-本专题固定对照 DeerFlow `main` 提交 [`807c3c521832526c6205ffee23e5f05231eaea5b`](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)。阅读时按下面顺序，不要先钻进某个大型工具实现：
+本专题固定对照 DeerFlow `main` 提交 [`807c3c521832526c6205ffee23e5f05231eaea5b`](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)。
 
-> **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来复核本节结论；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](./DEERFLOW_GUIDE.md) 的 `4af6178` 为准。
+阅读时按下面顺序，不要先钻进某个大型工具实现：
+
+> **锚点说明**：这里保留本专题写作时的历史版本，用来复核本节结论。全书四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](./DEERFLOW_GUIDE.md) 的 `4af6178` 为准。
 
 | Mini DeerFlow | DeerFlow 阅读方向 | 阅读问题 |
 |---|---|---|
@@ -643,7 +660,9 @@ uv run --locked --group dev pytest -q \
 | `open_sqlite_checkpointer` | runtime checkpointer provider | 本地、Gateway 和 Agent Server 谁拥有持久化生命周期？ |
 | `stream()` / `StreamEvent` | runtime worker 与 Gateway SSE bridge | runtime event 怎样被投影为客户端协议？ |
 
-DeerFlow 的 `ThreadState` 也使用 `merge_artifacts` 一类自定义 reducer；它的 Middleware 数量和产品依赖更多，但核心阅读方法相同：先看 State identity 和 factory 装配，再看每个 middleware 解决的失败，不把目录数量误当成新的 LangGraph 原语。
+DeerFlow 的 `ThreadState` 也使用 `merge_artifacts` 一类自定义 reducer。它的 Middleware 和产品依赖更多，阅读方法仍相同。
+
+先看 State identity 与 factory 装配，再看每个 middleware 解决的失败。目录更多，不代表出现了新的 LangGraph 原语。
 
 ## 参考资料
 

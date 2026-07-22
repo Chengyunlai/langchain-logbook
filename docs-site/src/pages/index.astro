@@ -37,17 +37,17 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
         {SITE.desc}
       </p>
       <p class="mt-2">
-        欢迎来到 2026 年最新的 LangChain
-        实战项目。本项目致力于以“教科书级”的严谨性，带你征服大模型时代最前沿的智能体工程。
+        你会接手同一个研究助手。从一次模型调用开始，逐步加入工具、状态、恢复、审批和
+        Subagent，最后完成一个可以交付报告的 Mini DeerFlow。
       </p>
       <p class="mt-4">
-        直接点击下方的
         <LinkButton
+          data-primary-start
           class="font-bold underline decoration-dashed underline-offset-4 hover:text-accent"
           href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/introduction/`}
         >
-          课程看板 (Introduction)
-        </LinkButton> 开始你的航海之旅。
+          第一次阅读，从序章开始
+        </LinkButton>
       </p>
 
       <div class="mt-6 rounded-lg border border-accent/20 bg-accent/5 p-4">
@@ -98,10 +98,9 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
     {
       startingPosts.length > 0 && (
         <section id="start-learning" class="pt-12 pb-6">
-          <h2 class="text-2xl font-semibold tracking-wide">从第 01 章开始</h2>
+          <h2 class="text-2xl font-semibold tracking-wide">第一部：让模型进入程序</h2>
           <p class="mt-2 opacity-80">
-            沿同一个研究交付任务，先完成第一部，再进入受控 Agent 与可恢复
-            Graph。
+            读完序章后，从第 01 章开始动手。前三章先建立消息、业务对象和知识边界。
           </p>
           <ul>
             {startingPosts.map(data => (

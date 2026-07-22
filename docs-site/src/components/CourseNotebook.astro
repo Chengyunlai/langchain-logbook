@@ -1,0 +1,31 @@
+---
+import type { CollectionEntry } from "astro:content";
+
+type Props = {
+  post: CollectionEntry<"blog">;
+};
+
+const { post } = Astro.props;
+const sourcePath = post.data.sourcePath;
+const notebookFilename =
+  sourcePath?.startsWith("tutorials/") && sourcePath.endsWith(".md")
+    ? sourcePath.split("/").at(-1)?.replace(/\.md$/, ".ipynb")
+    : undefined;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const notebookHref = notebookFilename
+  ? `${basePath}/notebooks/${notebookFilename}`
+  : undefined;
+---
+
+{
+  notebookHref && (
+    <a
+      data-course-notebook
+      href={notebookHref}
+      download
+      class="rounded border border-accent/35 px-2 py-1 text-sm text-accent hover:bg-accent/10"
+    >
+      下载本章 Notebook
+    </a>
+  )
+}

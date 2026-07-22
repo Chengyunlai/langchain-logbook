@@ -18,13 +18,13 @@ contentType: "main"
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：可替换模型入口、Messages、Runnable 与 v2 stream envelope
 
-## 1. 从一个真实限制开始：字符串回答无法支撑 Agent 工程
+## 1. 先别做 Agent，先看返回值
 
-我们的长期任务是交付一份带引用、可恢复、可审批的研究报告。第一步还没有工具、Graph 和 Subagent，只有一次模型调用。
+长期目标是一份带引用、可恢复、可审批的研究报告。现在先把这个目标放远一点。第一章没有工具、Graph 和 Subagent，只有一次模型调用。
 
-即使模型回答正确，程序仍要知道输入是什么消息、返回什么对象、谁决定下一步，以及长任务运行过程如何被观察。若这些边界不清楚，后续所有封装都会像魔法。
+我们先检查三个最普通的问题：传进去的是什么，返回的是什么，运行过程能看到什么。连这三件事都说不清，后面的 Agent 封装只会像魔法。
 
-本章只建立四块地基：一次模型调用、固定 Runnable、工具调用意图和基础 stream envelope。完整工具循环留到第 04 章。
+这一章会依次运行单次模型、固定 Runnable、工具调用意图和 v2 stream。工具真正怎样执行，留到第 04 章。
 
 ```mermaid
 flowchart LR
@@ -40,9 +40,9 @@ flowchart LR
 
 **图的文本替代**：同一请求可以进入单次模型调用、固定 Runnable 或绑定工具的模型。前两者由应用决定顺序；`bind_tools` 只允许模型表达工具意图，不执行函数。
 
-## 2. 第一次调用：字符串进去，Message 对象出来
+## 2. 模型返回的是 Message
 
-在线模型会受网络、凭证和随机输出影响。概念实验先使用 LangChain 公共 fake model，把注意力放在调用协议，而不是供应商质量。
+在线模型会受到网络、凭证和随机输出影响。这里先用 LangChain 自带的 fake model。它的回答是固定的，我们可以专心观察调用协议。
 
 
 ### 调用一次模型并检查返回消息类型
@@ -76,16 +76,16 @@ output_type = AIMessage
 output_content = checkpoint 保存图运行中的状态快照。
 ```
 
-**发生了什么**：Message 不只是文本。类型区分系统规则、用户输入、模型回答和后续工具结果；`content` 才是当前消息的正文。
+**发生了什么**：返回值是 `AIMessage`，正文放在 `content` 里。消息类型还会区分系统规则、用户输入和工具结果。后面的 Agent 循环正是靠这些类型维持顺序。
 
-这次 `invoke` 只调用一次模型。它不会自动执行工具、保存 Thread 或决定下一阶段。
+这次 `invoke` 到此为止。它不会执行工具，不会保存 Thread，也不会替我们决定下一步。
 
 **动手修改**：增加一条历史 AIMessage 和新的 HumanMessage。预测 fake model 是否会推理历史，再说明确定性 fixture 与真实模型能力的区别。
 
 
-## 3. Runnable：当步骤必须由程序固定
+## 3. 步骤固定时，用 Runnable
 
-有些任务不需要 Agent 决策，例如“套用 Prompt → 调用模型 → 取出字符串”。Runnable 的 `|` 把这些步骤组成固定数据流。
+“套用 Prompt → 调用模型 → 取出字符串”没有任何开放式决策。这样的步骤适合写成 Runnable，让数据按程序规定的顺序流动。
 
 
 ### 运行一个顺序完全固定的 Prompt 管道
@@ -125,14 +125,14 @@ result_type = str
 result = Runnable 是由程序固定顺序的数据流。
 ```
 
-**发生了什么**：输入必定经过 Prompt、模型和 parser。模型只负责其中一步，不能改变管道顺序。这种确定性正是 Runnable 的价值。
+**发生了什么**：输入依次经过 Prompt、模型和 parser，最后得到字符串。模型只负责中间一步，不能跳过前后环节。Runnable 的价值就在这个固定顺序。
 
 **动手修改**：去掉 `StrOutputParser()`。预测返回类型后运行，说明下游什么时候更适合保留完整 AIMessage。
 
 
-## 4. 第一个容易误解的信号：模型“没有回答”
+## 4. `content` 为空，模型也可能已经做出决定
 
-当模型绑定工具后，AIMessage 的有效输出可能不在 `content`，而在 `tool_calls`。只打印正文，会把一个正确工具意图误判成空回答。
+给模型绑定工具后，它可能不再直接回答，而是请求调用某个函数。这时 `content` 可以是空字符串，真正的输出在 `tool_calls`。
 
 
 ### 只读取 content 并误判工具意图
@@ -196,9 +196,9 @@ naive_has_answer = False
 tool_execution_count = 0
 ```
 
-**发生了什么**：正文为空不等于模型没有输出。当前 AIMessage 表达的是“希望调用工具”，而 Python 函数仍未执行。
+**发生了什么**：模型已经选择了 `lookup_weather`，但 Python 函数一次也没运行。`tool_calls` 表达请求，不代表应用已经批准并执行。
 
-`bind_tools` 只把工具名称、说明和参数 Schema 提供给模型。执行权限、参数校验、真正调用和结果配对仍由应用负责。
+`bind_tools` 只把名称、说明和参数 Schema 交给模型。权限、参数校验、函数调用和结果配对，仍是应用的责任。
 
 **动手修改**：把 docstring 改得含糊，再思考真实模型会怎样误选工具。不要手动调用函数，先修正消息读取方式。
 
@@ -268,14 +268,14 @@ tool_call_id = weather-intent-2
 tool_execution_count = 0
 ```
 
-**发生了什么**：`name` 和 `args` 描述意图，`id` 用于和未来的 `ToolMessage.tool_call_id` 配对。读取正确后，执行计数仍为零。
+**发生了什么**：`name` 和 `args` 说明要调用什么，`id` 留给未来的 `ToolMessage` 配对。我们已经正确读出请求，执行计数仍然是零。
 
 **动手修改**：手动执行工具并构造 ToolMessage 前，先列出应用必须完成的权限、参数、错误和配对职责。第 04 章会逐项实现。
 
 
-## 5. `create_agent` 在哪里出现
+## 5. 先看一眼 `create_agent`
 
-标准工具循环需要反复完成：模型产生 tool call、应用执行工具、写入 ToolMessage、模型读取结果并继续回答。LangChain 的 `create_agent` 会建立这条循环。
+完整工具循环要重复四步：模型请求工具，应用执行函数，结果写成 `ToolMessage`，模型再读取消息继续回答。LangChain 用 `create_agent` 封装了这条循环。
 
 ```python
 from langchain.agents import create_agent
@@ -284,13 +284,13 @@ agent = create_agent(model=model, tools=[lookup_weather])
 result = agent.invoke({"messages": [("user", "查询成都天气并解释结果")]})
 ```
 
-这段代码回答了“最终如何使用”，但本章不把它当成已掌握能力。第 04 章会先手动执行一次 tool call，再运行完整 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage` 循环。
+现在只看它的最终用法，不急着把封装当成理解。第 04 章会先手动完成一次 tool call，再对照完整的 `HumanMessage → AIMessage(tool_calls) → ToolMessage → AIMessage`。
 
-当前只借用一个没有工具的 `create_agent` 来产生 LangGraph v2 stream envelope。它不会发生工具执行，也不会抢先解决第 04 章的问题。
+下面暂时创建一个没有工具的 Agent，只为了观察 LangGraph v2 stream。工具执行仍留在第 04 章。
 
-## 6. 第二个容易误解的信号：把 v2 event 当成旧二元组
+## 6. v2 stream 的外层是事件信封
 
-长任务不能只等最终结果。v2 streaming 把事件统一成包含 `type`、`ns` 和 `data` 的 envelope；只有 messages 事件的 `data` 通常才是 `(chunk, metadata)`。
+长任务不能等到最后才输出。v2 streaming 会连续产生事件，每个事件都有 `type`、`ns` 和 `data`。常见的 `(chunk, metadata)` 位于 messages 事件的 `data`，不在最外层。
 
 
 ### 直接把整个 v2 event 解包成 chunk 和 metadata
@@ -332,9 +332,9 @@ event_keys = ['type', 'ns', 'data']
 ValueError: v2 event has three envelope fields
 ```
 
-**发生了什么**：Python 解包字典时迭代的是 key，而不是 event payload。旧式二元组假设在 v2 envelope 外层已经失效。
+**发生了什么**：Python 解包字典时得到的是 key。v2 最外层已经是事件对象，旧的二元组写法用错了层级。
 
-更隐蔽的错误是字典恰好只有两个 key，代码不报错，却得到两个字符串。消费者应先解析 envelope，再根据 `type` 缩小 `data` 的形状。
+如果字典恰好只有两个 key，代码甚至不会报错，只会悄悄得到两个字符串。可靠的消费者要先读 `type`，再决定怎样解释 `data`。
 
 **动手修改**：只打印 `event["data"]`，比较 messages 与 updates 两类 payload。不要假设它们拥有相同结构。
 
@@ -380,12 +380,12 @@ messages {'ns': (), 'node': 'model', 'text': '流式回答'}
 updates {'ns': (), 'nodes': ['model']}
 ```
 
-**发生了什么**：`type` 决定 data 的解释方式，`ns` 标识事件来自哪一层图。根图 namespace 为空；未来 Subagent 和子图会产生非空路径。
+**发生了什么**：`type` 告诉我们怎样读取 `data`，`ns` 说明事件来自哪一层图。根图的 namespace 为空；以后遇到子图和 Subagent，这里会出现路径。
 
 **动手修改**：只订阅 `messages`，再只订阅 `updates`。说明终端逐字输出和 UI 状态重建分别更依赖哪一种事件。
 
 
-## 7. 现在再比较调用入口
+## 7. 把五种入口放到一起
 
 | 入口 | 谁控制下一步 | 返回或观察对象 | 本章边界 |
 |---|---|---|---|
@@ -395,11 +395,11 @@ updates {'ns': (), 'nodes': ['model']}
 | `create_agent` | 标准模型—工具循环 | Agent State / events | 第 04 章完整实践 |
 | 显式 StateGraph | 应用声明业务拓扑 | State / updates / values | 第 07 章开始实践 |
 
-选择入口时不要问“哪个更高级”，而要问谁应该拥有控制权。固定翻译管道不需要 Agent；开放式工具选择适合 `create_agent`；审批、并行和恢复等业务规则需要显式 Graph。
+入口没有高低之分，差别在控制权。固定翻译由程序控制，用 Runnable 就够了；开放式工具选择交给 `create_agent`；审批、并行和恢复属于业务规则，需要显式 Graph。
 
-## 8. 工程迁移：Mini DeerFlow 只统一模型与事件入口
+## 8. Mini DeerFlow 在这里增加了什么
 
-概念实验已经解释 Message 与 envelope。现在再导入 Mini DeerFlow，观察工程层如何锁定离线/真实模型 profile，并把上游 event 适配成稳定内部类型。
+到目前为止，我们只使用了框架原生对象。Mini DeerFlow 在外面增加两层薄封装：模型工厂选择离线或真实 profile，stream adapter 把上游事件转成应用内部的稳定类型。
 
 
 ### 对照模型工厂与 stream adapter
@@ -439,20 +439,20 @@ event_namespace = ('lead_agent',)
 event_nodes = ['model']
 ```
 
-**发生了什么**：模型工厂把供应商选择收敛到配置层；stream adapter 保留 type、namespace 与 payload。业务代码不必各自解析框架原始字典。
+**发生了什么**：供应商选择进入配置层，stream adapter 保留 type、namespace 和 payload。调用方不再各写一套事件解析代码。
 
-真实模型用于 integration test，离线模型用于基础 CI。adapter 是内部 Graph event 与未来 Gateway SSE 之间的接缝，但它还不是产品事件协议。
+真实模型用于 integration test，离线模型用于基础 CI。这个 adapter 以后会连接 Gateway SSE，但此时还没有产品级 Run 和 Event 协议。
 
 
-## 9. 真实模型、网络与调试边界
+## 9. 接入真实模型时，先缩小故障范围
 
 真实 profile 可以通过 `init_chat_model` 接入 DeepSeek、OpenAI 或其他供应商。API Key、base URL 和代理属于运行配置，不应写进 Notebook、State 或提交记录。
 
-网络错误时按层定位：先检查配置与最小 HTTP 连通性，再运行单次 `model.invoke`，最后才接入 Agent 和 streaming。供应商响应随机性不能成为基础课程唯一证据。
+遇到网络错误时，先检查配置和最小 HTTP 连通性，再运行一次 `model.invoke`。单次调用正常后，才接入 Agent 和 streaming。否则，五层调用栈会把一个简单的凭证问题藏起来。
 
-不要把 provider-specific `response_metadata` 当成稳定业务协议。业务需要的 model、usage、finish reason 应在应用边界显式归一化。
+供应商特有的 `response_metadata` 也不适合直接进入业务协议。真正需要长期依赖的 model、usage 和 finish reason，应在应用边界统一格式。
 
-## 10. 练习：先判断控制权，再选择 API
+## 10. 练习：控制权应该交给谁
 
 ### 练习 A：消息边界
 
@@ -470,11 +470,11 @@ event_nodes = ['model']
 
 合上讲义回答：AIMessage.content 为空时还要检查什么？`bind_tools` 与工具执行的责任差在哪里？v2 的 `(chunk, metadata)` 位于哪一层？为什么 `ns` 对 Subagent 很重要？
 
-## 11. 下一刻系统：调用和观察已经稳定，结果仍只是自然语言
+## 11. 我们还不能把结果交给程序
 
-本章结束后，学习者能区分单次模型、固定 Runnable、tool intent 和标准 Agent 循环，并能按 v2 envelope 观察基础事件。
+现在，我们已经能区分单次模型、固定 Runnable、工具意图和 Agent 循环，也能正确读取 v2 事件。
 
-Mini DeerFlow 现在拥有可替换模型入口和稳定 stream adapter，但研究请求与任务计划仍是一段自然语言。下一章会先让脆弱字符串解析失败，再引入结构化输出业务契约。
+问题是，研究计划仍是一段自然语言。人能看懂，程序却无法可靠地路由、保存或校验。第 02 章会先让字符串解析真正失败，再把计划变成业务对象。
 
 运行本章验收：
 

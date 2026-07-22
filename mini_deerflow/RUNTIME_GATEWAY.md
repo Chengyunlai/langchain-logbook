@@ -1,23 +1,23 @@
-# Mini DeerFlow 专题实战：持久化 Runtime、FastAPI Gateway 与可重放 SSE
+# 浏览器断线以后：为 Mini DeerFlow 补上产品 Runtime
 
 > 校准日期：2026-07-13  
 > 前置内容：第 09、10 章、[`LEAD_AGENT_CORE.md`](./LEAD_AGENT_CORE.md) 与 [`SANDBOX_EXTENSIONS.md`](./SANDBOX_EXTENSIONS.md)  
 > 对应实现：`mini_deerflow/runtime/`、`mini_deerflow/api/`、`mini_deerflow/persistence.py`  
 > 可执行验收：`tests/test_mini_deerflow_runtime_gateway.py`
 
-## 系统快照：Agent Harness 已经完整，客户端仍无法管理长任务
+## 浏览器一关，任务还在吗
 
-前面的课程已经能构建 Agent、保存 Graph State、暂停审批、隔离 Subagent 和工作区。但“可以调用一个 compiled graph”还不等于“可以把 Agent 作为业务服务交付”。
+前面的课程已经有了一套完整的 Agent Harness。它能调用工具、保存 Graph State、暂停审批，也能把 Subagent 和工作区隔离开。
 
-上一篇的 Lead/Sandbox 都发生在 Agent Harness 内部。现在把浏览器放到它前面：浏览器发出请求后可能立刻断线，另一个进程稍后恢复服务，用户还会查询、取消或批准任务。Graph 本身不会替产品回答这些问题。
+现在打开浏览器，提交一份需要几分钟的研究报告。HTTP 请求很快结束，Graph 还在后台检索。此时关闭页面，再从另一台电脑登录：任务是否仍在？已经产生的进度从哪里接着看？
 
-因此本专题不从 FastAPI 路由开始。学习顺序固定为：先区分持久事实，再建立 Thread/Run/Event repository，随后让 RunManager 驱动 Graph，最后才把持久事件投影成 SSE 和 HTTP。
+如果任务在审批处暂停，用户第二天点“允许”，系统还要从原来的 checkpoint 继续。如果他点的是“取消”，又不能只关掉一条 SSE 连接就假装任务已经停止。
 
-真实客户端还会问：对话线程由谁创建？一次执行为什么有单独 Run ID？浏览器断线后任务是否继续？如何取消？重连从哪个事件继续？服务进程重启后哪些事实还在？
+这些都发生在 Agent Harness 外面。Graph 负责执行节点，却不会替产品确认当前用户是谁、记录一次后台执行，也不会定义浏览器重连协议。
 
-本专题实现一个缩小但不造假的产品运行时：SQLite 保存 Thread/Run/Event，后台 worker 执行 LangGraph，FastAPI 只适配 HTTP，SSE 事件先持久化再发送。学习目标不是复制 Agent Server，而是亲手建立这些边界，然后知道什么时候应直接采用 Agent Server，什么时候自建 Gateway 才有价值。
+本专题沿这次长任务补齐产品 Runtime：FastAPI 接住认证身份，产品 Thread 绑定用户，Run 记录每次执行，Event journal 保存客户端见过的过程，后台 worker 驱动 LangGraph，SSE 负责重放。
 
-完成本专题后，你应该能独立解释并实现：
+实现会缩小到单进程和 SQLite，但不会省略关键边界。做完以后，你需要能回答这些问题：
 
 1. `checkpoint thread`、产品 `Thread`、一次 `Run` 和 SSE `Event` 的区别；
 2. Checkpointer、Store、Runtime Repository 为什么不能合成一张“万能状态表”；
@@ -28,9 +28,9 @@
 7. `langgraph.json`/Agent Server 与自建 FastAPI Gateway 的职责差异；
 8. 怎样沿同样的边界阅读 DeerFlow 的 Gateway、RunManager、EventStore 和 StreamBridge。
 
-## 1. 先从失败模型开始：Graph 能运行，为什么仍不是服务？
+## 1. 一次 HTTP 请求装不下长任务
 
-最小 LangGraph 调用通常只有：
+先从已经会写的代码开始。最小 LangGraph 调用通常只有：
 
 ```python
 config = {"configurable": {"thread_id": "thread-1"}}
@@ -43,7 +43,9 @@ for part in graph.stream(
     print(part)
 ```
 
-这段代码正确使用了 Graph，但没有回答产品运行时问题：
+这段代码可以在 Python 进程里跑完。放到 HTTP 路由后，麻烦才出现：谁有权使用 `thread-1`？请求返回以后，执行由谁持有？浏览器断线后，已经输出的事件在哪里？
+
+把 Graph 直接暴露给客户端，会留下下面这些空位：
 
 | 缺口 | 直接暴露 Graph 的后果 |
 |---|---|
@@ -55,9 +57,9 @@ for part in graph.stream(
 | worker ownership | 进程重启后，数据库里的 `running` 可能永远占住线程 |
 | backpressure | 慢客户端可能拖住 Graph 执行或无限占用内存 |
 
-所以第一条原则是：**Graph runtime 负责执行图，产品 runtime 负责把执行变成可查询、可授权、可恢复的业务对象。**
+这里先划一条边界：**Graph runtime 执行图；产品 runtime 把执行变成可查询、可授权、可恢复的业务对象。** 后文出现的 Thread、Run 和 Event，都属于后一侧。
 
-## 2. 四类持久化事实必须分开
+## 2. 先认出四种不同的事实
 
 <!-- diagram:id=runtime-four-storage-boundaries -->
 ```mermaid
@@ -75,9 +77,11 @@ flowchart TB
     CP -. "不能替代" .- STORE
 ```
 
-**图的文本替代**：客户端进入认证后的 Gateway，Gateway 调用 RunManager 执行 compiled LangGraph。RunManager 把产品 Thread、Run 和 Event 写入 Runtime SQLite。
+**图的文本替代**：客户端先进入完成认证的 Gateway。Gateway 调用 RunManager 执行 compiled LangGraph；RunManager 把产品 Thread、Run 和 Event 写入 Runtime SQLite。
 
-Graph 把 checkpoint/interrupt 写入 Checkpointer，把跨线程偏好写入 Store；Artifact 进入 Sandbox 工作区。这四类存储生命周期不同，不能互相冒充。
+Graph 还会把 checkpoint 和 interrupt 写入 Checkpointer，把跨线程偏好写入 Store。报告、数据文件等 Artifact 则进入 Sandbox。它们碰巧都要持久化，生命周期却不同。
+
+先用一张表回答“某个事实应去哪里”。等这些职责清楚以后，再看数据库表会轻松得多。
 
 | 事实 | 本项目实现 | 主键/namespace | 回答的问题 |
 |---|---|---|---|
@@ -88,9 +92,11 @@ Graph 把 checkpoint/interrupt 写入 Checkpointer，把跨线程偏好写入 St
 | 跨线程 Store | `SqliteStore` | 应用定义 namespace/key | 同一用户跨 thread 要记住什么？ |
 | Workspace | `SandboxProvider` | opaque `sandbox_id` | 报告、数据文件等大对象在哪里？ |
 
-一个常见错误是把聊天 messages 同时复制到产品 Thread 表、checkpoint 和 event journal，随后三个副本互相漂移。这里的选择是：Graph State 是消息真相；产品 Thread 只保存 ownership/metadata；event journal 保存“客户端已经可见的运行事件”，不是另一个 State 副本。
+最容易犯的错，是把聊天消息同时复制到产品 Thread、checkpoint 和 event journal。第一次运行看不出问题；更新或恢复以后，三个副本便可能给出三种答案。
 
-## 3. 代码结构：深模块与依赖方向
+本项目只让 Graph State 保存消息真相。产品 Thread 保存 ownership 和 metadata；event journal 记录客户端已经可见的运行事件。它不是另一份 Graph State。
+
+## 3. 一条请求穿过哪些模块
 
 ```text
 mini_deerflow/
@@ -107,7 +113,7 @@ mini_deerflow/
 └── streaming.py        # LangGraph v2 StreamPart → JSON-safe StreamEvent
 ```
 
-依赖方向固定为：
+目录看起来不少，不过请求只沿一个方向移动：
 
 ```text
 FastAPI adapter → Gateway → RunManager → GraphRuntime protocol
@@ -115,11 +121,13 @@ FastAPI adapter → Gateway → RunManager → GraphRuntime protocol
 Graph/Agent Harness ──X──→ FastAPI
 ```
 
-`GraphRuntime` 只要求 `stream()` 和 `get_state()`，所以 RunManager 测试不需要启动 HTTP，也不需要真实模型。反过来，Agent tool/middleware 不 import FastAPI Request；认证身份由 adapter 验证后，通过应用控制的 Context 进入 Graph。
+`GraphRuntime` 只要求 `stream()` 和 `get_state()`。因此测试 RunManager 时，不必启动 HTTP，也不必连接真实模型。
 
-### 3.1 第一次阅读只追一条请求
+反方向的依赖被禁止：Agent tool 和 middleware 不导入 FastAPI `Request`。adapter 先验证身份，再把由应用控制的 Context 交给 Graph。模型没有机会从请求正文里挑选自己的身份。
 
-先不要逐表阅读 repository。按下面顺序跟一条“创建并等待 Run”的调用：
+### 3.1 先沿创建 Run 的路径读代码
+
+第一次读这部分代码，先别逐表检查 repository。只跟一条“创建并等待 Run”的调用：
 
 1. `MiniDeerFlowGateway.start_run()`：把认证 user_id 与请求 DTO 分开传入；
 2. `LocalRunManager.start_message()`：创建 pending Run，并立即提交后台 worker；
@@ -127,22 +135,28 @@ Graph/Agent Harness ──X──→ FastAPI
 4. `SqliteRuntimeRepository.append_event()`：在事务中分配 sequence；
 5. `MiniDeerFlowGateway.iter_run_events()`：只读取已持久化事件并编码 SSE。
 
-读完这条链，再回头看 FastAPI router。你会发现 router 只做身份解析、DTO 验证、错误映射和 StreamingResponse，不拥有 Run 状态机。
+走完这条链，再回头看 FastAPI router。它只负责身份解析、DTO 验证、错误映射和 `StreamingResponse`。Run 状态机不在路由里，这个判断会贯穿后面的实现。
 
-## 4. TDD 纵切面一：Repository 先固定所有权与状态机
+## 4. 先把身份写进产品 Thread
 
-### 4.1 产品 Thread 不等于 checkpoint thread
+浏览器提交请求时，最先需要固定的不是 prompt，而是身份。`identity_resolver` 从可信 session 或 JWT 得到 `user_id`，Gateway 再用这个身份创建产品 Thread。
 
-两者可以共享同一个 `thread_id`，但不是同一个对象：
+这个 Thread 是产品资源。它证明谁拥有会话，也保存业务 metadata。客户端可以提供消息，却不能在 JSON body 中自选 `user_id`、权限、工作区根目录或模型 provider。
+
+### 4.1 同一个 thread_id，两种对象
+
+产品 Thread 与 checkpoint thread 可以共享同一个 `thread_id`。这个复用方便从产品会话找到图状态，但不会把两者变成同一个对象：
 
 - 产品 Thread 证明 `learner-a` 拥有 `thread-runtime-1`；
 - LangGraph Checkpointer 用同一 ID 找到图状态；
 - 查询层必须同时带 authenticated `user_id`，找不到或不属于该用户都返回 `not_found`；
 - 请求 DTO 不接受 `user_id`，避免客户端在 JSON body 中自选身份。
 
-这是刻意的“不可枚举”策略：对无权用户返回 404，而不是用 403 暴露某个 Run/Thread 的确存在。
+最后一条是刻意的“不可枚举”策略。无权用户得到 404，而不是从 403 中确认某个 Run 或 Thread 的确存在。
 
-### 4.2 Run 状态机
+### 4.2 Run 记录一次执行
+
+同一个 Thread 可以先提交消息，稍后暂停审批，再由用户恢复。每次动作需要一个独立的 Run，才能分别查询、取消、计费和审计。
 
 <!-- diagram:id=runtime-run-state-machine -->
 ```mermaid
@@ -161,20 +175,24 @@ stateDiagram-v2
     error --> [*]
 ```
 
-**图的文本替代**：Run 创建后为 pending，worker 领取后进入 running。pending 可在开始前取消或失败；running 可成功、中断、取消或失败。四个终态都不可再次转换。恢复 interrupt 会创建一个新的 Run，而不是把旧 interrupted Run 改回 running。
+**图的文本替代**：Run 创建时是 pending，worker 领取后进入 running。pending 可在开始前取消或失败；running 可成功、中断、取消或失败。四个终态都不可再次转换。
 
-显式转换表比 `status = ?` 任意更新重要，因为它阻止：
+恢复 interrupt 时会创建新 Run，旧的 interrupted Run 不会改回 running。稍后看到恢复流程时，这条限制会直接决定事件和审计记录怎样组织。
+
+Repository 不允许随意执行 `status = ?`，只接受图中的显式转换。这样可以阻止：
 
 - success Run 被重复领取；
 - interrupted Run 原地复活，破坏审计历史；
 - 两个 worker 同时执行同一线程；
 - cancel 与 complete 竞态产生互相矛盾的终态。
 
-SQLite partial unique index保证同一 Thread 同时最多有一个 pending/running Run。它是本地教学实现的并发约束，不等于生产分布式 lease。
+SQLite partial unique index 保证同一 Thread 同时最多有一个 pending 或 running Run。这个约束够本地实验使用；到了多 worker 环境，还需要真正的分布式 lease。
 
-### 4.3 Event sequence 必须在事务内分配
+### 4.3 事件编号不能放在内存里
 
-`runtime_runs.next_sequence` 与 event insert 在同一个 `BEGIN IMMEDIATE` 事务中完成，因此每个 Run 得到严格递增的 1、2、3……。事件 ID 固定为：
+Run 开始后会不断产生 metadata、updates、interrupt 和 end。浏览器重连要准确指出“我已经看到第几个”，所以每个 Run 都需要严格递增的 sequence。
+
+`runtime_runs.next_sequence` 与 event insert 在同一个 `BEGIN IMMEDIATE` 事务中完成。事件 ID 固定为：
 
 ```text
 <run_id>:<sequence>
@@ -182,11 +200,13 @@ run-a1:1
 run-a1:2
 ```
 
-如果先在 Python 内存中 `counter += 1` 再写数据库，两个 producer 会生成重复 ID；服务重启也会忘记上次序号。sequence 是持久化协议状态，不是展示用的数组下标。
+如果先在 Python 内存里执行 `counter += 1`，两个 producer 可能生成重复 ID，服务重启也会忘记上次序号。sequence 是持久化协议状态，不是展示用的数组下标。
 
-### 4.4 单 worker 的启动恢复
+### 4.4 服务重启，running 不能永远挂着
 
-本地 `LocalRunManager` 启动时调用 `recover_inflight_runs()`：数据库里遗留的 pending/running Run 被写成：
+假设进程在执行中崩溃。重启以后，数据库仍写着 running，active-run 唯一索引便会阻止同一 Thread 创建新任务。
+
+本地 `LocalRunManager` 启动时会调用 `recover_inflight_runs()`，把遗留的 pending 或 running Run 写成：
 
 ```text
 status = error
@@ -195,13 +215,15 @@ event = error
 event = end {"status": "error"}
 ```
 
-这既释放 active-run 唯一索引，也让重连客户端收到明确终态。它只适用于“一个进程拥有该 SQLite”的教学部署。生产多 worker 不能让每个进程启动时终止其他进程的 Run，而应使用 queue、lease、heartbeat 和 worker ownership。
+这样既释放 active-run 唯一索引，也让重连客户端收到明确终态。不过，它只适用于“一个进程拥有该 SQLite”的教学部署。
 
-## 5. TDD 纵切面二：RunManager 把 Graph 执行变成业务 Run
+多 worker 服务不能在每个进程启动时终止其他进程的 Run。那时要用 queue、lease、heartbeat 和 worker ownership 判断任务究竟还活着，还是已经失去执行者。
 
-### 5.1 启动消息 Run
+## 5. 请求已经返回，后台任务才刚开始
 
-RunManager 接受经过验证的消息和 stream modes，然后立即返回 pending Run；真正执行进入线程池：
+### 5.1 POST 只创建 pending Run
+
+Gateway 把认证身份和请求 DTO 分开传给 RunManager。RunManager 验证消息与 stream modes，创建 pending Run，然后立即返回。真正的 Graph 执行被提交到线程池：
 
 ```python
 run = manager.start_message(
@@ -213,7 +235,7 @@ run = manager.start_message(
 )
 ```
 
-worker 的顺序是：
+后台 worker 按以下顺序工作：
 
 1. 检查是否已请求取消；
 2. `pending → running`；
@@ -223,11 +245,13 @@ worker 的顺序是：
 6. 调用 `graph.get_state()` 检查 interrupts；
 7. 在一个 Repository 事务中写 terminal status、可选 `interrupt/error` 与强制 `end`。
 
-“先写 status 还是先写 end”是协议选择。本项目在同一个 `BEGIN IMMEDIATE` 事务中先更新状态，再追加可选终端业务事件和 `end`；提交后它们同时可见，避免崩溃留下“终态但没有 end”。订阅端只把持久化的 end 当正常终止；若旧数据或手工修改破坏该不变量，Gateway 抛出 runtime conflict，而不是静默伪装成完整流。
+终态和 `end` 的写入顺序不能凭感觉决定。本项目在同一个 `BEGIN IMMEDIATE` 事务中先更新状态，再追加可选终端事件和 `end`。事务提交后，它们同时对订阅者可见。
 
-### 5.1.1 运行一条完整的 pending → success → replay
+订阅端只把已经持久化的 `end` 当作正常结束。如果旧数据或手工修改破坏了这条不变量，Gateway 会抛出 runtime conflict，不会把残缺事件流伪装成完整结果。
 
-下面使用真实 Mini DeerFlow Graph、真实后台 worker 和 SQLite event journal，但不启动 HTTP server：
+### 5.1.1 看一次 Run 怎样结束
+
+下面运行真实 Mini DeerFlow Graph、后台 worker 和 SQLite event journal。我们暂时不启动 HTTP server，以免路由细节遮住 Run 的生命周期：
 
 ```python
 from pathlib import Path
@@ -315,17 +339,17 @@ ownership_error = RuntimeNotFoundError
 state_has_messages = True
 ```
 
-第一行来自 `start_message()` 的立即返回；第二行来自后台 future 的终态。17 个 updates 是本章 Graph 的 model、tools 和 Middleware 更新，不是 17 个 HTTP response。
+先看前两行。`start_message()` 立即返回 pending；后台 future 完成以后，同一个 Run 才变成 success。17 个 updates 来自 Graph 的 model、tools 和 Middleware，不是 17 个 HTTP response。
 
-`after_sequence=1` 让重放从 `run-runtime-demo:2` 开始。other-user 得到 not found，而不是知道该 Run 确实属于别人；最后一行则证明产品 Runtime 没有替代 Graph checkpoint。
+`after_sequence=1` 让重放从 `run-runtime-demo:2` 开始。`other-user` 只能得到 not found。最后一行还证明，产品 Runtime 并没有替代 Graph checkpoint。
 
 **动手修改一**：把 after_sequence 改成最后一个事件的 sequence。确认重放为空，而 Run 本身仍是 success。
 
-**动手修改二**：删除 `manager.close()`，观察测试进程为何可能继续持有 worker。说明资源生命周期应由哪一层负责。
+**动手修改二**：删除 `manager.close()`，观察测试进程为什么可能继续持有 worker。再说明资源生命周期应由哪一层负责。
 
-### 5.2 v2 stream mode 的统一 envelope
+### 5.2 Graph 事件怎样进入日志
 
-当前 LangGraph Python streaming v2 把 part 统一为 `{type, ns, data}`。本项目复用 `normalize_stream_part()`，再把它包装为持久事件：
+LangGraph Python streaming v2 把每个 part 统一为 `{type, ns, data}`。`normalize_stream_part()` 先把它变成严格可 JSON 化的数据，再包装为持久事件：
 
 ```json
 {
@@ -344,19 +368,25 @@ state_has_messages = True
 | `values` | 每一步后的完整 State 值 | 状态镜像、恢复 UI | 大 State 可能很重 |
 | `custom` | node/tool 通过 writer 发出的应用事件 | 进度、业务阶段、下载提示 | 必须自行定义稳定 schema |
 
-客户端应按 `event` 分派，未知 event 默认忽略或记录，不能把四种 data 强转成同一个结构。`metadata`、`interrupt`、`error` 和 `end` 是产品 runtime 增加的事件，不来自某个 Graph stream mode。
+这四种 `data` 不能强转成同一种结构。客户端按 `event` 分派；遇到未知 event 时忽略或记录，以便服务端将来增加事件而不立即破坏旧客户端。
 
-### 5.3 错误投影
+`metadata`、`interrupt`、`error` 和 `end` 由产品 Runtime 添加。它们不属于某个 Graph stream mode，却是客户端管理长任务所必需的事件。
 
-Graph exception 不直接作为 traceback 发给客户端。RunManager 将其转为：
+### 5.3 异常只能投影成有界错误
+
+Graph 抛出异常时，RunManager 不会把 traceback 原样发给浏览器，而是转成稳定、有限的错误对象：
 
 ```json
 {"code": "runtime_error", "message": "有界的非敏感错误信息"}
 ```
 
-并进入 `error` 终态。Repository exception 再由 HTTP adapter 投影：ownership miss → 404，状态冲突 → 409，等待超时 → 408，请求 schema 错误 → FastAPI 422。下一任务会补 tracing 和内部错误关联 ID；在此之前仍不得把 Secret、完整 Context 或 traceback 写进 SSE。
+随后 Run 进入 `error` 终态。Repository exception 再由 HTTP adapter 投影：ownership miss 是 404，状态冲突是 409，等待超时是 408，请求 schema 错误则由 FastAPI 返回 422。
 
-## 6. TDD 纵切面三：interrupt 恢复不是重启旧 Run
+下一专题会补 tracing 和内部错误关联 ID。在那之前，Secret、完整 Context 和 traceback 仍不能进入 SSE；客户端需要的是可处理的错误，诊断系统才需要内部细节。
+
+## 6. 用户批准时，为什么要创建新 Run
+
+长任务执行到发布操作时，Graph 通过 interrupt 暂停。Run A 的事件日志已经完整记录这次执行，终态是 interrupted；checkpoint 则保留图停下的位置和审批 payload。
 
 <!-- diagram:id=runtime-interrupt-resume-sequence -->
 ```mermaid
@@ -385,17 +415,21 @@ sequenceDiagram
     RM->>RR: Run B → success; end
 ```
 
-**图的文本替代**：消息请求创建 Run A。Graph 在同一 thread checkpoint 中保存 interrupt，Run A 以 interrupted 终结。用户读取 state 得到审批问题；resume 请求创建 Run B，用 `Command(resume=...)` 和相同 thread ID 继续 checkpoint，Run B 最终成功。
+**图的文本替代**：消息请求创建 Run A。Graph 在同一 thread checkpoint 中保存 interrupt，Run A 以 interrupted 终结。用户读取 state，看到审批问题。
 
-为什么必须创建 Run B？因为“第一次执行暂停”和“用户稍后批准后的继续执行”是两个可审计动作，可能由不同身份、请求和时间触发。旧 Run 终态不可变，使取消、计费、trace 和事件回放都更清楚。
+resume 请求创建 Run B，再以 `Command(resume=...)` 和相同 thread ID 继续 checkpoint。Run B 最终成功，Run A 的历史保持不变。
 
-本项目在 `start_resume()` 前读取 State，若没有 interrupt 则返回 409，避免把普通输入错误地包装成 `Command(resume=...)`。
+Run B 不是多余记录。第一次执行暂停与用户稍后批准，是两个发生在不同时间的可审计动作，也可能来自不同请求。让旧 Run 保持终态，取消、计费、trace 和事件回放才有清楚边界。
 
-## 7. TDD 纵切面四：SSE 是持久事件的视图
+`start_resume()` 会先读取 State。没有 interrupt 时返回 409，防止把一条普通输入错误包装成 `Command(resume=...)`。
 
-### 7.1 Wire frame
+## 7. 浏览器重连，从哪个事件继续
 
-每个业务事件编码为标准 SSE 字段：
+现在回到开头那次断线。任务没有因页面关闭而消失，事件也已经进入 journal。剩下的问题是：浏览器怎样告诉服务器，自己最后成功处理了哪一条？
+
+### 7.1 SSE 帧里只有三个业务字段
+
+每个业务事件编码为标准 SSE 的 `id`、`event` 和 `data`：
 
 ```text
 id: run-a1:3
@@ -404,16 +438,16 @@ data: {"data":{"model":{"answer":"完成"}},"namespace":[]}
 
 ```
 
-heartbeat 是 comment，不带 ID：
+没有新事件时，服务器发送 heartbeat comment。它不带 ID：
 
 ```text
 : heartbeat
 
 ```
 
-这样 heartbeat 不会推进浏览器保存的 last event ID，也不会让重连跳过业务事件。JSON 使用紧凑 UTF-8 表示，换行被编码在 data JSON 字符串内，不会破坏 SSE frame。
+heartbeat 不能推进浏览器保存的 last event ID，否则重连可能跳过还没处理的业务事件。`data` 使用紧凑 UTF-8 JSON；正文里的换行留在 JSON 字符串中，不会截断 SSE frame。
 
-### 7.2 先持久化、后发送
+### 7.2 先写日志，再发给浏览器
 
 <!-- diagram:id=runtime-sse-replay -->
 ```mermaid
@@ -427,13 +461,17 @@ flowchart LR
     QUERY --> SSE
 ```
 
-**图的文本替代**：Graph event 先被严格 JSON 化并以单调 sequence 写入数据库，再编码为 SSE 发给客户端。客户端收到 N 后断线，重连携带 `Last-Event-ID: run:N`，Gateway 只查询并发送 sequence 大于 N 的事件。
+**图的文本替代**：Graph event 先被严格 JSON 化，以单调 sequence 写入数据库，再编码为 SSE 发给客户端。
 
-这提供的是 **at-least-once delivery（至少一次投递）** 的可实现基础，不是 exactly-once：客户端可能收到事件后、保存本地游标前断线，因此重连会再次看到同一个 event ID。正确客户端应按 event ID 幂等处理。
+客户端收到 N 后断线，重连时携带 `Last-Event-ID: run:N`。Gateway 查询并发送 sequence 大于 N 的事件。
 
-### 7.3 一个最小客户端分派器
+这个协议提供 **at-least-once delivery（至少一次投递）**。客户端可能已经收到事件，却在保存游标前断线；重连后，同一个 event ID 会再次出现。
 
-浏览器 `EventSource` 只支持 GET 且 header 能力有限；创建 Run 应用普通 POST，再订阅 GET events。命令行可用 `curl -N`：
+客户端因此要按 event ID 幂等处理，不能假定每条事件只到达一次。这里不承诺 exactly-once，避免把网络窗口藏在一个听起来更漂亮的术语后面。
+
+### 7.3 客户端按事件类型分派
+
+浏览器 `EventSource` 只支持 GET，header 能力也有限。因此，创建 Run 使用普通 POST；拿到 `run_id` 后，再用 GET 订阅 events。命令行可以用 `curl -N` 验证重放：
 
 ```bash
 curl -N \
@@ -442,7 +480,7 @@ curl -N \
   http://localhost:8000/threads/thread-1/runs/run-a1/events
 ```
 
-伪代码消费逻辑：
+客户端消费逻辑可以缩成下面这段伪代码：
 
 ```python
 for event in sse_client:
@@ -463,22 +501,24 @@ for event in sse_client:
         break
 ```
 
-每次成功应用事件后再保存 cursor；不要在收到 frame 前预先推进 cursor。
+只有在事件成功应用到 UI 后，客户端才保存 cursor。提前推进 cursor 会在渲染失败或页面崩溃时永久跳过事件。
 
-## 8. disconnect、cancel 与 backpressure
+## 8. 关页面和点取消是两件事
 
-`on_disconnect` 是 Run 创建时固定的产品策略：
+网络可能闪断，用户也可能明确放弃任务。产品需要区分这两个动作，因此在创建 Run 时固定 `on_disconnect` 策略：
 
 | 值 | SSE 客户端断开时 | 适用场景 |
 |---|---|---|
 | `continue` | 只停止订阅，后台 Run 继续，之后可重放 | 研究、报告、长任务 |
 | `cancel` | Gateway 请求协作式取消 | 实时问答、结果无人再需要 |
 
-这里的 cancel 是 cooperative：RunManager 在开始执行和每个 stream part 之间检查 `cancel_requested`。Repository 在事务中检查 active status 并设置标志，避免 complete/cancel 竞态改写成功 Run。
+这里的 cancel 是 cooperative。RunManager 在开始执行和每个 stream part 之间检查 `cancel_requested`；Repository 在事务中确认 Run 仍为 active，再设置取消标志。
 
-如果节点卡在第三方 HTTP、CPU 循环或宿主进程中，标志不能强杀它。Hard cancellation 还需要 provider timeout、任务队列、进程或容器隔离，以及 worker lease。
+这个检查可以避免 complete 与 cancel 的竞态改写一个已经成功的 Run，却不能中断任意 Python 代码。
 
-事件先落 SQLite，使慢客户端不直接阻塞 Graph producer；但这不代表无限容量。生产实现还需：
+如果节点卡在第三方 HTTP、CPU 循环或宿主进程里，取消标志无法强杀它。Hard cancellation 还需要 provider timeout、任务队列、进程或容器隔离，以及 worker lease。
+
+事件先落 SQLite，慢客户端便不会直接阻塞 Graph producer。不过数据库并非无限队列。生产实现还要补上：
 
 - event retention/compaction；
 - 单 Run 最大事件数和 data 大小；
@@ -487,9 +527,9 @@ for event in sse_client:
 - Redis/pubsub 或数据库通知，避免高频 polling；
 - messages token 事件与 values 大 snapshot 的差异化保留。
 
-## 9. HTTP API 契约
+## 9. 把刚才的动作固定为 HTTP 契约
 
-本项目提供以下最小路由：
+至此，浏览器长任务已经走完：创建 Thread、启动 Run、查询状态、订阅或重放事件、取消，以及用新 Run 恢复审批。HTTP 层只需把这些动作稳定地暴露出来：
 
 | Method/Path | 成功码 | 用途 |
 |---|---:|---|
@@ -502,13 +542,17 @@ for event in sse_client:
 | `POST /threads/{thread}/runs/{run}/cancel` | 200 | 请求协作式取消 |
 | `POST /threads/{thread}/runs/resume` | 202 | 以新 Run 恢复当前 interrupt |
 
-`create_fastapi_app()` 故意要求调用方提供 `identity_resolver(Request) -> user_id`。课程测试用 header 注入假身份；真实服务必须接入可信 session/JWT middleware。请求体中不存在 `user_id`、permissions、workspace root 或 provider 配置。
+`create_fastapi_app()` 故意要求调用方提供 `identity_resolver(Request) -> user_id`。课程测试通过 header 注入假身份；真实服务必须接入可信的 session 或 JWT middleware。
 
-FastAPI adapter 不拥有 manager/checkpointer/store 的生命周期。生产组合根应使用 lifespan 打开资源，关闭时先停止接收新 Run，再 drain/cancel worker，最后关闭数据库。把这些对象在每个 request 内重建会破坏连接复用与 worker ownership。
+请求体中没有 `user_id`、permissions、workspace root 或 provider 配置。这些值来自应用信任边界，不能交给浏览器选择。
 
-## 10. 本地持久化组合
+FastAPI adapter 也不拥有 manager、checkpointer 和 store 的生命周期。生产组合根应在 lifespan 中打开资源；关闭时先停止接收新 Run，再 drain 或 cancel worker，最后关闭数据库。
 
-服务重建测试使用三份 SQLite：
+如果每个 request 都重建这些对象，连接无法复用，worker ownership 也失去稳定归属。路由函数越薄，这类生命周期问题越容易集中处理。
+
+## 10. 重启服务后，哪些事实还在
+
+浏览器已经能重连，但服务进程本身也会重启。为了看清恢复来自哪里，重建测试刻意使用三份 SQLite：
 
 ```python
 from dataclasses import replace
@@ -538,18 +582,24 @@ with (
     )
 ```
 
-关闭并重新打开三份资源后：
+关闭服务，再重新打开三份资源，应观察到：
 
 - Runtime Repository 仍能查询旧 Thread、Run 和 Event；
 - Checkpointer 恢复旧 messages/interrupt，第二次 Run 继续同一线程；
 - Store 恢复用户偏好；
 - 新 Run 获得新 ID，不覆盖旧运行历史。
 
-SQLite 适合本地学习和单进程开发。异步高并发服务应考虑 async driver/managed database；多 worker 还要引入 queue、lease 和 pubsub，不能只把 SQLite URL 换成 PostgreSQL 就声称完成分布式调度。
+SQLite 适合本地学习和单进程开发。异步高并发服务应考虑 async driver 或 managed database；多 worker 还要引入 queue、lease 和 pubsub。
 
-## 11. `langgraph.json`/Agent Server 与自建 Gateway 怎样选择？
+只把 SQLite URL 换成 PostgreSQL，并不会自动得到分布式调度。数据库能共享记录，仍不能替 worker 决定谁领取、谁续租、失联后由谁接管。
 
-`langgraph.json` 是 graph 部署声明：它告诉工具链 graph 工厂、依赖和环境在哪里。Agent Server 则在 graph 外提供数据库、任务队列、Thread/Run API、流式传输和 managed persistence。它们都不替你定义业务权限、工具安全、State schema 或产品 UX。
+## 11. 哪些工作应该交给 Agent Server
+
+我们刚刚亲手实现了 Thread、Run、事件重放和 worker 生命周期。这样做的价值，是看见产品 Runtime 的边界；它不说明每个项目都应该维护这套基础设施。
+
+`langgraph.json` 是 graph 部署声明，告诉工具链 graph 工厂、依赖和环境在哪里。Agent Server 则在 graph 外提供数据库、任务队列、Thread/Run API、流式传输和 managed persistence。
+
+Agent Server 仍不会替产品定义业务权限、工具安全、State schema 或 UX。下面的比较用来决定基础设施由谁维护，而不是比较哪条路线更“高级”。
 
 | 决策维度 | Agent Server 路线 | 自建 FastAPI Gateway 路线 |
 |---|---|---|
@@ -561,15 +611,17 @@ SQLite 适合本地学习和单进程开发。异步高并发服务应考虑 asy
 | 自定义事件/遗留协议 | 在官方扩展点内工作 | 完全可控，但兼容成本由自己承担 |
 | 学习价值 | 快速掌握标准运行平台 | 深入理解 runtime 边界与失败模式 |
 
-默认建议：如果产品不需要特殊调度、协议兼容或强耦合现有业务运行系统，先评估 Agent Server；不要因为 FastAPI 路由“看起来简单”就重写一套队列和持久化。Mini DeerFlow 自建 Gateway 的目的，是让边界可见并为阅读 DeerFlow 做准备，不是在所有项目中否定官方运行平台。
+我的默认选择很直接：产品没有特殊调度、遗留协议兼容或现有 IAM 深度集成时，先评估 Agent Server。FastAPI 路由看起来简单，真正昂贵的是路由背后的队列、lease、迁移和运维。
 
-## 12. 对照当前 DeerFlow 阅读架构
+Mini DeerFlow 自建 Gateway，是为了让这些边界可见，并为阅读 DeerFlow 做准备。把它学会，不等于以后每个项目都要重写官方运行平台。
 
-本专题对照 DeerFlow `main` 固定提交 [`3e7baba39a9597e480dd82bbc18aee806679a2bf`](https://github.com/bytedance/deer-flow/tree/3e7baba39a9597e480dd82bbc18aee806679a2bf)。固定提交是可复查阅读锚点，不表示课程复制其全部实现。
+## 12. 现在再读 DeerFlow 的 Runtime
+
+本专题对照 DeerFlow `main` 的固定提交 [`3e7baba39a9597e480dd82bbc18aee806679a2bf`](https://github.com/bytedance/deer-flow/tree/3e7baba39a9597e480dd82bbc18aee806679a2bf)。固定提交让每条判断都能复查，并不表示课程复制了完整实现。
 
 > **锚点说明**：这里保留的是本专题写作时的历史对照版本，用来复核 Runtime/Gateway 的局部设计；全书最后四条源码路线的统一验收版本，以 [`DEERFLOW_GUIDE.md`](./DEERFLOW_GUIDE.md) 的 `4af6178` 为准。
 
-建议按下面顺序阅读，而不是从 FastAPI router 随机跳转：
+现在已有一条浏览器长任务作为线索，可以按调用方向阅读，不必从 FastAPI router 随机跳转：
 
 ```text
 gateway routers
@@ -591,9 +643,13 @@ gateway routers
 | `graph.stream(v2)` | Harness graph streaming | Graph modes 如何转成产品事件 |
 | `on_disconnect` | async Gateway 与 sync client 两条路径 | transport 断开与 run cancellation 是否解耦 |
 
-当前 DeerFlow 的关键关系是：Gateway/embedded runtime 和 Agent Harness 分层；Run/Event metadata 独立持久化；StreamBridge 处理重放游标与 heartbeat；取消由 worker 协作执行；Gateway 的 LangGraph-compatible surface 并不等于完整复制官方平台。Mini DeerFlow 缩小了实现规模，但保留了这些关系。
+沿这条路线会看到四个熟悉的关系：Gateway 与 Agent Harness 分层；Run/Event metadata 独立持久化；StreamBridge 处理重放游标和 heartbeat；取消由 worker 协作执行。
 
-## 13. 失败实验与诊断矩阵
+DeerFlow 暴露 LangGraph-compatible surface，也没有完整复制官方平台。Mini DeerFlow 缩小了实现规模，保留的正是这些可迁移的架构关系。
+
+## 13. 出错时，从哪一层开始查
+
+这套 Runtime 有意保留了可以单独破坏的边界。下面每个实验只动一处，再观察故障首先出现在哪里：
 
 | 实验 | 故意破坏 | 预期可观察失败 | 应修复的边界 |
 |---|---|---|---|
@@ -608,47 +664,61 @@ gateway routers
 | restart | active Run 永远 running | 新 Run 被唯一索引阻塞 | 单 worker startup recovery 或生产 lease |
 | error | 把 traceback 放 SSE | Secret/路径泄漏 | 结构化、有界、脱敏错误投影 |
 
-诊断时按事实层向内走：HTTP 状态 → Run record → Event journal → Graph snapshot/history → Store/workspace。不要只看浏览器最后一行错误就猜 Graph 节点。
+真正诊断时，也按这个方向逐层向内：HTTP 状态 → Run record → Event journal → Graph snapshot/history → Store/workspace。
 
-## 14. 练习：从会用到会设计
+浏览器最后一行错误只是投影。先找到哪一层的持久事实开始不一致，再去检查 Graph 节点，会比直接猜 prompt 或模型稳定得多。
+
+## 14. 把本地实现推向生产约束
 
 ### 练习 A：为 custom event 建立版本契约
 
-定义 `progress.v1`，至少包含 `stage/current/total`，用 Pydantic 验证后再进入 event journal。增加一个失败测试：`total=0` 或 `current>total` 时 Run 进入结构化 error。思考 schema 版本应该位于 event name 还是 data。
+定义 `progress.v1`，至少包含 `stage/current/total`，用 Pydantic 验证后再进入 event journal。
+
+增加一个失败测试：`total=0` 或 `current>total` 时，Run 进入结构化 error。最后判断 schema 版本应该放在 event name，还是放进 data。
 
 ### 练习 B：实现 event retention
 
-为 success Run 增加 retention policy：保留 metadata/end/error/interrupt，对高频 messages 做有界压缩。证明任意 `Last-Event-ID` 落在已清理区间时，API 返回明确的 `replay_window_expired`，而不是静默从错误位置继续。
+为 success Run 增加 retention policy：保留 metadata/end/error/interrupt，对高频 messages 做有界压缩。
+
+证明 `Last-Event-ID` 落在已清理区间时，API 返回明确的 `replay_window_expired`，不会悄悄从错误位置继续。
 
 ### 练习 C：把 polling 换成通知
 
-保持 `MiniDeerFlowGateway.iter_run_events()` 接口不变，用 `Condition`、数据库通知或 Redis pubsub 替换固定 sleep。验证无事件时 heartbeat 仍准时，终态后不再泄漏 subscriber。
+保持 `MiniDeerFlowGateway.iter_run_events()` 接口不变，用 `Condition`、数据库通知或 Redis pubsub 替换固定 sleep。
+
+验证无事件时 heartbeat 仍准时，Run 进入终态后不再泄漏 subscriber。
 
 ### 练习 D：设计生产 worker lease
 
-在 Run 表增加 `worker_id/lease_expires_at/heartbeat_at/attempt`，写出 claim、renew、steal 的状态与事务条件。解释为什么 `recover_inflight_runs()` 不能直接用于两个进程。
+在 Run 表增加 `worker_id/lease_expires_at/heartbeat_at/attempt`，写出 claim、renew、steal 的状态和事务条件。
+
+用一个竞态测试解释：为什么 `recover_inflight_runs()` 不能直接用于两个进程。
 
 ### 练习 E：Agent Server 迁移实验
 
-用根目录 `langgraph.json` 启动标准 graph 服务，对比官方 threads/runs/stream API 与本项目路由。列出哪些产品代码可以删除，哪些业务认证、Context 和 tool policy 仍需保留。
+用根目录 `langgraph.json` 启动标准 graph 服务，对比官方 threads/runs/stream API 与本项目路由。
 
-## 15. 自动验收与延迟回忆
+列出迁移后可以删除的产品代码，以及仍需保留的业务认证、Context 和 tool policy。
 
-只运行本专题契约：
+## 15. 先跑契约，再关掉正文回忆
+
+先只运行本专题契约：
 
 ```bash
 uv run --locked --group dev python -m unittest \
   tests.test_mini_deerflow_runtime_gateway -v
 ```
 
-运行全课程：
+然后运行全课程：
 
 ```bash
 make test
 make check
 ```
 
-测试覆盖：repository 重启与 ownership、单调 event ID、原子终态与 SSE 重放、四种 Graph modes、真实 LangGraph interrupt/resume、协作取消、FastAPI 首帧预取后的真实关闭传播、错误脱敏、错误游标、完整 Checkpointer/Store/Runtime 重建。
+测试覆盖 repository 重启与 ownership、单调 event ID、原子终态与 SSE 重放、四种 Graph modes、真实 LangGraph interrupt/resume、协作取消、FastAPI 首帧预取后的关闭传播、错误脱敏与错误游标。
+
+最后一组测试会完整重建 Checkpointer、Store 和 Runtime，确认它们各自恢复自己的事实。
 
 隔一天后，不看正文回答：
 
@@ -660,9 +730,9 @@ make check
 6. 单进程 startup recovery 到多 worker 时为什么会变成危险行为？
 7. 哪些能力应优先交给 Agent Server，哪些仍属于业务应用？
 
-如果这些问题只能背结论，请回到失败实验，先写出缺少边界时会出现的具体错误，再重新设计接口。
+如果只能背出答案，就回到失败实验。先写出缺少某条边界时会出现的具体错误，再重新设计接口；能从故障推回职责，才算真正理解产品 Runtime。
 
-## 16. 参考资料
+## 16. 继续核对官方资料
 
 - [LangGraph Streaming](https://docs.langchain.com/oss/python/langgraph/streaming)：v2 stream part 与 stream modes。
 - [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)：checkpoint、thread、Store 与本地 SQLite provider。
@@ -674,6 +744,8 @@ make check
 - [FastAPI StreamingResponse](https://fastapi.tiangolo.com/advanced/stream-data/)：流式响应适配器。
 - [DeerFlow STREAMING.md at fixed commit](https://github.com/bytedance/deer-flow/blob/3e7baba39a9597e480dd82bbc18aee806679a2bf/backend/docs/STREAMING.md)：DeerFlow 两条 streaming 路径与消费约定。
 
-Runtime 现在能创建、取消、恢复和重放 Agent 长任务。下一篇会区分“运行结束”“结果正确”“轨迹合规”和“这次失败可解释”，建立部署前与生产后的质量闭环。
+现在，这次浏览器长任务可以被创建、取消、恢复和重放。Agent 的运行边界已经闭合，结果质量仍没有得到证明。
+
+下一篇会分别检查“运行结束”“结果正确”“轨迹合规”和“失败可解释”，建立部署前与生产后的质量闭环。
 
 继续阅读：[测试、Agent 评测、可观测性与安全回归](./EVALUATION_OBSERVABILITY.md)。

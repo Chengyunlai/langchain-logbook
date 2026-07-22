@@ -80,8 +80,12 @@ check-lock: check-uv ## Verify pyproject.toml and uv.lock are synchronized
 check-workflows: check-uv ## Verify CI and Pages reuse the canonical release gate
 	@$(UV_RUN) python scripts/check_workflows.py --root .
 
+.PHONY: check-writing
+check-writing: check-uv ## Check the book-wide Chinese writing contract
+	@$(UV_RUN) python scripts/check_writing_contract.py --root .
+
 .PHONY: test
-test: check-uv ## Run offline tests (external cases are collected and shown as skipped)
+test: check-uv check-writing ## Run offline tests (external cases are collected and shown as skipped)
 	@LANGCHAIN_LOGBOOK_PROFILE=offline $(UV_RUN) pytest -q
 	@$(UV_RUN) python scripts/validate_tutorials.py
 

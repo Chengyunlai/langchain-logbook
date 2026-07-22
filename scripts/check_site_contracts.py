@@ -24,8 +24,11 @@ class ContractParser(HTMLParser):
         self.hrefs: list[str] = []
         self.home_urls: list[str] = []
         self.pagefind_bundle_paths: list[str] = []
+        self.primary_start_hrefs: list[str] = []
+        self.notebook_hrefs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
         for name, value in attrs:
             if tag == "a" and name == "href":
                 self.hrefs.append(value or "")
@@ -33,6 +36,10 @@ class ContractParser(HTMLParser):
                 self.home_urls.append(value or "")
             if name == "data-bundle-path":
                 self.pagefind_bundle_paths.append(value or "")
+        if tag == "a" and "data-primary-start" in attributes:
+            self.primary_start_hrefs.append(attributes.get("href") or "")
+        if tag == "a" and "data-course-notebook" in attributes:
+            self.notebook_hrefs.append(attributes.get("href") or "")
 
 
 def _normalized_base(base: str) -> str:
@@ -93,13 +100,26 @@ def check_contracts(
     if not index.is_file():
         findings.append(Finding("home-base", Path("index.html"), "missing home page"))
     else:
-        home_urls = _parse_html(index).home_urls
+        index_contract = _parse_html(index)
+        home_urls = index_contract.home_urls
         if home_urls != [normalized_base]:
             findings.append(
                 Finding(
                     "home-base",
                     index.relative_to(site),
                     f"expected data-home-url={normalized_base!r}, got {home_urls!r}",
+                )
+            )
+        expected_start = f"{normalized_base}/posts/introduction/"
+        if normalized_base == "/":
+            expected_start = "/posts/introduction/"
+        if index_contract.primary_start_hrefs != [expected_start]:
+            findings.append(
+                Finding(
+                    "primary-start",
+                    index.relative_to(site),
+                    "expected one explicit introduction start link, got "
+                    f"{index_contract.primary_start_hrefs!r}",
                 )
             )
 
@@ -150,6 +170,29 @@ def check_contracts(
                         f"{href} does not map to a local repository file",
                     )
                 )
+        if html.parent.parent.name == "posts" and html.parent.name[:2].isdigit():
+            notebook_hrefs = _parse_html(html).notebook_hrefs
+            if len(notebook_hrefs) != 1:
+                findings.append(
+                    Finding(
+                        "course-notebook",
+                        html.relative_to(site),
+                        f"expected one Notebook download link, got {notebook_hrefs!r}",
+                    )
+                )
+            else:
+                notebook_url = urlsplit(notebook_hrefs[0]).path
+                notebook_relative = notebook_url.removeprefix(f"{normalized_base}/")
+                if normalized_base == "/":
+                    notebook_relative = notebook_url.removeprefix("/")
+                if not (site / notebook_relative).is_file():
+                    findings.append(
+                        Finding(
+                            "course-notebook",
+                            html.relative_to(site),
+                            f"Notebook target does not exist: {notebook_hrefs[0]}",
+                        )
+                    )
     return findings
 
 

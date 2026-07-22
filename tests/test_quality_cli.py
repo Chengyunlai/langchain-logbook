@@ -225,6 +225,33 @@ class TutorialCheckerCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_ignores_notebook_stderr_when_validating_expected_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_v2_pair(root)
+            notebook_path = root / "tutorials" / "01_Demo.ipynb"
+            notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+            code_cell = next(
+                cell
+                for cell in notebook["cells"]
+                if cell.get("metadata", {}).get("langchain_logbook_sync")
+                == "demo-failure"
+            )
+            code_cell["outputs"].append(
+                {
+                    "output_type": "stream",
+                    "name": "stderr",
+                    "text": "DeprecationWarning: integration package moved\n",
+                }
+            )
+            notebook_path.write_text(
+                json.dumps(notebook, ensure_ascii=False), encoding="utf-8"
+            )
+
+            result = self.run_checker(root)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_allows_agent_input_antipattern_only_inside_v2_failure_lab(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -609,6 +636,8 @@ class SiteReleaseContractCliTests(unittest.TestCase):
         )
         (site / "index.html").write_text(
             f'<main data-home-url="{home_url}"></main>'
+            '<a data-primary-start '
+            'href="/langchain-logbook/posts/introduction/">Start</a>'
             f'<a href="{href}">Edit</a>',
             encoding="utf-8",
         )
@@ -688,6 +717,22 @@ class SiteReleaseContractCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("home-base", result.stdout)
+
+    def test_reports_duplicate_primary_start_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            site, repository = self.write_site(Path(directory))
+            index = site / "index.html"
+            index.write_text(
+                index.read_text(encoding="utf-8")
+                + '<a data-primary-start '
+                'href="/langchain-logbook/posts/introduction/">Again</a>',
+                encoding="utf-8",
+            )
+
+            result = self.run_checker(site, repository)
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("primary-start", result.stdout)
 
     def test_reports_pagefind_bundle_outside_deployment_base(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

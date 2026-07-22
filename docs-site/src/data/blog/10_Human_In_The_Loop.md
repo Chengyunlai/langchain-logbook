@@ -1,5 +1,5 @@
 ---
-title: "第 10 章：从阻塞等待到可恢复人工审批"
+title: "第 10 章：审批等三天，Graph 不必占着 worker"
 description: "用 interrupt/resume 实现持久审批，并保护重放场景中的副作用。"
 pubDatetime: 2026-03-24T00:00:00.000Z
 featured: false
@@ -18,11 +18,11 @@ contentType: "main"
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / SQLite checkpointer 3.x
 > **本章工件**：interrupt、Command(resume)、审批协议、重放边界与幂等 effect ledger
 
-## 1. 上一刻系统：执行现场可以恢复，发布仍会直接发生
+## 1. 报告恢复了，却会绕过负责人直接发布
 
-第 09 章让 Graph 跨 saver 与进程重建保留 StateSnapshot。现在研究报告生成后仍会直接发布；真实业务常要求负责人批准、编辑或拒绝。
+第 09 章保住了研究任务的执行现场。进程重建后，Graph 可以继续生成报告，但它随后会直接发布。真实业务通常要等负责人批准、编辑或拒绝。
 
-人工可能数分钟或数天后响应。服务器不能让原 worker 一直停在 `input()`、Event.wait 或 HTTP 请求中。审批需要“保存现场、结束当前 Run、稍后以新请求恢复”。
+这个决定可能几分钟后到，也可能拖上三天。服务器不能让原 worker 一直停在 `input()`、`Event.wait` 或 HTTP 请求里。它应保存现场，结束当前 Run，再由后来的请求恢复。
 
 ```mermaid
 sequenceDiagram
@@ -45,9 +45,9 @@ sequenceDiagram
 
 **图的文本替代**：Graph 把 interrupt 写进 checkpoint 后返回控制权。人工决定通过新请求和同一 thread 恢复；审批通过后，副作用意图使用稳定 operation ID 记录。
 
-## 2. 第一处失败：同步等待占住唯一 worker
+## 2. 一个等待审批的任务堵住了后续请求
 
-`input()` 在 Notebook 中直观，在服务端却会占用线程、连接或协程。审批时间越长，资源泄漏越明显；部署或崩溃还会丢失原调用栈。
+`input()` 在 Notebook 里很直观，放进服务端却会占用线程、连接或协程。等待越久，资源问题越明显；一旦部署或崩溃，原调用栈还会消失。
 
 
 ### 一个审批等待让后续任务无法开始
@@ -98,7 +98,7 @@ unrelated_result = unrelated-completed
 worker_held_while_waiting = True
 ```
 
-**发生了什么**：审批本身没有计算工作，却占住唯一 worker。增加线程只能推迟耗尽，不能让等待跨部署恢复。
+**发生了什么**：审批期间没有任何计算，任务却一直占着 worker。增加线程只能晚一点耗尽容量，也不能让这段等待跨部署恢复。
 
 **动手修改**：把线程数改为 2，再提交三个等待任务。说明容量扩张为什么没有改变资源与恢复模型。
 
@@ -153,16 +153,16 @@ paused_next = ('review',)
 resumed_status = completed
 ```
 
-**发生了什么**：`interrupt(value)` 让当前调用返回，pending review 写进 checkpoint。后续 `Command(resume=...)` 使用同一 thread，把值交回 interrupt 调用。
+**发生了什么**：`interrupt(value)` 把待审批内容写进 checkpoint，然后让当前调用返回。稍后的 `Command(resume=...)` 使用同一 thread，把人工决定交还给这次 interrupt。
 
-包含 interrupt 的节点恢复时从节点开头执行。不要用 broad `try/except` 吞掉 GraphInterrupt，也不要让 resume 使用另一个 thread ID。
+恢复时，包含 interrupt 的节点会从开头重新执行。不要用宽泛的 `try/except` 吞掉 `GraphInterrupt`，resume 也必须使用原来的 thread ID。
 
 **动手修改**：用新 thread ID 调用 resume。记录框架如何拒绝没有匹配 interrupt 的恢复请求。
 
 
-## 3. Resume payload 是外部输入，仍要验证
+## 3. “批准”也是一份不可信的外部输入
 
-人工决定不是可信 Python 对象。API 传入的 `approve`、`edit`、`reject` 必须有结构化协议；edit 还要限制允许修改的字段。
+API 收到的人工决定只是一段外部数据。`approve`、`edit`、`reject` 需要结构化协议；`edit` 还要明确哪些字段可以改。
 
 
 ### 用 Pydantic 验证 approve、edit 与 reject
@@ -215,14 +215,14 @@ reject_reason = 证据不足
 invalid_edit_error = value_error
 ```
 
-**发生了什么**：决定在进入业务路由前完成结构和跨字段校验。Schema 合法仍不代表当前用户有审批权限，Gateway 还要校验 thread owner、stage role 与四眼原则。
+**发生了什么**：决定在进入业务路由前完成结构与跨字段校验。Schema 合法只说明数据形状正确；Gateway 还要检查 thread owner、审批角色和四眼原则。
 
 **动手修改**：让 edit 只能改 path，不能改 request_id 或 action。明确允许字段，而不是接受任意 dict 后再删除危险 key。
 
 
-## 4. 第二处失败：interrupt 前的副作用会在 resume 时重复
+## 4. 暂停前发出的邮件，在恢复时又发了一遍
 
-节点恢复从头执行，因此 interrupt 前的日志、邮件、扣款或文件写入会再次发生。Checkpoint 不会回滚外部世界。
+节点恢复时从头执行。若日志、邮件、扣款或文件写入放在 interrupt 前，它们会再次发生。Checkpoint 只能恢复 Graph，不能回滚外部世界。
 
 
 ### Resume 让外部 append 执行两次
@@ -272,7 +272,7 @@ effect_count = 2
 same_request_repeated = True
 ```
 
-**发生了什么**：Graph 正确恢复了 review，外部副作用却无法由 checkpoint 去重。问题不是 interrupt 重复，而是副作用顺序错误。
+**发生了什么**：Graph 正确恢复了 review，外部列表却多写了一次。interrupt 没有出错，真正的问题是副作用发生在暂停之前。
 
 **动手修改**：在 append 前检查 State 中的布尔值。思考 crash 发生在 append 后、State checkpoint 前时，这个布尔值为什么仍不可靠。
 
@@ -333,14 +333,14 @@ external_effects = ['safe-001']
 effect_count = 1
 ```
 
-**发生了什么**：review 可以从头重入，publish 只在批准路径执行。这个顺序修复 resume 重入，但 publish 自身失败恢复或 time travel 仍可能重放，因此还需要幂等键。
+**发生了什么**：review 可以安全重入，publish 只在批准路径上运行。顺序问题解决了，但 publish 自身仍可能因失败恢复或 time travel 被重放，所以还需要幂等键。
 
 **动手修改**：reject 后确认 external_effects 为空。再解释为什么 approve 请求重复提交需要 Gateway 冲突检查。
 
 
-## 5. 第三处失败：Time travel 会再次执行发布节点
+## 5. 从旧快照重放，报告发布了第二次
 
-第 09 章已经证明 time travel 从历史 `next` 形成新 lineage。若目标 checkpoint 位于 publish 前，重放会再次触发外部调用。
+第 09 章已经用 time travel 从历史 `next` 建立新分支。若选中的 checkpoint 位于 publish 前，重放自然会再次进入发布节点。
 
 
 ### 从 publish 前 checkpoint 重放出第二条记录
@@ -402,7 +402,7 @@ effect_count = 2
 unique_operation_ids = 1
 ```
 
-**发生了什么**：Checkpoint 能准确重放节点，外部 list 却没有幂等语义。Exactly-once 不能由 Graph checkpoint 自动推导。
+**发生了什么**：Checkpoint 准确地重放了节点，外部列表却不认识“同一次发布”。Graph 的 checkpoint 无法自动给外部系统提供 exactly-once 语义。
 
 **动手修改**：每次重试生成新的随机 operation ID。说明这为何彻底破坏去重能力。
 
@@ -477,16 +477,16 @@ ledger_count = 1
 stored_payload = reports/final.md
 ```
 
-**发生了什么**：稳定 operation ID 把两次节点执行映射为同一个业务意图。相同 key、不同 payload 必须冲突，而不能伪装成功。
+**发生了什么**：稳定的 operation ID 把两次节点执行映射到同一个业务意图。相同 key、相同 payload 可以重放；相同 key、不同 payload 必须冲突。
 
-内存 dict 只解释语义，不能跨进程协调。工程迁移会使用 SQLite 事务；远端发布还需 provider idempotency key 或 outbox。
+内存字典只够解释语义，不能协调多个进程。后面的工程迁移会改用 SQLite 事务；真正调用远端服务时，还需要 provider idempotency key 或 outbox。
 
 **动手修改**：第二次使用相同 ID 和不同 path。确认 fail closed，并记录冲突需要怎样审计。
 
 
-## 6. 多个 interrupt 依赖稳定调用顺序
+## 6. 两级审批为什么不能随意交换顺序
 
-同一节点可以按顺序请求 risk、compliance 等审批。每次 resume 都从节点开头执行；已保存的 resume value 按 interrupt 调用顺序匹配。
+同一节点可以依次请求 risk、compliance 等审批。每次 resume 都从节点开头重入，框架按 interrupt 的调用顺序匹配已经保存的 resume value。
 
 
 ### 两次 Resume 三次进入同一节点
@@ -541,12 +541,12 @@ node_entry_count = 3
 status = completed
 ```
 
-**发生了什么**：第一次 resume 让第一个 interrupt 取得保存值，然后在第二个暂停；第二次 resume 才完成。改变 interrupt 数量或顺序会让历史值错配。
+**发生了什么**：第一次 resume 重放第一个决定，并在第二个 interrupt 处暂停；第二次 resume 才完成。若版本升级后改变调用数量或顺序，历史值就可能匹配到错误阶段。
 
 **动手修改**：根据可变 State 交换 stages 顺序，观察为什么恢复协议必须冻结业务 request ID 与调用次序。
 
 
-## 7. 工程迁移：Mini DeerFlow 的 durable approval
+## 7. 把可恢复审批接回 Mini DeerFlow
 
 ### 7.1 关闭 SQLite 后恢复审批
 
@@ -616,7 +616,7 @@ final_status = completed
 effect_count = 1
 ```
 
-**发生了什么**：审批暂停跨 saver 与 compiled Graph 重建存在，原 worker 已经结束。Effect intent 只在批准后记录。
+**发生了什么**：旧 saver 和 Graph 都已关闭，审批仍能从 SQLite 恢复。原 worker 早已结束，effect intent 只在批准之后写入。
 
 
 ### 7.2 Edit 与 reject 走不同业务终态
@@ -690,7 +690,7 @@ rejected_status = rejected
 reject_effect_count = 0
 ```
 
-**发生了什么**：edit 的结构化决定更新 payload 后才记录 intent；reject 形成终态但不触碰 ledger。生产 API 还要保留原提案和编辑审计。
+**发生了什么**：`edit` 先更新允许修改的 payload，再记录 intent；`reject` 形成业务终态，但不会触碰 ledger。生产 API 还要保存原提案和编辑审计。
 
 
 ### 7.3 多阶段审批保留稳定顺序
@@ -751,7 +751,7 @@ entry_events = ['review_node_entered', 'review_node_entered', 'review_node_enter
 final_status = completed
 ```
 
-**发生了什么**：项目事件把节点三次进入变成可测试事实。复杂并行审批可使用 interrupt ID 到 resume value 的映射，但业务 request ID 仍须稳定。
+**发生了什么**：custom event 把节点三次进入变成了可测试事实。复杂并行审批可以按 interrupt ID 匹配 resume value，但业务 request ID 仍要保持稳定。
 
 
 ### 7.4 SQLite ledger 抵抗 time travel 重放
@@ -806,7 +806,7 @@ replayed_effect_status = already_recorded
 effect_count = 1
 ```
 
-**发生了什么**：SQLite ledger 把 operation ID、action 与规范化 payload 放进事务边界。它证明本地 intent 幂等，不宣称远端投递 exactly-once。
+**发生了什么**：SQLite ledger 在一个事务里比较 operation ID、action 和规范化 payload。它证明本地 intent 可幂等重放，不代表远端投递已经获得 exactly-once。
 
 
 ### 7.5 两个连接争抢同一 operation ID
@@ -853,7 +853,7 @@ statuses = ['already_recorded', 'recorded']
 effect_count = 1
 ```
 
-**发生了什么**：`BEGIN IMMEDIATE` 串行化本地 SQLite 临界区，主键是最终防线。跨数据库与远端 API 仍需它们自己的协调协议。
+**发生了什么**：`BEGIN IMMEDIATE` 把本地 SQLite 临界区串行化，主键再做最后防线。跨数据库和远端 API 仍需各自的协调协议。
 
 
 ### 7.6 相同 key、不同副作用必须冲突
@@ -907,7 +907,7 @@ error_type = IdempotencyConflictError
 effect_count = 1
 ```
 
-**发生了什么**：幂等不是“同 key 永远成功”。相同业务意图可重放，不同意图复用 key 必须 fail closed，并进入审计或人工处理。
+**发生了什么**：幂等键只允许同一业务意图重放。若 action 或 payload 已经变化，继续复用 key 必须 fail closed，并进入审计或人工处理。
 
 
 | 最小概念 | Mini DeerFlow 增加的工程边界 |
@@ -918,15 +918,15 @@ effect_count = 1
 | operation ID | SQLite 事务、冲突检测、并发测试 |
 | 多 interrupt | custom event 与稳定阶段顺序 |
 
-## 8. Graph 暂停不等于审批系统安全
+## 8. Graph 会暂停，权限仍要由应用负责
 
-Gateway 仍必须验证：thread ownership、审批角色、interrupt 是否仍待处理、edit 允许字段、四眼原则，以及原提案/决定/reason/身份/时间的不可抵赖审计。
+Gateway 仍要验证 thread ownership、审批角色、interrupt 是否待处理、edit 允许字段和四眼原则。原提案、决定、reason、身份与时间也要进入不可抵赖审计。
 
 不要把 auth token 放进 interrupt value 或 State；它们会进入 checkpoint、API 响应和可能的 trace。
 
 动态 `interrupt(payload)` 适合业务审批。`interrupt_before=["tools"]` 是静态断点，适合调试或统一拦截，不能替代带业务载荷与决定 Schema 的审批协议。
 
-## 9. 练习：把审批接入自己的副作用
+## 9. 练习：让一次真实副作用等到批准之后
 
 ### 练习 A：第三审批阶段
 
@@ -948,11 +948,11 @@ Graph 只写 outbox，独立 worker 发送。逐项分析 crash 发生在 insert
 
 合上讲义回答：resume 从节点哪里开始？interrupt 前为何不能发送邮件？time travel 为何不会回滚数据库？相同幂等 key 何时应成功，何时应冲突？
 
-## 10. 下一刻系统：流程可审批，Lead 上下文开始膨胀
+## 10. 发布安全了，Lead 的上下文却越来越重
 
-本章结束后，Graph 能持久暂停、跨重建恢复、验证人工决定，并以稳定 operation ID 保护本地副作用意图。
+现在，Graph 可以持久暂停、跨重建恢复、验证人工决定，并用稳定 operation ID 保护本地副作用意图。
 
-第三部至此完成。随着研究轮次、工具结果和草稿增长，Lead Agent 的 Context 开始污染。第 11 章会先制造“把所有任务都塞给 Lead”的失败，再从零推出 Subagent 委派、隔离和稳定失败协议。
+第三部到这里结束。研究轮次、工具结果和草稿继续增长后，Lead Agent 的 Context 开始被中间材料淹没。第 11 章会把一部分工作委派给 Subagent，同时保住隔离、预算和失败协议。
 
 运行本章验收：
 

@@ -71,7 +71,9 @@ class MiniDeerFlowProjectStructureTests(unittest.TestCase):
 
         self.assertIn("从空目录逐步建立项目", capstone)
         self.assertIn("4af617835805dd7cd78162ebed02fd6b782ea8bf", guide)
-        self.assertIn("路线四：Gateway", guide)
+        self.assertIn("路线三：SSE", guide)
+        self.assertIn("路线四：Trace", guide)
+        self.assertIn("RunJournal", guide)
 
     def test_harness_modules_do_not_depend_on_the_api_adapter(self) -> None:
         package_root = ROOT / "mini_deerflow"

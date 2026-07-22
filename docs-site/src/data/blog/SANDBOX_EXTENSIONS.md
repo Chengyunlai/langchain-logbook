@@ -1,5 +1,5 @@
 ---
-title: "Mini DeerFlow 专题实战：Subagent、Sandbox、MCP 与 Skills 扩展"
+title: "Mini DeerFlow 专题：ArtifactRef 只有路径，文件究竟写到哪里"
 description: "为 Subagent、文件、MCP 与 Skills 建立工作区隔离和最小授权边界。"
 pubDatetime: 2025-01-01T00:00:00Z
 featured: false
@@ -18,54 +18,25 @@ contentType: "main"
 > DeerFlow 阅读锚点：`807c3c521832526c6205ffee23e5f05231eaea5b`  
 > 校准日期：2026-07-13
 
-## 系统快照：Subagent 已经隔离上下文，能力仍直接指向宿主环境
+## ArtifactRef 已经入 State，文件却还没有落点
 
-第 11 章让 Lead 通过 `task` 委派隔离 specialist。若 Subagent 直接获得宿主绝对路径、shell 和全部远端工具，上下文虽已隔离，能力边界仍然失控。
+第 11 章让 Lead 通过 `task` 委派隔离 specialist。上一篇又把 `ArtifactRef` 合并进 State。此时引用已经存在，文件落点、写入身份和可复用能力仍没有答案。
 
-上一篇已经能把 `ArtifactRef` 合并进 State，却没有回答“文件实际写在哪里”。如果这里直接塞进 shell、MCP 和 Skill，初学者会看到四套能力同时出现，却不知道它们为什么必须共享同一条授权链。
+最危险的捷径，是把宿主绝对路径、shell 和全部远端工具直接交给 Subagent。上下文虽然隔离，specialist 仍能绕过 Lead 的授权边界访问宿主环境。
 
-因此本专题只沿一条线推进：先把文件能力放进 thread workspace，再让 Agent 工具使用它，然后只把 capability handle 交给 Subagent，最后才接入 MCP 工具来源和 Skill 知识来源。
+我会沿一次文件写入向外扩展：先建立 thread workspace，再让工具通过 Runtime 身份写入，只把 capability handle 交给 Subagent，最后接入 MCP 工具来源和 Skill 知识来源。
 
-本专题要回答：模型获得文件、命令、远端工具和技能说明之后，谁决定它能看到什么、在哪个线程执行、结果怎样回到 State，以及如何证明主 Agent 与 Subagent 没有互相泄漏上下文？
+这条链始终由应用决定身份、thread 和权限。模型只能选择已经注册的能力，不能自己指定 provider、宿主目录或认证用户。
 
-完成后，Mini DeerFlow 不再只是能研究和委派的聊天循环。它拥有一个按用户/线程分区的本地工作区、通过 `ToolRuntime` 绑定身份的读写工具、只继承 opaque sandbox handle 的 Subagent、默认关闭的 MCP adapter，以及遵循 progressive disclosure（渐进披露）的 Skill catalog。
+这条链会依次留下五类证据：thread/user 分区的工作区、`ToolRuntime` 绑定的身份、写入后的 ToolMessage/Artifact/audit、Subagent 继承的 opaque handle，以及 MCP allowlist 与按需加载的 Skill 正文。
 
-## 学习目标
+先从 `reports/final.md` 的路径检查开始。当前只讨论工作区护栏与本地文件 provider；进程、网络和资源隔离要由容器或远程 Sandbox 继续提供。
 
-完成本专题后，你应该能够：
+## 1. 路径通过校验，进程仍拥有宿主权限
 
-- 区分“工作区路径护栏”“本地文件 provider”“进程/容器 Sandbox”三种不同强度的边界；
-- 设计 `acquire → get → release` 生命周期，而不是把 shell 函数直接叫 Sandbox；
-- 用 `ToolRuntime` 取得应用控制的 `thread_id/user_id`，不让模型把身份写进工具参数；
-- 让文件写入同时形成 `ToolMessage`、`ArtifactRef` 和审计事实；
-- 让 Subagent 共享受控 workspace 能力，但不继承主消息、Secret 或宿主绝对路径；
-- 把 MCP 作为可选工具来源，并在应用边界再次 allowlist；
-- 只展示 Skill 的 name/description，正文由 `load_skill` 按需加载；
-- 沿相同关系阅读 DeerFlow 的 sandbox provider、task tool、MCP tool assembly 和 skills catalog。
+### 1.1 `resolve()` 拒绝父目录，只解决路径问题
 
-只运行本专题测试：
-
-```bash
-uv run --locked --group dev pytest -q \
-  tests/test_mini_deerflow_sandbox_extensions.py
-```
-
-## 0. 实现顺序：四条纵切面，而不是先建四个空目录
-
-| 阶段 | 红灯 | 最小绿色结果 | 没有提前实现什么 |
-|---|---|---|---|
-| A：Sandbox lifecycle | `LocalSandboxProvider` 不存在 | thread/user 隔离、durable workspace、release、审计、默认禁用命令 | 容器调度、CPU/memory quota |
-| B：Agent workspace tool | `build_sandbox_workspace_tools` 不存在 | Runtime identity → session → atomic write → Artifact State | HTTP 上传、对象存储 |
-| C：Subagent inheritance | `task` 不接受 provider | 只传 `sandbox_id`，有界结果经 `SubagentResult` 返回 | 复制主消息、递归 task |
-| D：MCP/Skills | 模块不存在 | lazy MCP allowlist；Skill metadata/index + on-demand body | 自动信任远端工具、启动时注入全部 Skill |
-
-每个阶段都从公共行为测试开始。这样路径穿越失败时，不需要先排查 MCP client；Skill 正文泄漏时，也不会误认为是 LangGraph reducer 问题。
-
-## 1. 先建立正确的安全词汇
-
-### 1.1 路径护栏不等于 Sandbox
-
-一个函数做了下面检查：
+先看一个常见的路径检查：
 
 ```python
 candidate = (root / relative_path).resolve()
@@ -73,11 +44,11 @@ if not candidate.is_relative_to(root):
     raise ValueError("outside workspace")
 ```
 
-它提供的是路径限制，不是进程隔离。运行该函数的 Python 进程仍拥有宿主用户的权限；如果随后把同一个模型接到 unrestricted shell，模型仍可能读取任意宿主文件。
+这段代码限制了路径。运行它的 Python 进程仍拥有宿主用户权限；同一模型若再接入 unrestricted shell，仍可能读取任意宿主文件。
 
-### 1.2 本专题的 `LocalSandboxProvider` 到底保证什么
+### 1.2 `LocalSandboxProvider` 的保证到哪里为止
 
-它保证：
+本地 provider 明确保证：
 
 - `(user_id, thread_id)` 映射到不同目录和稳定 `sandbox_id`；
 - 只接受 workspace 相对路径；
@@ -87,7 +58,7 @@ if not candidate.is_relative_to(root):
 - 宿主命令执行固定返回 exit code 126；
 - 审计只保存 action/path/outcome/大小，不复制文件正文。
 
-它**不保证**：
+它明确不保证：
 
 - 对抗同一宿主上的恶意进程；
 - 防止外部进程在检查和打开之间制造 TOCTOU 竞态；
@@ -95,11 +66,11 @@ if not candidate.is_relative_to(root):
 - 容器逃逸防护；
 - 多租户生产隔离。
 
-因此它的准确名字是“线程工作区 local provider”。需要运行不可信代码时，应替换为容器/远端 Sandbox provider，并保持相同应用接口。
+准确地说，它是线程工作区 local provider。需要运行不可信代码时，应换成容器或远端 Sandbox provider，同时保持应用接口不变。
 
-官方 Deep Agents 文档同样明确区分 `FilesystemBackend` 与 Sandbox：本地文件后端适合受控开发场景；宿主 shell 不是安全隔离，生产执行应使用 Sandbox backend。[LangChain Deep Agents Backends](https://docs.langchain.com/oss/python/deepagents/backends)
+官方 Deep Agents 文档也区分 `FilesystemBackend` 与 Sandbox：本地文件后端适合受控开发场景，生产执行应使用 Sandbox backend。[LangChain Deep Agents Backends](https://docs.langchain.com/oss/python/deepagents/backends)
 
-## 2. 总体能力图
+## 2. 一张图看清身份、句柄与扩展来源
 
 <!-- diagram:id=sandbox-extension-capability-map -->
 ```mermaid
@@ -128,19 +99,19 @@ flowchart LR
     EXT --> G
 ```
 
-**图的文本替代**：应用拥有 thread、user 和 permissions。Workspace 工具经过 Middleware 后通过 SandboxProvider 取得线程会话，操作 durable workspace 并记录有界审计。
+**图的文本替代**：应用拥有 thread、user 和 permissions。Workspace 工具先经过 Middleware，再由 SandboxProvider 取得线程会话，操作 durable workspace 并记录有界审计。
 
-`task` 创建隔离 Subagent，只传 opaque `sandbox_id`。MCP 工具先经过应用 allowlist；Skills 只暴露 metadata，正文按需加载。它们最终作为 extension tools 进入组合根。
+`task` 创建隔离 Subagent，只传 opaque `sandbox_id`。MCP 工具经过应用 allowlist，Skill 启动时只暴露 metadata；两者最终都由组合根决定是否进入 Agent。
 
-这张图有三个所有权结论：
+沿调用方向看，所有权有三条：
 
 1. 模型选择“调用哪个已注册工具”，但不能选择 provider、用户或 thread。
 2. Subagent 可以继承 capability handle，但不能因此自动继承全部 Context。
 3. MCP/Skill discovery 不等于授权；真正进入 Lead Agent 的工具仍由应用组合根决定。
 
-## 3. 阶段 A：线程工作区生命周期
+## 3. 同一 user/thread 重开后还要找到文件
 
-### 3.1 公共用法
+### 3.1 先运行 acquire、write、release、reacquire
 
 ```python
 from pathlib import Path
@@ -199,19 +170,19 @@ workspace_survived = True
 audit_outcomes = [('write_text', 'completed'), ('read_text', 'completed'), ('write_text', 'rejected'), ('execute', 'denied')]
 ```
 
-这组输出把四个概念分开了：Artifact 使用虚拟相对路径；user/thread 共同决定 workspace；路径越界与宿主命令分别被拒绝；release 释放会话对象，但没有删除线程数据。
+这组输出把四件事分开：Artifact 使用虚拟相对路径；user/thread 共同决定 workspace；路径越界与宿主命令分别被拒绝；release 只释放会话对象，不删除线程数据。
 
 **动手修改**：把 other_user 改回 learner，再比较 sandbox_id；随后只修改 thread_id。写出 identity 为什么必须同时包含 user 和 thread。
 
-### 3.2 为什么目录名使用 identity digest
+### 3.2 目录名不应暴露原始身份
 
-用户 ID 可能含邮箱、斜线、Unicode 或外部系统格式。把它直接拼进宿主路径会产生路径注入、长度和隐私问题。provider 对规范化后的 user/thread 字符串做 SHA-256 digest，只把短 digest 放入目录和 `sandbox_id`。
+用户 ID 可能包含邮箱、斜线、Unicode 或外部系统格式。直接拼进宿主路径会带来路径注入、长度和隐私问题。provider 只把规范化身份的短 SHA-256 digest 放入目录与 `sandbox_id`。
 
-Digest 不是鉴权。调用者仍必须从已认证 runtime 取得 user ID；模型提交一个字符串后再 hash，并不会让它变可信。
+Digest 只处理目录映射，不负责鉴权。调用者仍要从已认证 runtime 取得 user ID；模型提交的字符串不会因为被 hash 就变可信。
 
-### 3.3 release 为什么不删除 workspace
+### 3.3 release 释放会话，不删除线程数据
 
-`release(sandbox_id)` 表达“释放当前 provider 会话对象”，不是“删除用户数据”。重新 acquire 同一 user/thread 会产生新 session/audit buffer，但继续使用原目录。
+`release(sandbox_id)` 只释放当前 provider 会话。重新 acquire 同一 user/thread 会创建新的 session 与 audit buffer，同时继续使用原目录。
 
 删除线程 workspace 是产品数据生命周期操作，需要：
 
@@ -221,9 +192,9 @@ Digest 不是鉴权。调用者仍必须从已认证 runtime 取得 user ID；�
 - Artifact/上传/输出的一致清理；
 - 审计与失败恢复。
 
-这些属于后续 Runtime/Gateway，不应藏进一个通用 release。
+这些属于后续 Runtime/Gateway 的产品用例，不应藏进通用 `release()`。
 
-## 4. 阶段 B：从 ToolRuntime 到 Artifact State
+## 4. `write_workspace_file` 怎样把文件带回 State
 
 <!-- diagram:id=workspace-write-sequence -->
 ```mermaid
@@ -249,7 +220,9 @@ sequenceDiagram
     MW-->>ST: reducer merges Artifact
 ```
 
-**图的文本替代**：模型只提交相对路径、正文和 media type。工具从 ToolRuntime 读取应用控制的 user 和 thread，再 acquire session。Session 做路径检查、原子写入和审计，返回 ArtifactRef；工具把它放进 Command，既产生 ToolMessage，也由 Artifact middleware 校验后进入 ThreadState reducer。
+**图的文本替代**：模型只提交相对路径、正文和 media type。工具从 ToolRuntime 读取 user 与 thread，再取得 session。Session 校验路径、原子写入并审计，最后返回 ArtifactRef。
+
+工具把 ArtifactRef 放进 Command：一条更新产生 ToolMessage，另一条经 Artifact middleware 校验后进入 ThreadState reducer。
 
 模型可见 schema 中没有：
 
@@ -259,7 +232,7 @@ sequenceDiagram
 - `sandbox_id`；
 - provider 类型。
 
-下面让真实 Lead Agent 调用写工具。模型只提交 path/content/media_type；user 和 thread 从 Runtime 进入工具：
+下面让真实 Lead Agent 调用写工具。模型只提交 path、content 和 media_type；user 与 thread 从 Runtime 进入工具：
 
 ```python
 from dataclasses import replace
@@ -335,28 +308,28 @@ tool_message_has_path = True
 final_answer = 应用写入完成。
 ```
 
-一次写入留下三类可观察事实：workspace 中的文件、State 中的 ArtifactRef、消息协议中的 ToolMessage。任何一项缺失，后续 UI、恢复或模型循环都会得到不完整事实。
+一次写入留下三类事实：workspace 中的文件、State 中的 ArtifactRef、消息协议中的 ToolMessage。少一项，后续 UI、恢复或模型循环都会看到不完整状态。
 
 **动手修改**：把 permission 改为空集合。预测 handler 是否执行、Artifact 是否进入 State、ToolMessage 是 success 还是 error，然后运行。
 
-### 4.1 为什么写工具返回 `Command`
+### 4.1 写成功后同时更新消息和 Artifact
 
-纯字符串只能告诉模型“写成功了”，调用方却无法可靠发现产物。`Command(update=...)` 同时写入：
+纯字符串只能告诉模型“写成功了”，调用方无法可靠发现产物。`Command(update=...)` 同时写入：
 
 - `messages`：满足 model → tool → model 协议；
 - `artifacts`：让 Graph State、UI 和后续 Subagent 有结构化引用。
 
-任务 12 的 `ArtifactTrackingMiddleware` 和 `merge_artifacts()` 继续生效。Sandbox 不能绕开既有 State 安全边界。
+已有的 `ArtifactTrackingMiddleware` 和 `merge_artifacts()` 继续生效。Workspace 写入不能绕过既有 State 安全边界。
 
-### 4.2 权限不是文件函数自己猜
+### 4.2 路径安全与写权限分别校验
 
 读写工具 metadata 分别声明 `workspace:read` 和 `workspace:write`。默认 Middleware 在执行前根据 Runtime Context permissions 决定是否放行。
 
-路径安全回答“允许写到哪里”；权限回答“这次调用能不能写”。二者不能互相替代。
+路径安全回答“允许写到哪里”，权限回答“这次调用能不能写”。两项检查位于不同边界。
 
-## 5. 阶段 C：Subagent 共享能力，不共享主上下文
+## 5. `sandbox_id` 给 Subagent 的究竟是什么
 
-第 11 章已经实现 registry、并发限制、timeout、输出预算和 ledger。本专题不另写一套 executor，只扩展 `task` 工具的 parent context 投影：
+第 11 章已经实现 registry、并发限制、timeout、输出预算和 ledger。这里不重写 executor，只扩展 `task` 的 parent context 投影：
 
 ```text
 Lead Runtime
@@ -372,13 +345,13 @@ Lead Runtime
 SubagentInvocation.context = spec allowlist ∩ {safe context, sandbox_id}
 ```
 
-`sandbox_id` 是 capability handle（能力句柄）：知道它并不等于拥有 provider；只有注册时获得同一 provider 的 handler/tool 才能 `get()` 会话。当前 demo specialist 没有模型可见的 provider 参数，也不会把宿主路径放进 Prompt。
+`sandbox_id` 是能力句柄（capability handle）。只有持有同一 provider 的 handler 或 tool 才能用它 `get()` 会话。demo specialist 看不到 provider 参数，Prompt 中也没有宿主路径。
 
-### 5.1 为什么不直接传 workspace_root
+### 5.1 绝对路径会把 Subagent 绑死在宿主机
 
-绝对路径泄露宿主布局，并把 Subagent 绑定到 Local provider。换成远端容器时，Lead 的宿主路径与容器路径可能完全不同。opaque ID 让 provider 决定如何定位实际环境。
+绝对路径会泄露宿主布局，并把 Subagent 绑定到 Local provider。换成远端容器后，Lead 的宿主路径可能毫无意义；opaque ID 让 provider 自己定位实际环境。
 
-### 5.2 结果怎样回到 Lead
+### 5.2 长内容留在 workspace，Lead 只收有界结果
 
 Subagent 写长内容到 workspace，只返回：
 
@@ -391,9 +364,9 @@ SubagentResult
 └── bounded error
 ```
 
-这避免把整份报告复制进主消息。Lead 可先读摘要，需要证据时再通过 Artifact 路径读取文件。
+整份报告不会复制进主消息。Lead 先读摘要，需要证据时再沿 Artifact 路径读取文件。
 
-下面的离线实验把“共享能力、不共享上下文”变成可观察结果。Subagent handler 只从 `sandbox_id` 取回 session；它不会收到 workspace_root、messages 或 auth_token：
+下面的离线实验让边界可见：Subagent handler 只用 `sandbox_id` 取回 session，不会收到 workspace_root、messages 或 auth_token。
 
 > 下面按普通 `.py` 脚本书写，所以最外层使用 `asyncio.run(...)`。若复制到 Jupyter，请直接写 `state = await lead.ainvoke(...)`；不要在 Notebook 已运行的事件循环里再次调用 `asyncio.run(...)`。本篇后续异步示例同理。
 
@@ -521,19 +494,19 @@ workspace_content = Subagent 的有界结果
 ledger_context_keys = ('sandbox_id',)
 ```
 
-这里的 `sandbox_id` 不是安全魔法。真正的能力来自 handler 持有 provider；把随机 ID 交给没有 provider 的模型，不会突然赋予宿主文件权限。
+真正的能力来自 handler 持有 provider。把随机 ID 交给没有 provider 的模型，不会突然赋予宿主文件权限。
 
 **动手修改**：从 spec allowlist 删除 sandbox_id。预测结果状态和 ledger context_keys；不要把修复写成重新传 workspace_root。
 
-## 6. 阶段 D1：MCP 是工具传输协议，不是自动授权
+## 6. MCP server 暴露工具，不代表应用授权
 
-LangChain 的 `MultiServerMCPClient.get_tools()` 会把 MCP server 工具转换为 LangChain tools。Client 默认 stateless，每次工具调用建立新 session。
+LangChain 的 `MultiServerMCPClient.get_tools()` 会把 MCP server 工具转换为 LangChain tools。Client 默认 stateless，每次调用建立新 session。
 
-MCP server 运行在独立进程，不能直接访问 LangGraph Context、State 或 Store；需要时应通过官方 interceptor 显式桥接。参见 [LangChain MCP](https://docs.langchain.com/oss/python/langchain/mcp)。
+MCP server 运行在独立进程，不能直接访问 LangGraph Context、State 或 Store。需要跨越这条边界时，应通过官方 interceptor 显式桥接。参见 [LangChain MCP](https://docs.langchain.com/oss/python/langchain/mcp)。
 
-Mini DeerFlow 增加一层更小的应用 adapter：
+Mini DeerFlow 在 client 外再放一层应用 adapter：
 
-先用 fake client 观察“server 发现”和“application 授权”不是同一个列表。这个实验不需要安装 MCP extra，也不会启动外部进程：
+先用 fake client 对照 server 发现列表与 application 授权列表。实验不安装 MCP extra，也不启动外部进程：
 
 ```python
 import asyncio
@@ -602,7 +575,7 @@ application_tools = ['approved_echo']
 source = mcp
 ```
 
-disabled 时 client factory 一次也没有执行。enabled 后 server 暴露两个工具，但应用只接收 allowlist 中的 approved_echo；unapproved_delete 不会因为远端发现而自动获得权限。
+disabled 时 client factory 没有执行。enabled 后 server 暴露两个工具，应用只接收 allowlist 中的 approved_echo；unapproved_delete 不会因远端发现而获得权限。
 
 **动手修改**：把 allowed_tool_names 改为空集合。确认 client 仍可被发现，但组合根拿到空工具表；然后解释“连接成功”为什么不是“授权成功”。
 
@@ -637,7 +610,7 @@ application = build_application(settings, dependencies=dependencies)
 uv sync --locked --group dev --extra mcp
 ```
 
-### 6.1 为什么 factory 必须 lazy
+### 6.1 disabled 时连 optional package 都不加载
 
 `enabled=False` 时：
 
@@ -646,13 +619,13 @@ uv sync --locked --group dev --extra mcp
 - 不连接 stdio/HTTP server；
 - 返回空工具 tuple。
 
-因此核心离线测试不需要 MCP server，也不会把“没有安装 optional package”误报为 Agent 失败。
+核心离线测试因此不需要 MCP server，也不会把“未安装 optional package”误报为 Agent 失败。
 
-### 6.2 为什么发现后仍需 allowlist
+### 6.2 远端工具变化不能自动改写本地权限
 
-MCP server 可以新增或修改工具。应用如果把 `get_tools()` 的全部结果直接绑定给模型，远端配置变化就等于权限变化。Mini DeerFlow 只接受 `allowed_tool_names` 中的工具，并为工具加上 `source=mcp` metadata。
+MCP server 可以新增或修改工具。若应用把 `get_tools()` 的全部结果直接绑定给模型，远端配置变化就会改写权限。Mini DeerFlow 只接收 `allowed_tool_names` 中的工具，并标记 `source=mcp`。
 
-这仍不是完整安全方案。真实系统还应验证：
+allowlist 之后仍要验证：
 
 - server identity 与 transport；
 - OAuth/API credential 注入位置；
@@ -662,9 +635,9 @@ MCP server 可以新增或修改工具。应用如果把 `get_tools()` 的全部
 - 返回内容中的 prompt injection；
 - 人工审批和审计。
 
-## 7. 阶段 D2：Skills 用渐进披露控制上下文
+## 7. Skill 正文何时进入上下文
 
-Skill 是“任务相关的工作流知识”，不是远端可执行工具本身。一个标准 Skill 目录至少有：
+Skill 保存任务相关的工作流知识。它不负责远端执行；一个标准目录至少包含：
 
 ```text
 research-report/
@@ -674,9 +647,9 @@ research-report/
 └── assets/       # 可选
 ```
 
-`SKILL.md` 使用 YAML frontmatter 的 `name` 和 `description`，随后是完整说明。LangChain Deep Agents 也采用“启动时读 metadata，需要时再读完整文件”的 progressive disclosure。[LangChain Deep Agents Skills](https://docs.langchain.com/oss/python/deepagents/skills)
+`SKILL.md` 用 YAML frontmatter 保存 `name` 和 `description`，正文再放完整说明。Deep Agents 同样采用启动时读 metadata、需要时读正文的渐进披露。[LangChain Deep Agents Skills](https://docs.langchain.com/oss/python/deepagents/skills)
 
-### 7.1 Mini DeerFlow 的两阶段加载
+### 7.1 启动时只展示 name 和 description
 
 <!-- diagram:id=skill-progressive-disclosure -->
 ```mermaid
@@ -691,7 +664,7 @@ flowchart TD
     BODY --> MODEL
 ```
 
-**图的文本替代**：Catalog 扫描每个 SKILL.md，只把 name/description 放入 load_skill 工具描述。模型选择某个名称后调用工具；工具再次检查根目录、符号链接、文件大小、YAML 和 metadata 一致性，最后才返回正文。
+**图的文本替代**：Catalog 扫描每个 SKILL.md，只把 name 与 description 放入 `load_skill` 工具描述。模型选定名称后调用工具，工具复查路径、大小、YAML 与 metadata，再返回正文。
 
 使用 package 内置示例：
 
@@ -721,9 +694,9 @@ tool_name = load_skill
 tool_schema = ['name']
 ```
 
-启动索引只暴露 metadata；完整“引用核验流程”在显式 load 后才出现。模型可见工具只接受 name，不接受任意宿主路径。
+启动索引只暴露 metadata；完整“引用核验流程”在显式 load 后才出现。模型可见参数只有 name，没有任意宿主路径。
 
-把工具加入组合根时，仍由应用显式决定：
+是否把工具加入组合根，仍由应用决定：
 
 ```python
 dependencies = replace(
@@ -734,9 +707,9 @@ dependencies = replace(
 
 **动手修改**：在 index 阶段直接拼接 `loaded.instructions`，记录启动 Prompt 增加的字符数。然后恢复两阶段加载，并说明这既是预算边界也是信任边界。
 
-### 7.2 Skill 也属于不可信输入
+### 7.2 本地 Skill 也要经过信任边界
 
-本地文件不天然可信。安装的 Skill 可能包含：
+安装到本地的 Skill 仍可能包含：
 
 - 要求忽略系统规则的 Prompt injection；
 - 诱导读取 Secret 的步骤；
@@ -745,9 +718,13 @@ dependencies = replace(
 - 与 description 不一致的正文；
 - 超大文件导致上下文或内存压力。
 
-当前 catalog 拒绝越界/符号链接主文件，限制 256 KB，并在 load 时验证 metadata 没有自 discovery 后被更改。它不自动执行 scripts，也不自动加载 references/assets。生产系统还需要安装时 review、签名/来源、allowed-tools、Secret policy 与版本管理。
+当前 catalog 拒绝越界或符号链接主文件，限制 256 KB，并在 load 时确认 metadata 未被替换。它不执行 scripts，也不自动加载 references/assets。
 
-## 8. MCP 与 Skills 不要混为一谈
+生产系统还需要安装审查、签名与来源、allowed-tools、Secret policy 和版本管理。
+
+## 8. MCP 提供能力，Skill 提供工作流知识
+
+两者都能扩展 Agent，但授权对象不同。下面的表只用于核对职责，不替代前面的调用证据。
 
 | 维度 | MCP Tool | Agent Skill |
 |---|---|---|
@@ -758,43 +735,29 @@ dependencies = replace(
 | 默认策略 | disabled + deny by default | metadata visible、body on demand |
 | 典型失败 | server 新增破坏性工具、credential 泄漏 | 正文 prompt injection、脚本越权 |
 
-如果一个 Skill 需要调用 MCP 工具，二者仍分别授权：加载 Skill 不会自动把 MCP 工具加入 registry；注册 MCP 工具也不会自动加载某个 Skill。
+Skill 即使需要 MCP 工具，两者仍分别授权。加载 Skill 不会自动扩充 registry；注册 MCP 工具也不会自动加载某个 Skill。
 
-## 9. 失败实验
+## 9. 沿授权链定位七种失败
 
-### 9.1 `../outside.md`
+前文已经分别运行过这些失败。现在把它们放在一起，目的只是定位责任边界：
 
-预期：`SandboxPathError`，audit 记录 `write_text/rejected`，workspace 外没有文件。
+| 失败输入或现场 | 必须观察到的结果 | 负责拒绝的边界 |
+|---|---|---|
+| `../outside.md` | `SandboxPathError`；audit 为 `write_text/rejected`；外部无文件 | 路径护栏 |
+| 同 thread、不同 user | 两个 `sandbox_id` 和目录 | 身份分区 |
+| symlink 指向外部 | read/write 均拒绝 | 解析后的路径检查 |
+| Local provider 执行 shell | exit code 126；audit 为 `execute/denied` | provider 能力策略 |
+| MCP extra 未安装 | 离线核心正常；启用并 load 时才给安装提示 | lazy optional adapter |
+| MCP server 暴露未授权工具 | 能发现，但不返回组合根 | 应用 allowlist |
+| Skill 正文进入启动 Prompt | 测试失败；正文只允许出现在 `load_skill` 的 ToolMessage | progressive disclosure |
 
-### 9.2 同 thread，不同 user
+这张表汇总前文证据，不代替各节的运行记录。尤其是 symlink 与 `..` 属于两种路径攻击，MCP discovery 与本地 policy 也属于两个步骤。
 
-预期：两个不同 `sandbox_id` 和目录。Thread id 不是全局授权主键，必须与已认证 user identity 共同分区。
+## 10. 这些边界为什么不交给一个框架名
 
-### 9.3 符号链接指向外部
+### 10.1 先看清边界，再决定是否复用 Deep Agents
 
-预期：read/write 均拒绝。只检查字符串 `..` 不足以阻止 symlink traversal。
-
-### 9.4 Local provider 执行 shell
-
-预期：exit code 126，stderr 明确说明 host execution disabled，audit 为 `execute/denied`。不要为了演示“成功”偷偷调用 `subprocess.run()`。
-
-### 9.5 MCP extra 未安装
-
-预期：核心离线应用正常；只有 `enabled=True` 且真正 load 时才抛 `MCPAdapterUnavailableError`，并给出 `uv sync --locked --group dev --extra mcp` 提示。
-
-### 9.6 MCP server 暴露未授权工具
-
-预期：adapter 发现它，但不返回给组合根；远端 discovery 不是本地 policy。
-
-### 9.7 Skill 正文在启动 Prompt 出现
-
-预期：测试失败。`render_index()` 和 tool description 只能含 metadata；正文只出现在 `load_skill` 的 ToolMessage。
-
-## 10. 工程权衡
-
-### 10.1 为什么不用 Deep Agents 直接替代本项目
-
-Deep Agents 已提供成熟的 filesystem backend、Subagent、Skills 和 Sandbox 集成，真实项目可以直接采用。本课程仍实现小型 contract，是为了让学习者看见：
+Deep Agents 已提供成熟的 filesystem backend、Subagent、Skills 和 Sandbox 集成，真实项目可以直接采用。课程仍保留小型 contract，因为下面这些关系必须可见：
 
 - thread/user identity 怎样进入 provider；
 - ToolRuntime 与模型 schema 怎样分离；
@@ -802,17 +765,19 @@ Deep Agents 已提供成熟的 filesystem backend、Subagent、Skills 和 Sandbo
 - MCP discovery 和应用授权为何是两步；
 - progressive disclosure 到底减少了哪部分上下文。
 
-理解这些关系后，选择 Deep Agents 是复用成熟实现，而不是因为“Agent 必须再套一层框架”。
+理解这些关系后，再选择 Deep Agents，就是复用成熟实现，而不是用框架名掩盖授权边界。
 
-### 10.2 为什么不让 provider 自动删除文件
+### 10.2 provider 不拥有数据 retention
 
-自动清理会把运行生命周期和数据 retention 混在一起。后续 Gateway 应拥有明确的 thread cleanup use case，provider 只实现 capability 生命周期。
+自动清理会混淆运行生命周期与数据 retention。后续 Gateway 应拥有明确的 thread cleanup use case，provider 只管理 capability 生命周期。
 
-### 10.3 为什么审计不保存正文
+### 10.3 审计只记操作事实，不复制正文
 
-正文可能含用户数据、Secret 或大量内容。audit 保存 action/path/outcome/大小足以定位大部分操作问题；完整内容由 workspace 与 Artifact 管理。需要防篡改审计时，应接入 append-only repository，而不是把 list 放在进程内。
+正文可能含用户数据、Secret 或大量内容。audit 保存 action、path、outcome 和大小，完整内容仍由 workspace 与 Artifact 管理。
 
-## 11. 动手练习
+需要防篡改审计时，应接入 append-only repository，不能依赖进程内 list。
+
+## 11. 练习：替换 provider 也不改调用方
 
 ### 练习 A：读取预算
 
@@ -849,7 +814,16 @@ Deep Agents 已提供成熟的 filesystem backend、Subagent、Skills 和 Sandbo
 
 </details>
 
-## 12. 自动验收
+## 12. 用契约检查整条能力链
+
+先只运行本专题：
+
+```bash
+uv run --locked --group dev pytest -q \
+  tests/test_mini_deerflow_sandbox_extensions.py
+```
+
+再检查它没有绕过 Subagent、Tool 与 Lead 已有契约：
 
 ```bash
 uv run --locked --group dev pytest -q \
@@ -870,7 +844,7 @@ uv run --locked --group dev pytest -q \
 - [ ] Skill index 不含正文，正文只通过 load_skill 返回；
 - [ ] MCP/Skills 未启用时全部核心离线测试保持通过。
 
-## 13. 与当前 DeerFlow 对照阅读
+## 13. 沿同一能力链阅读 DeerFlow
 
 固定提交：[`807c3c521832526c6205ffee23e5f05231eaea5b`](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)。课程只缩小关系，不复制产品规模。
 
@@ -898,7 +872,7 @@ sandbox_provider.py
 → make_lead_agent 的最终装配
 ```
 
-先回答“谁拥有身份和 lifecycle”，再读具体文件函数；否则很容易把 DeerFlow 的目录数量误认为新的 LangGraph 原语。
+先回答谁拥有身份与 lifecycle，再读具体文件函数。否则很容易把 DeerFlow 的目录数量误认为新的 LangGraph 原语。
 
 ## 参考资料
 
@@ -908,6 +882,6 @@ sandbox_provider.py
 - [Model Context Protocol](https://modelcontextprotocol.io/docs/getting-started/intro)：协议角色与 server 暴露能力的官方入口。
 - [DeerFlow repository](https://github.com/bytedance/deer-flow/tree/807c3c521832526c6205ffee23e5f05231eaea5b)：本专题固定源码阅读锚点。
 
-工作区、MCP 和 Skills 已通过最小授权接入同一组合根。下一篇会把这个 Graph 交付为产品 Thread/Run/Event 与可重放 SSE；产品运行时只消费稳定契约，不反向进入工具内部。
+工作区、MCP 和 Skills 已通过同一授权链接入组合根。仍未解决的是产品交付：浏览器无法查询、取消或恢复一次长任务。下一篇让 Runtime 只消费这些稳定契约，不反向进入工具内部。
 
 继续阅读：[持久化 Runtime、FastAPI Gateway 与可重放 SSE](/langchain-logbook/posts/runtime_gateway/)。
