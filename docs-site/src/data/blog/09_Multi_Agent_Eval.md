@@ -904,6 +904,8 @@ Durable execution 通常从最近成功的 superstep 恢复。失败节点或 in
 
 恢复也带来新问题：节点可能再次进入。若它在暂停前已经发布报告，resume 或 time travel 就可能重复写入。下一章会加入 durable interrupt，再用幂等 ledger 守住副作用。
 
+仓库内的 Markdown 暂时保留历史文件名 `09_Multi_Agent_Eval.md`，以免破坏已有链接；公开下载的 Notebook 使用与本章主题一致的 `09_Checkpoint_Recovery.ipynb`。下面的同步命令操作的是前者。
+
 运行本章验收：
 
 ```bash

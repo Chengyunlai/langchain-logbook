@@ -1,6 +1,6 @@
 ---
 title: "第 11 章：别让 Lead 亲自搬运所有原始材料"
-description: "根据控制权选择 Router、Handoff、Supervisor 或 Subagent-as-tool，并隔离上下文。"
+description: "根据控制权选择 Router、Handoff、Subgraph 或 Subagent-as-tool，并理解 Supervisor 如何由中心 Lead 实现。"
 pubDatetime: 2026-03-23T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
@@ -8,7 +8,7 @@ sourcePath: "tutorials/11_Multi_Agent_Patterns.md"
 learningOrder: 11
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
-learningGoal: "根据控制权选择 Router、Handoff、Supervisor 或 Subagent-as-tool，并隔离上下文。"
+learningGoal: "根据控制权选择 Router、Handoff、Subgraph 或 Subagent-as-tool，并理解 Supervisor 如何由中心 Lead 实现。"
 contentType: "main"
 ---
 
@@ -30,9 +30,13 @@ contentType: "main"
 
 ### 这一章分两遍读
 
-第一遍只回答“谁拥有下一步控制权”。完成第 2–4 节的请求协议、Context 投影与四种模式，再读第 7 节的决策表。到这里，你已经能判断何时用 Router、Handoff、Subgraph 或 Subagent-as-tool。
+第一遍只回答“谁拥有下一步控制权”。完成[第 2 节](#2-分工已经完成原始材料却全回到了-lead)到[第 4 节](#4-选哪种模式先看谁决定下一步)的请求协议、Context 投影与四种模式，再读[第 7 节](#7-回到第一遍的主线比较四种模式)的决策表。到这里，你已经能判断何时用 Router、Handoff、Subgraph 或 Subagent-as-tool。
 
-第二遍再进入第 5–6 节。这里不再增加第五种模式，而是给 Subagent-as-tool 补齐并发、超时、部分失败、输出预算和 Delegation Ledger。它们是构建 Mini DeerFlow 的必备工程边界，但不是理解四种模式的前置。
+第二遍再进入[第 5 节](#5-第二遍执行器要替-lead-守住四条运行边界)和[第 6 节](#6-第二遍mini-deerflow-如何收拢这些边界)。这里不再增加第五种模式，而是给 Subagent-as-tool 补齐并发、超时、部分失败、输出预算和 Delegation Ledger。它们是构建 Mini DeerFlow 的必备工程边界，但不是理解四种模式的前置。
+
+
+**Notebook 阅读顺序**：第一遍先做实验 1–9，建立请求协议、Context 投影与四种控制权模式；回到正文第 7 节完成决策表。第二遍再做实验 10–24，为 Subagent-as-tool 补齐并发、失败、输出预算与 Ledger。
+
 
 ```mermaid
 flowchart LR
@@ -575,6 +579,14 @@ lead_regains_control = True
 
 **动手修改**：故意把 `fresh_messages` 提升为全局 list。运行两次后观察串线，并解释为什么“给每个 specialist 一个永久历史”改变了产品语义。
 
+
+### 4.5 Supervisor 是架构角色，不是第五种控制权原语
+
+Supervisor（监督者）通常指一个持续保留用户会话、选择 specialist 并汇总结果的中心 Agent。这个名称描述谁负责协调，不规定它必须使用哪一种 LangGraph 节点或 API。
+
+本章的 Lead 正在承担 Supervisor 角色：它把 specialist 暴露为 `task` tool，决定何时委派，并在收到有界结果后继续综合。底层控制权仍属于 Subagent-as-tool，因此前面的决策图不需要再增加第五个分支。
+
+Router 只在当前步骤选择固定分支；Supervisor 会在多轮工具循环中反复规划。Handoff 则把后续会话交给目标 Agent。以后在其他项目中看到“Supervisor”，先追它怎样委派和收回控制权，再映射回这四种模式。
 
 ## 5. 第二遍：执行器要替 Lead 守住四条运行边界
 
@@ -1419,6 +1431,8 @@ secret_in_ledger = False
 | Handoff | 目标 Agent 接管 | active agent | 取决于实现 | 专员继续直接和用户对话 |
 | Subgraph | 父图固定拓扑 | 父图/checkpointer | 否 | 可恢复的确定性子流程 |
 | Subagent-as-tool | Lead 委派后收回 | Lead | 由请求投影建立 | 动态研究、代码检查、压缩上下文 |
+
+本书的 Lead + Subagent-as-tool 就是一种 Supervisor 架构。若准备继续第二遍，从这里回到[第 5 节](#5-第二遍执行器要替-lead-守住四条运行边界)，再看这些委派怎样获得可靠运行边界。
 
 “同步委派”和“后台任务”描述的是业务等待关系，不是 Python 是否写了 `async def`。即使使用 asyncio，Lead 仍可能同步等待结果。
 

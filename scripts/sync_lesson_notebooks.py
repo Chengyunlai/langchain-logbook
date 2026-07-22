@@ -36,6 +36,8 @@ LESSON_LAB_START = re.compile(
 )
 LESSON_LAB_END = "<!-- /lesson-lab -->"
 LESSON_CONTRACT_V2 = "<!-- lesson-contract:v2 -->"
+NOTEBOOK_READING_PATH_START = "<!-- notebook-reading-path:start -->"
+NOTEBOOK_READING_PATH_END = "<!-- notebook-reading-path:end -->"
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,16 +188,37 @@ def extract_lesson_labs(markdown: str) -> list[LessonLab]:
     return labs
 
 
+def extract_notebook_reading_path(markdown: str) -> str:
+    """读取由 Markdown 维护、需要同步到 Notebook 开场的阅读顺序。"""
+
+    start_count = markdown.count(NOTEBOOK_READING_PATH_START)
+    end_count = markdown.count(NOTEBOOK_READING_PATH_END)
+    if start_count == end_count == 0:
+        return ""
+    if start_count != 1 or end_count != 1:
+        raise ValueError("Notebook 阅读顺序 marker 必须成对且只能出现一次")
+    _before, _marker, remainder = markdown.partition(NOTEBOOK_READING_PATH_START)
+    body, _marker, _after = remainder.partition(NOTEBOOK_READING_PATH_END)
+    if not body.strip():
+        raise ValueError("Notebook 阅读顺序不能为空")
+    return body.strip()
+
+
 def _build_v2_notebook(markdown_path: Path, markdown: str) -> nbformat.NotebookNode:
     labs = extract_lesson_labs(markdown)
     if not labs:
         raise ValueError(f"{markdown_path} 声明 v2 契约却没有 lesson lab")
     title = markdown.splitlines()[0].removeprefix("# ")
+    intro = (
+        f"# {title}（概念实验与工程迁移）\n\n"
+        "按正文顺序完成每个实验：先写预测，再运行代码，阅读输出，最后修改一个变量。\n\n"
+        "概念实验不会预先导入 Mini DeerFlow；进入“工程迁移”标签后，才把同一机制放回项目。"
+    )
+    if reading_path := extract_notebook_reading_path(markdown):
+        intro = f"{intro}\n\n## 建议阅读顺序\n\n{reading_path}"
     cells = [
         nbformat.v4.new_markdown_cell(
-            f"# {title}（概念实验与工程迁移）\n\n"
-            "按正文顺序完成每个实验：先写预测，再运行代码，阅读输出，最后修改一个变量。\n\n"
-            "概念实验不会预先导入 Mini DeerFlow；进入“工程迁移”标签后，才把同一机制放回项目。",
+            intro,
             id=stable_cell_id(f"{markdown_path.name}:v2:intro"),
         )
     ]

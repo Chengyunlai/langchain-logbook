@@ -44,6 +44,9 @@ class NotebookSyncTests(unittest.TestCase):
             markdown.write_text(
                 "# 第 07 章：Demo\n\n"
                 "<!-- lesson-contract:v2 -->\n\n"
+                "<!-- notebook-reading-path:start -->\n"
+                "第一次先完成实验 1，再进入实验 2。\n"
+                "<!-- notebook-reading-path:end -->\n\n"
                 "<!-- lesson-lab:id=demo-failure layer=concept kind=failure "
                 "concept=merge pair=merge-results -->\n"
                 "### 先看失败\n\n"
@@ -83,6 +86,7 @@ class NotebookSyncTests(unittest.TestCase):
             "mini_deerflow",
             "\n".join(cell.source for cell in notebook.cells[:3]),
         )
+        self.assertIn("第一次先完成实验 1", notebook.cells[0].source)
         prose = "\n".join(
             cell.source for cell in notebook.cells if cell.cell_type == "markdown"
         )

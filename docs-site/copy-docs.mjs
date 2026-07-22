@@ -130,7 +130,11 @@ function stripInternalLessonMarkers(content) {
   return content
     .replace(/^[ \t]*<!-- lesson-contract:v2 -->[ \t]*$/gm, "")
     .replace(/^[ \t]*<!-- lesson-lab:[^\r\n]*-->[ \t]*$/gm, "")
-    .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "");
+    .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "")
+    .replace(
+      /^[ \t]*<!-- notebook-reading-path:(?:start|end) -->[ \t]*$/gm,
+      ""
+    );
 }
 
 function processFile(srcPath, destFilename) {

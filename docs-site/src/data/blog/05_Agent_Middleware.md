@@ -691,6 +691,8 @@ DeerFlow 阅读入口固定到 commit `4af617835805dd7cd78162ebed02fd6b782ea8bf`
 
 接下来的问题不在数据放哪里，而在每次模型和工具调用都要重复检查权限、计数、日志与异常。第 06 章会先让遗漏发生，再用 Agent Middleware 收回这些调用治理。
 
+仓库内的 Markdown 暂时保留历史文件名 `05_Agent_Middleware.md`，以免破坏已有链接；公开下载的 Notebook 使用与本章主题一致的 `05_Context_State_Store.ipynb`。下面的同步命令操作的是前者。
+
 运行本章验收：
 
 ```bash
