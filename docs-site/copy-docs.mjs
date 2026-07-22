@@ -47,11 +47,18 @@ function slugify(text) {
 // Helper to determine publication date for sorting (01 < 02 < 03 ... Appendix)
 function getPubDate(filename) {
   if (filename.toLowerCase() === "introduction") return "2026-04-03T12:00:00Z";
-  if (
-    ["CAPSTONE", "DEERFLOW_GUIDE", "RELEASE"].includes(filename.toUpperCase())
-  ) {
-    return "2026-07-14T00:00:00Z";
-  }
+  const engineeringDates = {
+    ARCHITECTURE: "2026-07-14T00:00:00Z",
+    LEAD_AGENT_CORE: "2026-07-13T00:00:00Z",
+    SANDBOX_EXTENSIONS: "2026-07-13T00:00:00Z",
+    RUNTIME_GATEWAY: "2026-07-13T00:00:00Z",
+    EVALUATION_OBSERVABILITY: "2026-07-13T00:00:00Z",
+    CAPSTONE: "2026-07-14T00:00:00Z",
+    DEERFLOW_GUIDE: "2026-07-14T00:00:00Z",
+    RELEASE: "2026-07-14T00:00:00Z",
+  };
+  const engineeringDate = engineeringDates[filename.toUpperCase()];
+  if (engineeringDate) return engineeringDate;
   const match = filename.match(/^(\d+)_/);
   if (match) {
     const chapterNum = parseInt(match[1]);
@@ -144,6 +151,9 @@ function processFile(srcPath, destFilename) {
     throw new Error(`Missing curriculum entry for ${sourcePath}`);
   }
   PROCESSED_SOURCES.add(sourcePath);
+  const notebookMetadata = curriculumEntry.notebookFilename
+    ? `notebookFilename: "${curriculumEntry.notebookFilename}"\n`
+    : "";
   const frontmatter = `---
 title: "${title.replace(/"/g, '\\"')}"
 description: "${curriculumEntry.goal.replace(/"/g, '\\"')}"
@@ -151,7 +161,7 @@ pubDatetime: ${pubDate}
 featured: ${name === "introduction"}
 tags: ["tutorial"]
 sourcePath: "${sourcePath}"
-learningOrder: ${curriculumEntry.learningOrder}
+${notebookMetadata}learningOrder: ${curriculumEntry.learningOrder}
 learningStage: "${curriculumEntry.learningStage}"
 learningStageTitle: "${curriculumEntry.learningStageTitle.replace(/"/g, '\\"')}"
 learningGoal: "${curriculumEntry.goal.replace(/"/g, '\\"')}"
@@ -172,10 +182,19 @@ if (fs.existsSync(tutorialsDir)) {
   for (const file of tutFiles) {
     if (file.endsWith(".md")) processFile(path.join(tutorialsDir, file), file);
     if (file.endsWith(".ipynb")) {
+      const tutorialSourcePath = `tutorials/${file.replace(/\.ipynb$/, ".md")}`;
+      const publishedFilename =
+        CURRICULUM_ENTRIES.get(tutorialSourcePath)?.notebookFilename ?? file;
       fs.copyFileSync(
         path.join(tutorialsDir, file),
-        path.join(NOTEBOOK_DEST_DIR, file)
+        path.join(NOTEBOOK_DEST_DIR, publishedFilename)
       );
+      if (publishedFilename !== file) {
+        fs.copyFileSync(
+          path.join(tutorialsDir, file),
+          path.join(NOTEBOOK_DEST_DIR, file)
+        );
+      }
     }
   }
 }

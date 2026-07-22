@@ -1,7 +1,7 @@
 ---
 title: "Mini DeerFlow 专题：ArtifactRef 只有路径，文件究竟写到哪里"
 description: "为 Subagent、文件、MCP 与 Skills 建立工作区隔离和最小授权边界。"
-pubDatetime: 2025-01-01T00:00:00Z
+pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/SANDBOX_EXTENSIONS.md"

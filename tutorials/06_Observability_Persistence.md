@@ -16,6 +16,12 @@
 
 所以先不讲 hook 名称。我们运行一个没有 Middleware 的 Agent，让未授权副作用真正发生，再根据这条失败路径找统一控制点。
 
+### 第一次阅读先走哪条线
+
+本章实验多，但不是十四个并列知识点。第一次阅读先完成第 2–6 节：从权限遗漏出发，依次看工具拦截、Middleware 顺序、模型请求改写和结构化工具错误。然后直接到第 10–11 节，把同一治理链装回 Mini DeerFlow，并判断什么应交给 Graph。
+
+第 7 节是异步取消的可靠性扩展。第 8 节的摘要与审批、第 9 节的 Runnable listener 是接口预览；它们保留完整实验，但不作为进入第 07 章的前置。学完第 09–10 章后，再回看审批实验的持久化与恢复语义。
+
 ## 2. 漏掉一次权限检查，副作用已经发生
 
 下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
@@ -721,9 +727,11 @@ NodeCancelledError: cancellation propagated
 **动手修改**：把捕获范围错误地扩大为 `BaseException`。解释它会怎样破坏取消、系统退出和运行时控制异常。
 <!-- /lesson-lab -->
 
-## 8. 摘要与审批为什么需要完整协议
+## 8. 扩展预览：摘要与审批为什么需要完整协议
 
 有些治理不适合缩成几行回调。摘要会替换后续模型看到的 messages；人机协同（HITL）会暂停 Graph，还需要 checkpointer、`thread_id` 和恢复命令共同工作。
+
+> **首读边界**：这里要观察的是 `SummarizationMiddleware` 与 `HumanInTheLoopMiddleware` 如何进入 Agent 生命周期。暂时不要求解释 checkpoint、节点重入或 `Command(resume=...)`；这些机制会在第 09–10 章从零建立。第一次阅读可以运行实验、确认“发布未发生”，然后继续第 10 节。
 
 <!-- lesson-lab:id=ch06-summarization layer=concept kind=contrast concept=summarization -->
 ### 触发摘要并检查来源标记
@@ -874,7 +882,7 @@ rejection_visible = True
 **动手修改**：把副作用错误地放到 interrupt 之前。解释恢复或重试为什么可能重复发布，以及幂等键应在哪里生成。
 <!-- /lesson-lab -->
 
-## 9. listener 观测 Runnable，不治理 Agent
+## 9. 可选扩展：listener 观测 Runnable，不治理 Agent
 
 Runnable listener 适合做局部计时和日志。它不自动拥有 Agent State、Runtime Context 或工具循环；即使 listener 已经失败，业务函数仍可能返回成功结果。
 
@@ -960,7 +968,7 @@ event_order = ['start:RunnableLambda', 'business']
 **动手修改**：增加 `on_end` 并记录顺序。比较 listener 事件与 `before_model/after_model` 分别属于哪一层生命周期。
 <!-- /lesson-lab -->
 
-## 10. Mini DeerFlow 如何固定治理顺序
+## 10. 回到主线：Mini DeerFlow 如何固定治理顺序
 
 现在才导入项目封装。原生实验已经证明每类 hook 拥有什么控制权；Mini DeerFlow 要固定的是同步/异步对称、类型化 State、安全 Context、稳定错误协议和注册顺序。
 

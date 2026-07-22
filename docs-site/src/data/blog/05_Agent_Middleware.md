@@ -5,6 +5,7 @@ pubDatetime: 2026-03-29T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/05_Agent_Middleware.md"
+notebookFilename: "05_Context_State_Store.ipynb"
 learningOrder: 5
 learningStage: "agent-wrapper"
 learningStageTitle: "让 Agent 成为受控运行时"

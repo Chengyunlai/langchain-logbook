@@ -25,7 +25,7 @@ class ContractParser(HTMLParser):
         self.home_urls: list[str] = []
         self.pagefind_bundle_paths: list[str] = []
         self.primary_start_hrefs: list[str] = []
-        self.notebook_hrefs: list[str] = []
+        self.notebook_downloads: list[tuple[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
@@ -39,7 +39,16 @@ class ContractParser(HTMLParser):
         if tag == "a" and "data-primary-start" in attributes:
             self.primary_start_hrefs.append(attributes.get("href") or "")
         if tag == "a" and "data-course-notebook" in attributes:
-            self.notebook_hrefs.append(attributes.get("href") or "")
+            self.notebook_downloads.append(
+                (attributes.get("href") or "", attributes.get("download") or "")
+            )
+
+
+FRIENDLY_NOTEBOOK_FILENAMES = {
+    "05_agent_middleware": "05_Context_State_Store.ipynb",
+    "06_observability_persistence": "06_Agent_Middleware.ipynb",
+    "09_multi_agent_eval": "09_Checkpoint_Recovery.ipynb",
+}
 
 
 def _normalized_base(base: str) -> str:
@@ -171,17 +180,19 @@ def check_contracts(
                     )
                 )
         if html.parent.parent.name == "posts" and html.parent.name[:2].isdigit():
-            notebook_hrefs = _parse_html(html).notebook_hrefs
-            if len(notebook_hrefs) != 1:
+            notebook_downloads = _parse_html(html).notebook_downloads
+            if len(notebook_downloads) != 1:
                 findings.append(
                     Finding(
                         "course-notebook",
                         html.relative_to(site),
-                        f"expected one Notebook download link, got {notebook_hrefs!r}",
+                        "expected one Notebook download link, got "
+                        f"{notebook_downloads!r}",
                     )
                 )
             else:
-                notebook_url = urlsplit(notebook_hrefs[0]).path
+                notebook_href, download_filename = notebook_downloads[0]
+                notebook_url = urlsplit(notebook_href).path
                 notebook_relative = notebook_url.removeprefix(f"{normalized_base}/")
                 if normalized_base == "/":
                     notebook_relative = notebook_url.removeprefix("/")
@@ -190,7 +201,20 @@ def check_contracts(
                         Finding(
                             "course-notebook",
                             html.relative_to(site),
-                            f"Notebook target does not exist: {notebook_hrefs[0]}",
+                            f"Notebook target does not exist: {notebook_href}",
+                        )
+                    )
+                expected_filename = FRIENDLY_NOTEBOOK_FILENAMES.get(html.parent.name)
+                if expected_filename is not None and (
+                    Path(notebook_url).name != expected_filename
+                    or download_filename != expected_filename
+                ):
+                    findings.append(
+                        Finding(
+                            "course-notebook-name",
+                            html.relative_to(site),
+                            f"expected href and download name {expected_filename!r}, "
+                            f"got href={notebook_href!r}, download={download_filename!r}",
                         )
                     )
     return findings

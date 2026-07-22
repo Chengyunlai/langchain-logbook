@@ -5,6 +5,7 @@ pubDatetime: 2026-03-25T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/09_Multi_Agent_Eval.md"
+notebookFilename: "09_Checkpoint_Recovery.ipynb"
 learningOrder: 9
 learningStage: "langgraph"
 learningStageTitle: "把业务流程写成可恢复的图"

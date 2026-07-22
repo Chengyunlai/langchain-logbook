@@ -1,7 +1,7 @@
 ---
 title: "两轮调用之后，Lead Agent 还能保住哪些事实"
 description: "把 State、Tools、Middleware、Checkpointer 与 Streaming 组合成可恢复的 Lead Agent。"
-pubDatetime: 2025-01-01T00:00:00Z
+pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/LEAD_AGENT_CORE.md"

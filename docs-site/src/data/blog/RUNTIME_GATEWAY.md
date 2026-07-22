@@ -1,7 +1,7 @@
 ---
 title: "浏览器断线以后：为 Mini DeerFlow 补上产品 Runtime"
 description: "区分产品 Thread、Run、Event 与 Graph Checkpoint，并通过 API/SSE 交付长任务。"
-pubDatetime: 2025-01-01T00:00:00Z
+pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/RUNTIME_GATEWAY.md"

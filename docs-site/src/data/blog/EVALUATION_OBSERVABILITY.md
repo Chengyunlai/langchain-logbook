@@ -1,7 +1,7 @@
 ---
 title: "Mini DeerFlow 专题：Run 成功了，报告为什么还不能交付"
 description: "用测试、结果/轨迹/预算评测与 Trace 证明 Agent 的质量和安全边界。"
-pubDatetime: 2025-01-01T00:00:00Z
+pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/EVALUATION_OBSERVABILITY.md"

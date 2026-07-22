@@ -58,11 +58,13 @@
         },
         {
           "sourcePath": "tutorials/05_Agent_Middleware.md",
+          "notebookFilename": "05_Context_State_Store.ipynb",
           "question": "身份、线程事实、长期偏好和 Secret 分别应该由哪种上下文边界拥有？",
           "goal": "按生命周期与控制权区分 Runtime Context、Graph State、Store 和 Secret。"
         },
         {
           "sourcePath": "tutorials/06_Observability_Persistence.md",
+          "notebookFilename": "06_Agent_Middleware.ipynb",
           "question": "权限、PII、调用上限与失败处理应该怎样统一进入 Agent 生命周期？",
           "goal": "用 AgentMiddleware 统一治理 Prompt、模型、工具、PII、调用上限与失败。"
         }
@@ -89,6 +91,7 @@
         },
         {
           "sourcePath": "tutorials/09_Multi_Agent_Eval.md",
+          "notebookFilename": "09_Checkpoint_Recovery.ipynb",
           "question": "Graph 进程退出后，如何依靠 Thread 与持久化快照恢复执行现场？",
           "goal": "用 Checkpointer 持久保存 checkpoint，并让同一 Thread 上的 Graph 能够跨进程恢复。"
         },

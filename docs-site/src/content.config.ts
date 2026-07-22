@@ -20,6 +20,7 @@ const blog = defineCollection({
       canonicalURL: z.string().optional(),
       hideEditPost: z.boolean().optional(),
       sourcePath: z.string().optional(),
+      notebookFilename: z.string().optional(),
       learningOrder: z.number(),
       learningStage: z.string(),
       learningStageTitle: z.string(),

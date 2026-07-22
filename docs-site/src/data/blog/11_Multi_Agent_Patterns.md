@@ -28,6 +28,12 @@ contentType: "main"
 
 随后再比较四种模式由谁持有控制权，并决定并发、超时和大输出该由谁约束。
 
+### 这一章分两遍读
+
+第一遍只回答“谁拥有下一步控制权”。完成第 2–4 节的请求协议、Context 投影与四种模式，再读第 7 节的决策表。到这里，你已经能判断何时用 Router、Handoff、Subgraph 或 Subagent-as-tool。
+
+第二遍再进入第 5–6 节。这里不再增加第五种模式，而是给 Subagent-as-tool 补齐并发、超时、部分失败、输出预算和 Delegation Ledger。它们是构建 Mini DeerFlow 的必备工程边界，但不是理解四种模式的前置。
+
 ```mermaid
 flowchart LR
     U["用户任务"] --> L["Lead Agent\n保留主会话"]
@@ -570,7 +576,7 @@ lead_regains_control = True
 **动手修改**：故意把 `fresh_messages` 提升为全局 list。运行两次后观察串线，并解释为什么“给每个 specialist 一个永久历史”改变了产品语义。
 
 
-## 5. 执行器要替 Lead 守住四条运行边界
+## 5. 第二遍：执行器要替 Lead 守住四条运行边界
 
 协议与输入投影解决“传什么”。执行器还要回答四个运行问题：同时跑多少，最多等多久，失败如何返回，结果可以多大。这些约束不能只写在 Prompt 里。
 
@@ -913,7 +919,7 @@ secret_recorded = False
 **动手修改**：加入 tenant_id 和 error_code，但不要加入完整 exception。写下 retention 和 PII 删除策略应由哪一层负责。
 
 
-## 6. 现在再看 Mini DeerFlow 如何收拢这些边界
+## 6. 第二遍：Mini DeerFlow 如何收拢这些边界
 
 到这里，我们已经从零写过输入投影、控制权模式、Semaphore、部分失败和输出预算。现在再进入 Mini DeerFlow，看它怎样把这些机制收进可复用的工程边界。
 
@@ -1405,7 +1411,7 @@ secret_in_ledger = False
 **动手修改**：把 Ledger 替换为持久化 repository 接口草图。列出 tenant ownership、retention、PII policy 和事务边界，不要直接永久保存所有 Prompt。
 
 
-## 7. 回到控制权，比较四种模式
+## 7. 回到第一遍的主线，比较四种模式
 
 | 模式 | 下一步控制权 | 会话所有者 | 是否天然隔离上下文 | 典型用途 |
 |---|---|---|---:|---|

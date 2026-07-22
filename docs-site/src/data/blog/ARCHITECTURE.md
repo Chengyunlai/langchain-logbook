@@ -1,7 +1,7 @@
 ---
 title: "Mini DeerFlow 是怎样装成一套应用的"
 description: "先看懂 Mini DeerFlow 的组合根、数据边界、能力边界与交付边界。"
-pubDatetime: 2025-01-01T00:00:00Z
+pubDatetime: 2026-07-14T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/ARCHITECTURE.md"
@@ -371,13 +371,14 @@ Manifest 不负责决定工具权限、State schema、Middleware 顺序或恢复
 
 ## 7. 后续专题从哪些接缝继续
 
-| 后续任务 | 在现有骨架中的落点 | 保持不变的接缝 |
+| 后续专题 | 在现有骨架中的落点 | 保持不变的接缝 |
 |---|---|---|
-| 12 Lead Agent 核心闭环（已交付） | `agents/`、`state.py`、`middleware/`、`tools/`、`persistence.py`、`streaming.py` | `app.py` 仍是唯一组合模块；详见 `LEAD_AGENT_CORE.md` |
-| 13 Subagent/Sandbox/MCP/Skills（已交付） | `subagents/`、`sandbox/`、`mcp/`、`skills/`、`tools/workspace.py` | `task` 仍是 Lead Agent 的单一委派工具；Subagent 只继承 `sandbox_id`；详见 `SANDBOX_EXTENSIONS.md` |
-| 14 Runtime/API/SSE（已交付） | `runtime/`、`api/`、`streaming.py`、`persistence.py` | API 只构造 Context/Run，不进入 Harness 内部；详见 `RUNTIME_GATEWAY.md` |
-| 15 测试/评测/观测（已交付） | `tests/`、`evals/`、`observability.py`、`quality/` | 领域评测不依赖平台；在线同步显式调用；详见 `EVALUATION_OBSERVABILITY.md` |
-| 16 综合实战与 DeerFlow 导读（已交付） | `capstone.py`、`CAPSTONE.md`、`DEERFLOW_GUIDE.md` | 只做业务纵切面装配，不另写一套平行 Agent 框架 |
+| Lead Agent 核心闭环 | `agents/`、`state.py`、`middleware/`、`tools/`、`persistence.py`、`streaming.py` | `app.py` 仍是唯一组合模块；详见 `LEAD_AGENT_CORE.md` |
+| Subagent/Sandbox/MCP/Skills | `subagents/`、`sandbox/`、`mcp/`、`skills/`、`tools/workspace.py` | `task` 仍是 Lead Agent 的单一委派工具；Subagent 只继承 `sandbox_id`；详见 `SANDBOX_EXTENSIONS.md` |
+| Runtime/API/SSE | `runtime/`、`api/`、`streaming.py`、`persistence.py` | API 只构造 Context/Run，不进入 Harness 内部；详见 `RUNTIME_GATEWAY.md` |
+| 测试/评测/观测 | `tests/`、`evals/`、`observability.py`、`quality/` | 领域评测不依赖平台；在线同步显式调用；详见 `EVALUATION_OBSERVABILITY.md` |
+| 综合实战 | `capstone.py`、`CAPSTONE.md` | 只做业务纵切面装配，不另写一套平行 Agent 框架 |
+| DeerFlow 导读 | `DEERFLOW_GUIDE.md` 与固定源码证据 | 沿同一组责任边界进入真实项目，不按目录重新学习 |
 
 `LocalSandboxProvider` 实现 user/thread 目录分区、路径与 symlink 护栏、原子写入和审计，并固定拒绝宿主命令。它不提供进程、网络、CPU/内存或恶意多租户隔离。
 
