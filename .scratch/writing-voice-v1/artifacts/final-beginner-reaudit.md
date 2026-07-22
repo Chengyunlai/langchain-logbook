@@ -212,3 +212,86 @@
 6. DeerFlow 导读能沿状态/恢复、工具/沙箱、委派/上下文、运行时/流式协议四条责任链定位故障，并能进一步区分 Trace 与 RunJournal。
 7. 三项明显摩擦均有小范围修复方案，不会改变课程架构或重写章节。
 
+## 九、发布后定点复核（4839e21）
+
+复核日期：2026-07-22
+复核范围：仅检查上一轮报告指出的 11 章 Supervisor、06/11 Notebook 阅读分层、05/06/09 历史文件名说明、06/11 节号链接，以及这些修复是否产生新问题。
+线上证据：使用带 `Cache-Control: no-cache` 和 `?audit=4839e21` 的已部署页面与 Notebook 响应；没有读取本地教程源码。
+
+### 1. Supervisor 定义与延迟回忆题：PASS
+
+页面：<https://chengyunlai.github.io/langchain-logbook/posts/11_multi_agent_patterns/>
+
+线上新增小节 `4.5 Supervisor 是架构角色，不是第五种控制权原语`，正文已经给出三层完整说明：
+
+- Supervisor 是持续保留用户会话、选择 specialist 并汇总结果的中心 Agent，是架构角色，不规定某个特定 LangGraph API。
+- 本章 Lead 通过 `task` tool 委派、收到有界结果后继续综合，因此承担 Supervisor 角色；底层控制权仍属于 Subagent-as-tool，不需要把 Supervisor 画成第五种模式。
+- Router 只在当前步骤选择固定分支，Supervisor 会在多轮工具循环中反复规划；Handoff 则把后续会话交给目标 Agent。
+
+延迟回忆题 `Supervisor 与 Router 的根本差异是什么？` 现在可以仅凭上述正文回答，不再要求读者从外部补定义。原报告 M1 已关闭。
+
+### 2. 06/11 Notebook 首单元阅读分层：PASS
+
+下载响应：
+
+- <https://chengyunlai.github.io/langchain-logbook/notebooks/06_Agent_Middleware.ipynb>
+- <https://chengyunlai.github.io/langchain-logbook/notebooks/11_Multi_Agent_Patterns.ipynb>
+
+两本文件仍是合法 nbformat 4，代码单元数分别为 14 和 24。首个 Markdown 单元现已包含 `## 建议阅读顺序`：
+
+- 06 明确要求第一次先做实验 1–8，再做实验 14，形成“权限遗漏 → 统一治理 → Mini DeerFlow”主线；实验 9–13 被标为异步取消、摘要、HITL 与 listener 扩展，并提示学完 09–10 后回看恢复语义。
+- 11 明确要求第一遍先做实验 1–9，建立请求协议、Context 投影与四种控制权模式，再回正文第 7 节完成决策表；第二遍做实验 10–24，补齐并发、失败、输出预算与 Ledger。
+
+分层与线上正文一致，原报告 M2 已关闭。首单元仍保留“按正文顺序完成每个实验”，但后面的“建议阅读顺序”已明确规定首次选择哪些实验；这里的“顺序”可自然理解为在选定分组内按顺序完成，没有形成新的理解冲突。
+
+### 3. 05/06/09 历史 Markdown 文件名说明：PASS
+
+页面：
+
+- <https://chengyunlai.github.io/langchain-logbook/posts/05_agent_middleware/>
+- <https://chengyunlai.github.io/langchain-logbook/posts/06_observability_persistence/>
+- <https://chengyunlai.github.io/langchain-logbook/posts/09_multi_agent_eval/>
+
+三个页面均在验收命令前解释：仓库内 Markdown 为避免破坏已有链接，暂时保留历史文件名；公开 Notebook 使用与章节主题一致的新文件名；下面的同步命令操作历史 Markdown。线上对应关系为：
+
+| 章节 | 历史 Markdown | 公开 Notebook |
+|---|---|---|
+| 05 | `05_Agent_Middleware.md` | `05_Context_State_Store.ipynb` |
+| 06 | `06_Observability_Persistence.md` | `06_Agent_Middleware.ipynb` |
+| 09 | `09_Multi_Agent_Eval.md` | `09_Checkpoint_Recovery.ipynb` |
+
+读者现在能解释命令与下载名为何不同，不会再把它误判为下载错章。原报告 M3 已关闭。
+
+### 4. 06/11 首读与二读节号链接：PASS
+
+我对线上 HTML 的所有相关 fragment 做了 URL decode，再与同页实际 `id` 集合逐一匹配，结果均为存在。
+
+06 页的阅读路线链接：
+
+- 第 2 节 → `2-漏掉一次权限检查副作用已经发生`
+- 第 6 节 → `6-工具异常如何回到消息协议`
+- 第 10 节 → `10-回到主线mini-deerflow-如何固定治理顺序`
+- 第 11 节 → `11-什么该放-middleware什么该进-graph`
+- 扩展第 7、8、9 节也分别匹配 `7-异步路径不能吞掉取消`、`8-扩展预览摘要与审批为什么需要完整协议`、`9-可选扩展listener-观测-runnable不治理-agent`
+
+11 页的阅读路线链接：
+
+- 第 2 节 → `2-分工已经完成原始材料却全回到了-lead`
+- 第 4 节 → `4-选哪种模式先看谁决定下一步`
+- 第 7 节 → `7-回到第一遍的主线比较四种模式`
+- 第 5 节 → `5-第二遍执行器要替-lead-守住四条运行边界`
+- 第 6 节 → `6-第二遍mini-deerflow-如何收拢这些边界`
+- 第 7 节末返回第二遍的“第 5 节”链接也指向同一个真实 id
+
+没有空 fragment、拼写漂移或指向不存在标题的链接。原报告 P1 已关闭。
+
+### 5. 是否引入新的理解问题：PASS
+
+本轮未发现新理解问题。
+
+- Supervisor 被定义为架构角色，并明确映射到 Lead + Subagent-as-tool，没有破坏原有四种控制权模式的决策表。
+- Notebook 分层只改变首次学习顺序，没有改变实验编号、主线概念或 Mini DeerFlow 迁移边界。
+- 历史文件名说明只是解释兼容关系，没有再创造一套课程术语。
+- 节号链接都落在真实标题上，且 11 章第 7 节能自然返回第二遍第 5 节。
+
+**发布后定点复核总判定：PASS。** 提交 4839e21 已关闭上一轮报告中的三项“明显摩擦”和一项“可选润色”；原报告“可以闭合”的最终判定保持不变，且证据比首次审计更完整。

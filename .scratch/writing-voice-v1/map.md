@@ -44,10 +44,11 @@
 - [第 04–06 章](./issues/03-agent-runtime.md) 已改写：工具循环、事实所有权和 Middleware 从同一研究助手的故障推导。
 - [第 07–11 章](./issues/04-graph-and-subagents.md) 已改写：Graph、恢复、审批与 Subagent 形成连续能力链。
 - [工程专题与 DeerFlow Guide](./issues/05-engineering-book.md) 已改写：同一业务链从组合根延伸到 Sandbox、Runtime、评测、Capstone 和四条固定源码路线。
+- [全书同步、阅读与发布验收](./issues/06-book-wide-qa.md) 已完成：11 本线上 Notebook 共 149 个代码单元全部通过；全新初学者能从基础概念进入 Mini DeerFlow，并沿四条故障责任链阅读 DeerFlow。盲读发现的三项明显摩擦和一项导航问题已修复并通过发布后复核。
 
 ## Frontier
 
-- [全书同步、阅读与发布验收](./issues/06-book-wide-qa.md) — claimed
+- 无。当前改造地图中的六项任务均已解决。
 
 ## Later
 
