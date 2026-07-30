@@ -61,8 +61,6 @@ sequenceDiagram
 ## 2. 一个等待审批的任务堵住了后续请求
 
 `input()` 在 Notebook 里很直观，放进服务端却会占用线程、连接或协程。等待越久，资源问题越明显；一旦部署或崩溃，原调用栈还会消失。
-
-
 ### 一个审批等待让后续任务无法开始
 
 **运行前先预测**：线程池只有一个 worker，第一个任务等待 Event 时，第二个任务能否完成？
@@ -114,9 +112,6 @@ worker_held_while_waiting = True
 **发生了什么**：审批期间没有任何计算，任务却一直占着 worker。增加线程只能晚一点耗尽容量，也不能让这段等待跨部署恢复。
 
 **动手修改**：把线程数改为 2，再提交三个等待任务。说明容量扩张为什么没有改变资源与恢复模型。
-
-
-
 ### interrupt 保存暂停点并立即返回
 
 **运行前先预测**：第一次 invoke 会返回 completed，还是携带 `__interrupt__`？snapshot.next 指向哪个节点？
@@ -171,13 +166,9 @@ resumed_status = completed
 恢复时，包含 interrupt 的节点会从开头重新执行。不要用宽泛的 `try/except` 吞掉 `GraphInterrupt`，resume 也必须使用原来的 thread ID。
 
 **动手修改**：用新 thread ID 调用 resume。记录框架如何拒绝没有匹配 interrupt 的恢复请求。
-
-
 ## 3. “批准”也是一份不可信的外部输入
 
 API 收到的人工决定只是一段外部数据。`approve`、`edit`、`reject` 需要结构化协议；`edit` 还要明确哪些字段可以改。
-
-
 ### 用 Pydantic 验证 approve、edit 与 reject
 
 **运行前先预测**：decision 为 edit 却缺少 edited_payload 时，协议会在 Graph 路由前还是发布后失败？
@@ -231,13 +222,9 @@ invalid_edit_error = value_error
 **发生了什么**：决定在进入业务路由前完成结构与跨字段校验。Schema 合法只说明数据形状正确；Gateway 还要检查 thread owner、审批角色和四眼原则。
 
 **动手修改**：让 edit 只能改 path，不能改 request_id 或 action。明确允许字段，而不是接受任意 dict 后再删除危险 key。
-
-
 ## 4. 暂停前发出的邮件，在恢复时又发了一遍
 
 节点恢复时从头执行。若日志、邮件、扣款或文件写入放在 interrupt 前，它们会再次发生。Checkpoint 只能恢复 Graph，不能回滚外部世界。
-
-
 ### Resume 让外部 append 执行两次
 
 **运行前先预测**：初次暂停前 append 一次，resume 重入节点后列表长度是多少？
@@ -288,9 +275,6 @@ same_request_repeated = True
 **发生了什么**：Graph 正确恢复了 review，外部列表却多写了一次。interrupt 没有出错，真正的问题是副作用发生在暂停之前。
 
 **动手修改**：在 append 前检查 State 中的布尔值。思考 crash 发生在 append 后、State checkpoint 前时，这个布尔值为什么仍不可靠。
-
-
-
 ### 把副作用移到审批后的独立节点
 
 **运行前先预测**：review resume 会重入，但 publish 节点在批准后只执行几次？
@@ -349,13 +333,9 @@ effect_count = 1
 **发生了什么**：review 可以安全重入，publish 只在批准路径上运行。顺序问题解决了，但 publish 自身仍可能因失败恢复或 time travel 被重放，所以还需要幂等键。
 
 **动手修改**：reject 后确认 external_effects 为空。再解释为什么 approve 请求重复提交需要 Gateway 冲突检查。
-
-
 ## 5. 从旧快照重放，报告发布了第二次
 
 第 09 章已经用 time travel 从历史 `next` 建立新分支。若选中的 checkpoint 位于 publish 前，重放自然会再次进入发布节点。
-
-
 ### 从 publish 前 checkpoint 重放出第二条记录
 
 **运行前先预测**：首次 approve 已 append 一次，再从 `next == ('publish',)` 重放，列表长度是多少？
@@ -418,9 +398,6 @@ unique_operation_ids = 1
 **发生了什么**：Checkpoint 准确地重放了节点，外部列表却不认识“同一次发布”。Graph 的 checkpoint 无法自动给外部系统提供 exactly-once 语义。
 
 **动手修改**：每次重试生成新的随机 operation ID。说明这为何彻底破坏去重能力。
-
-
-
 ### 用稳定 operation ID 让重放返回 already_recorded
 
 **运行前先预测**：记录函数第二次收到相同 ID 和 payload 时，应插入新记录还是返回已有结果？
@@ -495,13 +472,9 @@ stored_payload = reports/final.md
 内存字典只够解释语义，不能协调多个进程。后面的工程迁移会改用 SQLite 事务；真正调用远端服务时，还需要 provider idempotency key 或 outbox。
 
 **动手修改**：第二次使用相同 ID 和不同 path。确认 fail closed，并记录冲突需要怎样审计。
-
-
 ## 6. 两级审批为什么不能随意交换顺序
 
 同一节点可以依次请求 risk、compliance 等审批。每次 resume 都从节点开头重入，框架按 interrupt 的调用顺序匹配已经保存的 resume value。
-
-
 ### 两次 Resume 三次进入同一节点
 
 **运行前先预测**：两个审批阶段需要初次运行加几次 resume？review 节点总共进入几次？
@@ -557,13 +530,9 @@ status = completed
 **发生了什么**：第一次 resume 重放第一个决定，并在第二个 interrupt 处暂停；第二次 resume 才完成。若版本升级后改变调用数量或顺序，历史值就可能匹配到错误阶段。
 
 **动手修改**：根据可变 State 交换 stages 顺序，观察为什么恢复协议必须冻结业务 request ID 与调用次序。
-
-
 ## 7. 把可恢复审批接回 Mini DeerFlow
 
 ### 7.1 关闭 SQLite 后恢复审批
-
-
 ### 新 Graph 实例继续同一 interrupt
 
 **运行前先预测**：暂停后关闭 saver，重开时 effect ledger 是否已有记录？批准后有几行？
@@ -630,11 +599,7 @@ effect_count = 1
 ```
 
 **发生了什么**：旧 saver 和 Graph 都已关闭，审批仍能从 SQLite 恢复。原 worker 早已结束，effect intent 只在批准之后写入。
-
-
 ### 7.2 Edit 与 reject 走不同业务终态
-
-
 ### 编辑 payload，拒绝不产生 intent
 
 **运行前先预测**：edit 会保留原 path 还是替换为 reviewed path？reject 的 ledger count 是多少？
@@ -704,11 +669,7 @@ reject_effect_count = 0
 ```
 
 **发生了什么**：`edit` 先更新允许修改的 payload，再记录 intent；`reject` 形成业务终态，但不会触碰 ledger。生产 API 还要保存原提案和编辑审计。
-
-
 ### 7.3 多阶段审批保留稳定顺序
-
-
 ### 从 custom event 证明节点重入
 
 **运行前先预测**：risk 与 compliance 两阶段完成后，review_node_entered 会出现几次？
@@ -765,11 +726,7 @@ final_status = completed
 ```
 
 **发生了什么**：custom event 把节点三次进入变成了可测试事实。复杂并行审批可以按 interrupt ID 匹配 resume value，但业务 request ID 仍要保持稳定。
-
-
 ### 7.4 SQLite ledger 抵抗 time travel 重放
-
-
 ### 同一 effect intent 只保留一行
 
 **运行前先预测**：从 `record_effect_intent` 前重放后，effect_status 与数据库行数分别是什么？
@@ -820,11 +777,7 @@ effect_count = 1
 ```
 
 **发生了什么**：SQLite ledger 在一个事务里比较 operation ID、action 和规范化 payload。它证明本地 intent 可幂等重放，不代表远端投递已经获得 exactly-once。
-
-
 ### 7.5 两个连接争抢同一 operation ID
-
-
 ### 本地事务串行化 check/insert
 
 **运行前先预测**：两个 ledger 同时写同一 key，结果会是两次 recorded，还是 recorded + already_recorded？
@@ -867,11 +820,7 @@ effect_count = 1
 ```
 
 **发生了什么**：`BEGIN IMMEDIATE` 把本地 SQLite 临界区串行化，主键再做最后防线。跨数据库和远端 API 仍需各自的协调协议。
-
-
 ### 7.6 相同 key、不同副作用必须冲突
-
-
 ### 拒绝复用 operation ID
 
 **运行前先预测**：同一个 operation ID 从 publish 改成 delete，ledger 会返回第一次结果还是抛冲突？
@@ -921,8 +870,6 @@ effect_count = 1
 ```
 
 **发生了什么**：幂等键只允许同一业务意图重放。若 action 或 payload 已经变化，继续复用 key 必须 fail closed，并进入审计或人工处理。
-
-
 | 最小概念 | Mini DeerFlow 增加的工程边界 |
 | --- | --- |
 | interrupt + resume | 版本化 ApprovalDecision 与项目 review stages |

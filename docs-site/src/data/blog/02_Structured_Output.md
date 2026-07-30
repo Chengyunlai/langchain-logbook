@@ -56,7 +56,6 @@ flowchart LR
 
 下面的解析器只认“目标：”和“步骤：”。只要模型换一种同义表达，业务含义没变，解析器就会失去目标字段。提示词无法把这种表面格式变成可靠协议。
 
-
 ### 把“目标”改成“研究主题”
 
 **运行前先预测**：模型把“目标”改写成“研究主题”后，依赖固定标签的解析器会怎样？
@@ -100,11 +99,9 @@ KeyError: required label '目标' is missing
 
 **动手修改**：让步骤分隔符从 `→` 变成编号列表。记录需要继续增加多少分支，直到你愿意停止修补字符串格式。
 
-
 ## 3. `max_sources=0` 应该在哪一层失败
 
 先把候选数据交给 Pydantic。它负责类型转换，并在业务代码运行前拒绝缺失字段、错误类型和越界值。它不判断研究事实，也不调用模型。
-
 
 ### 让 ResearchRequest 拒绝越界来源数
 
@@ -154,13 +151,11 @@ error_type = greater_than_equal
 
 **动手修改**：把 `max_sources` 改成无法转换的字符串，再比较错误类型。然后决定严格模式是否更符合你的 API 边界。
 
-
 ## 4. AIMessage 正文为空，为什么仍能得到对象
 
 `model_validate` 只能证明 Schema 自己可用。接下来让 LangChain 返回结构化 tool call，再由 `with_structured_output` 转成同一个 Pydantic 对象。
 
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本返回一个结构化 tool call。它用于验证 `with_structured_output` 的解析协议，不能证明真实模型一定会生成正确字段。
-
 
 ### 从结构化 tool call 解析 ResearchRequest
 
@@ -229,11 +224,9 @@ Provider-native JSON Schema 与 tool strategy 只是两种候选结构生成方�
 
 **动手修改**：让 tool call 缺少 `deliverable`。观察异常发生在结构化解析边界，而不是后续 Graph 节点。
 
-
 ## 5. 默认目标让错误一路跑到发布前
 
 默认值适合真正可选的数据。目标显然不在此列。把缺失目标补成“继续处理”后，Graph 会拿到一个合法对象，却无法知道用户究竟要研究什么。
-
 
 ### 用“继续处理”掩盖缺失目标
 
@@ -270,9 +263,7 @@ steps = ['检索官方资料', '生成报告']
 
 **动手修改**：给 `steps` 也设置一个看似合理的默认步骤。列出后续系统会在哪些位置误以为计划已经确认。
 
-
 计划字段只保留下游确实需要的事实。这里先把 `depends_on` 当作数据校验；第 07–08 章再把它变成 Graph 的边与并行任务。
-
 
 ### 在计划执行前拒绝未知依赖
 
@@ -342,11 +333,9 @@ dependency_error = value_error
 
 **动手修改**：加入重复步骤 ID。先预测当前 validator 是否会发现，再补充唯一性规则，并说明循环依赖还需要什么检查。
 
-
 ## 6. `path: str` 接受了 `../secret.txt`
 
 Artifact path 会从模型流经工具和 Graph，最终到达 Sandbox。若 Schema 只写 `path: str`，`../secret.txt` 在 Python 类型上完全合法。
-
 
 ### 观察父目录路径通过类型校验
 
@@ -381,8 +370,6 @@ contains_parent_segment = True
 **发生了什么**：`str` 只约束 Python 类型，没有表达“工作区内相对路径”。文件工具若直接使用这个值，就可能越过预期目录。
 
 **动手修改**：再尝试绝对路径和空路径。整理 Artifact path 的最小确定性规则，但不要声称它已经解决符号链接和容器隔离。
-
-
 
 ### 在字段边界拒绝绝对路径和父目录
 
@@ -437,11 +424,9 @@ error_type = value_error
 
 **动手修改**：测试 `reports//answer.md`、`.` 和 Windows 风格路径。决定是否规范化，并说明规范化必须发生在校验前还是之后。
 
-
 ## 7. 成功、拒答和字段错误需要稳定外形
 
 结构化输出也会失败。成功返回对象、拒答返回 `None`、字段错误直接抛异常时，调用方必须同时猜返回值形状和控制流。
-
 
 ### 让调用方同时处理对象、None 和异常
 
@@ -491,8 +476,6 @@ caller_protocols = 3
 **发生了什么**：三类结果走了对象、`None` 和异常三条通道。Graph、API 与评测器各写一套分支后，很快会产生漂移。
 
 **动手修改**：再加入超时字符串 `"timeout"`。统计调用方需要增加多少类型判断，并思考哪些异常仍应上抛。
-
-
 
 ### 用失败对象保留可穷尽的分支
 
@@ -550,11 +533,9 @@ validation = {'kind': 'validation_error', 'message': '请求字段无效', 'fiel
 
 **动手修改**：加入 `timeout` kind，并决定 retryable 是否属于失败对象。写出 API、Graph 和评测器各自消费哪些字段。
 
-
 ## 8. 三个 Schema 分别属于谁
 
 前面的失败已经足够区分三种结构化边界。它们都能用 Pydantic 表达，但各自的所有者和失败时机不同。
-
 
 ### 按生命周期放置研究计划、query 和报告元数据
 
@@ -599,11 +580,9 @@ agent_response: ReportMetadata -> 完整工具循环结束时
 
 **动手修改**：为“用户上传文件路径”选择边界。说明它为什么还需要 Sandbox 规则，而不能只依赖工具 args Schema。
 
-
 ## 9. 把验证过的对象放进 Mini DeerFlow
 
 请求、计划、Artifact 和失败对象都已在概念实验中经历过失败。现在再导入 Mini DeerFlow，检查项目类型是否保留这些边界，并补上版本、复用与持久化入口。
-
 
 ### 检查项目对象的序列化与路径拒绝
 
@@ -666,7 +645,6 @@ failure_type = True
 **发生了什么**：Mini DeerFlow 把请求、计划、Artifact 和失败类型作为公共协议复用。教程、Graph、API 与测试不再各自维护一份近似 Schema。
 
 这里不提前解释 `SubagentResult`。第 11 章会先让委派真实失败，再把同一边界迁移到项目的 Subagent 输出协议。
-
 
 | 概念实验 | Mini DeerFlow 增加的工程边界 |
 |---|---|

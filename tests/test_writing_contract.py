@@ -25,6 +25,21 @@ def run_writing_checker(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_plain_writing_checker(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(WRITING_CHECKER),
+            "--root",
+            str(root),
+            "chapter.md",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_prose_paragraphs_skip_non_prose_blocks(tmp_path: Path) -> None:
     document = tmp_path / "chapter.md"
     document.write_text(
@@ -59,6 +74,34 @@ def test_beginner_contract_rejects_missing_navigation_fields(tmp_path: Path) -> 
 
     assert result.returncode == 1
     assert "missing beginner navigation field: 当前系统" in result.stdout
+
+
+def test_beginner_contract_rejects_internal_html_comments(tmp_path: Path) -> None:
+    document = tmp_path / "chapter.md"
+    document.write_text(
+        "# 第 02 章：示例\n\n"
+        "<!-- internal-course-metadata -->\n\n",
+        encoding="utf-8",
+    )
+
+    result = run_writing_checker(tmp_path)
+
+    assert result.returncode == 1
+    assert "must not contain internal HTML comments" in result.stdout
+
+
+def test_plain_article_rejects_internal_html_comments(tmp_path: Path) -> None:
+    document = tmp_path / "chapter.md"
+    document.write_text(
+        "# 普通文章\n\n"
+        "<!-- notebook-reading-path:start -->\n\n",
+        encoding="utf-8",
+    )
+
+    result = run_plain_writing_checker(tmp_path)
+
+    assert result.returncode == 1
+    assert "must not contain internal HTML comments" in result.stdout
 
 
 def test_beginner_contract_rejects_unexplained_fake_model(tmp_path: Path) -> None:

@@ -116,8 +116,6 @@ same_checkpointer = True
 3. 在启动阶段拒绝重复工具名；
 4. 按固定顺序构造 Middleware；
 5. 把 model、tools、middleware、Store 和 Checkpointer交给 `create_lead_agent()`。
-
-<!-- diagram:id=mini-deerflow-composition-root -->
 ```mermaid
 flowchart LR
     CFG["ApplicationSettings<br/>非敏感配置与预算"] --> ROOT["app.py<br/>Composition Root"]
@@ -153,8 +151,6 @@ flowchart LR
 ## 2. HTTP 可以依赖 Harness，Harness 不能反过来
 
 课程把系统分成三层。这里的“层”表示依赖方向，不表示一定要部署为三个进程。
-
-<!-- diagram:id=mini-deerflow-layer-boundary -->
 ```mermaid
 flowchart TB
     CLIENT["CLI / Web / SDK"] --> API["api/<br/>FastAPI / SSE adapter"]
@@ -242,8 +238,6 @@ mini_deerflow/
 ## 4. 一条消息如何穿过整套应用
 
 > **离线运行说明**：下图中的 Offline Fake Model 不会访问外部供应商，只按脚本返回 tool call 与最终消息。工具执行、Middleware、State Reducer、Checkpointer 和 compiled Graph 仍走真实路径。
-
-<!-- diagram:id=mini-deerflow-minimal-run-sequence -->
 ```mermaid
 sequenceDiagram
     actor User as 学习者

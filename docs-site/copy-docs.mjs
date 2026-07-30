@@ -127,11 +127,8 @@ function rewriteLinks(content) {
   );
 }
 
-function stripInternalLessonMarkers(content) {
-  return content
-    .replace(/^> \[!NOTE\]$/gm, "> **本章导航**")
-    .replace(/^[ \t]*<!-- lesson-lab:[^\r\n]*-->[ \t]*$/gm, "")
-    .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "");
+function normalizeLessonMarkdown(content) {
+  return content.replace(/^> \[!NOTE\]$/gm, "> **本章导航**");
 }
 
 function processFile(srcPath, destFilename) {
@@ -144,7 +141,7 @@ function processFile(srcPath, destFilename) {
     title = h1Match[1].trim();
     content = content.replace(/^#\s+.+$/m, "").trim();
   }
-  content = rewriteLinks(stripInternalLessonMarkers(content));
+  content = rewriteLinks(normalizeLessonMarkdown(content));
   const pubDate = getPubDate(name);
   const sourcePath = path.relative(SRC_DIR, srcPath).split(path.sep).join("/");
   const curriculumEntry = CURRICULUM_ENTRIES.get(sourcePath);

@@ -18,7 +18,8 @@
 - 不重编号第 02～11 章，不修改既有 URL；用教学分层降低首读负担。
 - Fake Model 首次出现时必须明确：它不调用外部模型，只用于稳定验证协议与状态。
 - [第一批初学者解释层调整](./issues/01-beginner-orientation-layer.md)已完成：首页、第 00 章、第 01 章分层、全书导航卡、Fake Model 说明与自动契约均通过完整门禁和双断点浏览器复核。
-- [移除学习正文中的内部标记](./issues/02-remove-reader-visible-markers.md)已完成：用户指出的四类 HTML 注释已从课程源文件移除，Notebook 同步与自动检查不再依赖这些注释。
+- [移除学习正文中的内部标记](./issues/02-remove-reader-visible-markers.md)已完成：全部读者文档与发布 HTML 不再包含内部注释，实验元数据迁移到独立质量清单，Notebook 同步与自动检查不再依赖正文标记。
+- [按概念依赖重写第 01 章工程深入](./issues/03-rewrite-chapter-one-concept-flow.md)已完成：Runnable、Tool、Agent loop、streaming 和项目接缝统一按“是什么、为什么、怎么做、发生什么、责任边界”展开，并通过真实读者逐段验收。
 
 ## 当前前沿
 

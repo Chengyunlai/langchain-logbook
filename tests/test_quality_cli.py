@@ -114,26 +114,17 @@ class TutorialCheckerCliTests(unittest.TestCase):
             },
         ]
 
-        def marker(lab: dict[str, str | None]) -> str:
-            pair = f" pair={lab['pair']}" if lab["pair"] else ""
-            return (
-                f"<!-- lesson-lab:id={lab['id']} layer={lab['layer']} "
-                f"kind={lab['kind']} concept={lab['concept']}{pair} -->"
-            )
-
         if markdown is None:
             rendered_labs = []
             for lab in labs:
                 rendered_labs.append(
-                    f"{marker(lab)}\n"
                     f"### {lab['title']}\n\n"
                     "**运行前先预测**：请先写下预测。\n\n"
                     f"```python sync={lab['id']}\n{lab['code']}\n```\n\n"
                     "**观察结果**：\n\n"
                     f"```text output={lab['id']}\n{lab['output']}```\n\n"
                     "**发生了什么**：输出展示了当前边界。\n\n"
-                    "**动手修改**：改变一个值后重跑。\n"
-                    "<!-- /lesson-lab -->"
+                    "**动手修改**：改变一个值后重跑。"
                 )
             markdown = (
                 "# 第 01 章：Demo\n\n"
@@ -142,6 +133,28 @@ class TutorialCheckerCliTests(unittest.TestCase):
             )
 
         lab_by_id = {str(lab["id"]): lab for lab in labs}
+        quality = root / "quality"
+        quality.mkdir(exist_ok=True)
+        (quality / "lesson-labs.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "chapters": {
+                        "01_Demo": {
+                            str(lab["id"]): {
+                                "layer": lab["layer"],
+                                "kind": lab["kind"],
+                                "concept": lab["concept"],
+                                "pair": lab["pair"],
+                            }
+                            for lab in labs
+                        }
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
         ordered = notebook_lab_order or [str(lab["id"]) for lab in labs]
         outputs = notebook_outputs or {}
         cells: list[dict[str, object]] = [
@@ -297,12 +310,18 @@ class TutorialCheckerCliTests(unittest.TestCase):
             root = Path(directory)
             self.write_v2_pair(root)
             markdown_path = root / "tutorials" / "01_Demo.md"
+            metadata_path = root / "quality" / "lesson-labs.json"
             markdown = markdown_path.read_text(encoding="utf-8")
-            markdown = markdown.replace(" pair=merge-results", "", 1)
             markdown = markdown.replace(
                 "print('conflict')", "import mini_deerflow\nprint('conflict')"
             )
             markdown_path.write_text(markdown, encoding="utf-8")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["chapters"]["01_Demo"]["demo-failure"]["pair"] = None
+            metadata_path.write_text(
+                json.dumps(metadata, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
             result = self.run_checker(root)
 

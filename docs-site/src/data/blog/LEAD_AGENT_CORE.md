@@ -208,8 +208,6 @@ assert "tools(tools)" in diagram
 ## 2. 恢复发生在模型调用之前
 
 一次运行不是“输入进模型、文本出来”。应用身份、Graph State、Middleware hook、工具 Command 和 checkpoint 会共同推进状态转移。
-
-<!-- diagram:id=lead-agent-core-runtime -->
 ```mermaid
 sequenceDiagram
     actor U as User
@@ -406,8 +404,6 @@ reports/core-agent.md, application/json
 旧路径已出现 → 在原位置用新 Artifact 替换
 不同路径 → 保留原稳定顺序
 ```
-
-<!-- diagram:id=artifact-reducer-conflict -->
 ```mermaid
 flowchart LR
     L["current artifacts<br/>a.md:text/markdown<br/>b.json:application/json"] --> R["merge_artifacts"]
@@ -519,8 +515,6 @@ diagram_has_model_and_tools = True
 `app.stream()` 固定请求 `stream_mode=["updates"]` 与 `version="v2"`，再把 `{type, ns, data}` 转为 `StreamEvent`。转换同时把 Message、Pydantic model 和 dataclass 严格投影为 JSON 类型。
 
 固定 `updates` 是本阶段的有意边界，用来展示 Middleware、model 和 tools 的 State update。Runtime/Gateway 专题会在同一 normalizer 上加入四种 mode、取消、重连与 SSE wire protocol。
-
-<!-- diagram:id=lead-agent-stable-stream -->
 ```mermaid
 flowchart LR
     G["LangGraph stream<br/>version=v2 / updates"] --> P["StreamPart<br/>type + ns + data"]

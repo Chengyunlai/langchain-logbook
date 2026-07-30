@@ -57,8 +57,6 @@ flowchart LR
 ## 2. 返回值还在，执行现场却找不到了
 
 没有 Checkpointer，`invoke` 也会正常返回。这个顺利的结果很有迷惑性：`result` 只属于刚才那次函数调用，新建的 Graph 对上一轮一无所知。
-
-
 ### 只有返回值，get_state 无处查询
 
 **运行前先预测**：无 checkpointer 的 Graph 完成后，用 thread 配置调用 `get_state` 会得到刚才的结果吗？
@@ -117,9 +115,6 @@ error_type = ValueError
 **发生了什么**：`result` 是当前调用的返回值。要恢复执行，还需要 next、tasks、pending writes 和 checkpoint lineage。没有 checkpointer，Graph 就没有这些现场信息。
 
 **动手修改**：把 result 写成 JSON 文件。列出它仍缺少的 `next`、tasks、lineage 与 pending writes，说明“保存最终 State”为什么不等于 checkpoint 协议。
-
-
-
 ### 编译时注入 InMemorySaver
 
 **运行前先预测**：同一个 Graph 和 saver 内，用 thread ID 查询时，`values` 与 `next` 分别是什么？
@@ -171,13 +166,9 @@ completed = True
 `InMemorySaver` 适合语义实验和测试，但数据仍属于当前 saver 对象。它证明 checkpoint 机制，不证明进程重启。
 
 **动手修改**：给图增加 review 节点，比较 history 数量与每个 snapshot 的 next。不要依赖固定下标查找某一步。
-
-
 ## 3. Checkpointer 也需要一张取件单
 
 同一个 Checkpointer 会保存许多任务。每次调用都要给出 `thread_id`，否则它不知道该把新快照接到哪条链上。这里先把它看作取件地址，不要把它当成登录用户身份。
-
-
 ### 配置 saver 后省略 thread_id
 
 **运行前先预测**：框架会自动生成一个不可见 ID，还是 fail closed？
@@ -223,9 +214,6 @@ anonymous_checkpoint_created = False
 **发生了什么**：框架选择了拒绝调用。若每次偷偷生成一个随机 ID，数据虽然写进后端，应用却再也找不到它。恢复地址必须由产品层创建、返回并持有。
 
 **动手修改**：在应用层生成 UUID 并返回客户端。再列出 Gateway 必须保存的 owner 信息，说明 thread ID 为何不能充当认证凭证。
-
-
-
 ### 同一个 saver 隔离两个 thread
 
 **运行前先预测**：thread-a 与 thread-b 使用同一 compiled Graph 时，当前 State 会互相覆盖吗？
@@ -267,13 +255,9 @@ same_user_required = False
 **发生了什么**：同一 saver 按 thread ID 隔离 checkpoint 链。它只认识地址，不认识地址的主人。一个用户可以有多个 thread，用户之间的访问控制仍由 Gateway 负责。
 
 **动手修改**：交换两个 config 查询结果，模拟 IDOR 越权。写出 Gateway 在调用 `get_state` 前必须执行的 owner 检查。
-
-
 ## 4. 换一个 saver，刚才的 thread 就空了
 
 只重建 compiled Graph 不算重启实验。若它们共用同一个 saver 对象，数据仍躺在旧内存里。下面连 saver 一起更换。
-
-
 ### 换一个 InMemorySaver 后 thread 变空
 
 **运行前先预测**：新 saver 使用同一个 thread ID，是否能读取旧 saver 的 State？
@@ -319,9 +303,6 @@ survived_new_saver = False
 **发生了什么**：相同的 thread ID 只提供地址，不能凭空生成内容。`InMemorySaver` 的数据跟着 Python 对象一起消失，适合测试语义，不适合证明跨进程恢复。
 
 **动手修改**：复用旧 saver 但重建 Graph，观察数据仍存在。准确说明你验证的是“Graph 重编译”，不是“持久后端重启”。
-
-
-
 ### 关闭 SQLite 连接，再创建 saver 与 Graph
 
 **运行前先预测**：旧连接关闭后，新 `SqliteSaver` 能否通过同一 thread ID 找回 State？
@@ -376,8 +357,6 @@ survived_reopen = True
 这仍不是生产证明。多 worker、连接池、备份、加密、Schema migration 和故障切换，都需要各自的实验与运维约束。
 
 **动手修改**：使用另一个 SQLite 文件路径重启。解释“thread ID 相同”为什么不能跨错误数据库恢复。
-
-
 ## 5. 一份快照还要回答“接下来做什么”
 
 `get_state(config)` 返回当前 `StateSnapshot`。先看字段，再看它们如何帮助恢复：
@@ -387,8 +366,6 @@ survived_reopen = True
 - `tasks`：待执行 task、错误和 interrupts；
 - `config`：thread、checkpoint 与 namespace 标识；
 - `metadata`：step、source、writes 等执行信息。
-
-
 ### 查看完成态快照与 checkpoint ID
 
 **运行前先预测**：一次两节点 Graph 完成后，当前快照的 next 是最后节点，还是空元组？
@@ -436,13 +413,9 @@ checkpoint_id_present = True
 **发生了什么**：完成态没有待执行节点或 task，但仍有 checkpoint ID 与完整 values。暂停或失败快照会让 next/tasks 带上恢复信息。
 
 **动手修改**：让 finalize 抛出异常，检查 history 中最近成功快照的 next 与 tasks。不要把异常输出留在正式 Notebook。
-
-
 ## 6. 要重放哪一步，先沿 history 找到它
 
 `get_state_history` 通常按新到旧返回快照。不要记“倒数第三个是 finalize 前”，因为增加节点或并行分支就会改变下标。应按 `next`、metadata 或业务状态寻找目标。
-
-
 ### 用 next 查找 finalize 前的快照
 
 **运行前先预测**：history 中每个 snapshot 是否拥有唯一 checkpoint ID？能否找到 `next == ('finalize',)`？
@@ -495,9 +468,6 @@ before_finalize_next = ('finalize',)
 **发生了什么**：每个 checkpoint config 都指向一处历史位置。先用业务条件找到它，后面的 replay、fork 或人工修正才不会依赖脆弱下标。
 
 **动手修改**：插入 review 节点。继续用 `next` 查找，而不是修改硬编码 history 下标。
-
-
-
 ### 从 finalize 前重放纯 State 节点
 
 **运行前先预测**：以历史 snapshot.config 调用 `invoke(None)`，会修改旧 checkpoint，还是形成新的 lineage？
@@ -552,13 +522,9 @@ new_checkpoint_created = True
 本例 finalize 只写 State，所以重放安全。外部副作用需要幂等键、outbox 或事务边界，第 10 章会用重复发布实验继续推导。
 
 **动手修改**：在 finalize 中向外部 list append。重放后观察重复项，但不要把这种副作用实现带进生产节点。
-
-
 ## 7. 新代码启动了，旧 thread 却在恢复时崩溃
 
 Checkpoint 会长期保存旧版 State。字段新增、改名，或者 `draft` 从字符串升级为领域对象后，新节点若直接假定新版类型，错误要等旧 thread 恢复时才出现。
-
-
 ### 新节点把旧字符串当成 DraftDocument
 
 **运行前先预测**：旧图保存 `draft: str`，新节点直接访问 `.content` 时，错误会在编译期还是恢复期出现？
@@ -621,9 +587,6 @@ error_type = AttributeError
 **发生了什么**：`TypedDict` 只帮助静态检查，不会改写数据库里的历史值。新图可以顺利编译，旧 thread 进入新节点时才暴露不兼容。
 
 **动手修改**：只给新版类型增加默认值。解释为什么默认值无法改写 checkpoint 中已经存在的旧字符串。
-
-
-
 ### 先按 schema_version 升级，再运行新版节点
 
 **运行前先预测**：migration 节点应调用模型重写旧内容，还是做确定性类型转换？
@@ -702,8 +665,6 @@ migration_status = migrated
 如果旧图把整个状态存为一个 root channel，而新图拆成多个 channel，普通节点迁移可能不够，需要离线 checkpoint ETL。
 
 **动手修改**：再次调用新图，确保 migration_status 变为 unchanged。设计迁移幂等性与回滚窗口。
-
-
 ## 8. 四类数据不能塞进同一张“memory”表
 
 | 组件 | 典型主键 | 保存什么 | 不保存什么 |
@@ -726,8 +687,6 @@ DeerFlow 同时使用这些组件，因为它们的生命周期、授权和查�
 ## 10. 把同一套恢复协议放回 Mini DeerFlow
 
 ### 10.1 项目 StateSnapshot 与 history
-
-
 ### 按业务状态查找研究图历史
 
 **运行前先预测**：动态 Send 和 review 循环会产生多个快照；当前 snapshot 是否仍能用相同字段读取？
@@ -763,11 +722,7 @@ before_finalize_next = ('finalize',)
 ```
 
 **发生了什么**：节点更多、还有动态 Send 和 review 循环，读取协议仍然是 `values`、`next`、`tasks` 和 config。测试按业务状态找 checkpoint，不猜并行调度产生的历史下标。
-
-
 ### 10.2 项目 Graph 跨 SQLite saver 重建
-
-
 ### 关闭项目 Graph 的 checkpointer 后恢复
 
 **运行前先预测**：新建 `create_research_workflow` 时，只要使用同一 SQLite 与 thread，能否读取完成态？
@@ -811,11 +766,7 @@ recovered_sections = ['checkpoint', 'thread']
 ```
 
 **发生了什么**：研究图工厂只接收 checkpointer，不私自打开连接。应用组合根负责 saver 的创建、关闭和重建，Gateway worker 与测试因此可以复用同一装配接口。
-
-
 ### 10.3 用旧 SQLite checkpoint 验证项目迁移
-
-
 ### 把 v1 字符串 draft 升级为 DraftDocument
 
 **运行前先预测**：迁移后原文会被模型改写，还是原样进入结构化 content？
@@ -872,8 +823,6 @@ migration_status = migrated
 ```
 
 **发生了什么**：migration graph 保留 channel 名和原文，只升级类型与版本。生产迁移还要记录兼容窗口、批次、dry-run、回滚路径和对应的旧 Graph 版本。
-
-
 | 最小概念 | Mini DeerFlow 增加的工程边界 |
 | --- | --- |
 | Checkpointer + thread | 可注入研究图工厂与产品 thread 接缝 |

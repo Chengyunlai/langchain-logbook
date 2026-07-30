@@ -119,8 +119,6 @@ rg -n 'RunManager|RunJournal|StreamBridge|Last-Event-ID' \
 要判断它会不会越权，不能只搜索 `role`。你得先找到 Lead Agent 在哪里组装，再确认 State、Runtime Context 和 Middleware 分别接收什么。最后还要检查工具集合如何被策略过滤。
 
 ### 3.1 从注册入口找到组合根
-
-<!-- diagram:id=deerflow-lead-source-navigation -->
 ```mermaid
 flowchart LR
     M["backend/langgraph.json"] --> E["deerflow.agents:make_lead_agent"]
@@ -187,8 +185,6 @@ Worker 在调用 graph 前构建 runtime context，并放入 LangGraph `Runtime`
 5. 用户体验与终止：progress、title、todo、terminal response、safety finish reason。
 
 分类只是阅读工具。真实顺序必须回到 `build_middlewares(...)` 验证，因为身份注入、策略过滤和工具执行的先后会直接改变授权结果。
-
-<!-- diagram:id=deerflow-middleware-lifecycle -->
 ```mermaid
 flowchart LR
     IN["Request + server context"] --> SAN["输入/身份治理"]
@@ -230,8 +226,6 @@ flowchart LR
 [`task_tool.py`](https://github.com/bytedance/deer-flow/blob/4af617835805dd7cd78162ebed02fd6b782ea8bf/backend/packages/harness/deerflow/tools/builtins/task_tool.py#L229) 先解析 subagent 配置，再从父 runtime 提取必要数据，创建 `SubagentExecutor` 异步执行。
 
 它还会关闭 Subagent 的 task 工具，避免临时 Agent 继续无界委派。
-
-<!-- diagram:id=deerflow-subagent-call -->
 ```mermaid
 sequenceDiagram
     participant L as Lead Agent
@@ -334,8 +328,6 @@ Mini DeerFlow 综合实战用 `forbidden_terms=("specialist 未完成",)` 防止
 - existing stream endpoint：取消后排空剩余事件或重连。
 
 Router 先做权限与资源投影。`services.py` 解析输入和 `Command(resume=...)`；RunManager 管状态、任务和 owner/lease；worker 才真正调用 Agent graph。
-
-<!-- diagram:id=deerflow-gateway-run-sequence -->
 ```mermaid
 sequenceDiagram
     actor C as Client
@@ -393,8 +385,6 @@ SSE subscriber 消失，不会自动取消 RunManager 拥有的后台任务。�
 ### 6.1 先找到唯一的 trace root
 
 当前 commit 在组合根调用 `build_tracing_callbacks()`，把 callback 添加到 graph invocation config；同时 `create_chat_model(..., attach_tracing=False)`。Subagent executor 也为内部 model 传 `attach_tracing=False`。
-
-<!-- diagram:id=deerflow-trace-root -->
 ```mermaid
 sequenceDiagram
     participant G as Graph invocation root
@@ -420,8 +410,6 @@ sequenceDiagram
 这与 Mini DeerFlow 的 `LangSmithObservability` 原则相同：instrumentation owner 只能有一个。DeerFlow 还要处理多 tracing backend、动态配置和 Gateway 执行入口。
 
 ### 6.2 一次执行为何要分成两条记录链
-
-<!-- diagram:id=deerflow-observability-split -->
 ```mermaid
 flowchart LR
     EXEC["一次 Agent 执行"] --> TC["Tracing callbacks"]
@@ -458,8 +446,6 @@ EventStore 失败则不同。只留下 trace，客户端无法可靠查询或重
 ## 7. 四条路线共同指向三层系统
 
 四个故障分别落在不同模块，但它们共享同一依赖方向：客户端进入 Gateway，Gateway 调用 Harness Runtime，worker 再运行 Agent Harness 与 LangGraph。
-
-<!-- diagram:id=deerflow-three-layers -->
 ```mermaid
 flowchart TB
     C["Client / Web / SDK"] --> GW["Gateway 产品运行时<br/>Auth / Thread / Run / SSE"]

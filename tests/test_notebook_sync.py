@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import nbformat
+
 from scripts.sync_lesson_notebooks import (
     build_notebook,
     execute_in_fresh_namespace,
@@ -16,6 +18,36 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class NotebookSyncTests(unittest.TestCase):
+    def test_all_course_notebooks_keep_teaching_cells_in_sync(self) -> None:
+        for markdown_path in sorted(
+            (PROJECT_ROOT / "tutorials").glob("[0-9][0-9]_*.md")
+        ):
+            generated = build_notebook(markdown_path)
+            existing = nbformat.read(markdown_path.with_suffix(".ipynb"), as_version=4)
+
+            self.assertEqual(len(generated.cells), len(existing.cells), markdown_path.name)
+            for generated_cell, existing_cell in zip(
+                generated.cells,
+                existing.cells,
+                strict=True,
+            ):
+                self.assertEqual(
+                    generated_cell.cell_type,
+                    existing_cell.cell_type,
+                    markdown_path.name,
+                )
+                self.assertEqual(
+                    generated_cell.source,
+                    existing_cell.source,
+                    markdown_path.name,
+                )
+                for key in ("langchain_logbook_sync", "langchain_logbook_lab"):
+                    self.assertEqual(
+                        generated_cell.metadata.get(key),
+                        existing_cell.metadata.get(key),
+                        f"{markdown_path.name}:{key}",
+                    )
+
     def test_chapter_one_notebook_explains_fake_model_before_first_code(self) -> None:
         notebook = build_notebook(PROJECT_ROOT / "tutorials/01_Getting_Started.md")
 
@@ -30,8 +62,6 @@ class NotebookSyncTests(unittest.TestCase):
     def test_v2_labs_are_parsed_with_teaching_prose(self) -> None:
         markdown = (
             "# 第 07 章：Demo\n\n"
-            "<!-- lesson-lab:id=demo-failure layer=concept kind=failure "
-            "concept=merge pair=merge-results -->\n"
             "### 让并行写入发生冲突\n\n"
             "**运行前先预测**：会覆盖还是报错？\n\n"
             "```python sync=demo-failure\nprint('conflict')\n```\n\n"
@@ -39,7 +69,6 @@ class NotebookSyncTests(unittest.TestCase):
             "```text output=demo-failure\nconflict\n```\n\n"
             "**发生了什么**：两个写入没有合并规则。\n\n"
             "**动手修改**：增加 reducer 后再运行。\n"
-            "<!-- /lesson-lab -->\n"
         )
 
         labs = extract_lesson_labs(markdown)
@@ -57,26 +86,20 @@ class NotebookSyncTests(unittest.TestCase):
             markdown.write_text(
                 "# 第 07 章：Demo\n\n"
                 "**Notebook 阅读顺序**：第一次先完成实验 1，再进入实验 2。\n\n"
-                "<!-- lesson-lab:id=demo-failure layer=concept kind=failure "
-                "concept=merge pair=merge-results -->\n"
                 "### 先看失败\n\n"
                 "**运行前先预测**：先输出哪一行？\n\n"
                 "```python sync=demo-failure\nprint('failure')\n```\n\n"
                 "**观察结果**：\n\n"
                 "```text output=demo-failure\nfailure\n```\n\n"
                 "**发生了什么**：失败证据先出现。\n\n"
-                "**动手修改**：修改输出并比较。\n"
-                "<!-- /lesson-lab -->\n\n"
-                "<!-- lesson-lab:id=demo-repair layer=concept kind=repair "
-                "concept=merge pair=merge-results -->\n"
+                "**动手修改**：修改输出并比较。\n\n"
                 "### 再做修复\n\n"
                 "**运行前先预测**：修复后输出什么？\n\n"
                 "```python sync=demo-repair\nprint('repair')\n```\n\n"
                 "**观察结果**：\n\n"
                 "```text output=demo-repair\nrepair\n```\n\n"
                 "**发生了什么**：修复紧邻失败。\n\n"
-                "**动手修改**：交换两个值再观察。\n"
-                "<!-- /lesson-lab -->\n",
+                "**动手修改**：交换两个值再观察。\n",
                 encoding="utf-8",
             )
 
@@ -173,8 +196,6 @@ class NotebookSyncTests(unittest.TestCase):
             markdown = Path(directory, "06_Demo.md")
             markdown.write_text(
                 "# 第 06 章：Demo\n\n"
-                "<!-- lesson-lab:id=demo-await layer=concept kind=repair "
-                "concept=async-execution -->\n"
                 "### 在 Notebook 中等待异步调用\n\n"
                 "**运行前先预测**：顶层 await 会返回什么？\n\n"
                 "```python sync=demo-await\n"
@@ -188,8 +209,7 @@ class NotebookSyncTests(unittest.TestCase):
                 "**观察结果**：\n\n"
                 "```text output=demo-await\n42\n```\n\n"
                 "**发生了什么**：Notebook 内核直接等待协程。\n\n"
-                "**动手修改**：修改返回值并重跑。\n"
-                "<!-- /lesson-lab -->\n",
+                "**动手修改**：修改返回值并重跑。\n",
                 encoding="utf-8",
             )
             notebook = build_notebook(markdown)

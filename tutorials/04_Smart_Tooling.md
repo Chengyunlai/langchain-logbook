@@ -47,8 +47,6 @@ sequenceDiagram
 ## 2. `limit=100` 为什么能穿过工具边界
 
 先别急着绑定模型。Python 签名只说明 `limit` 是整数，它不知道业务最多允许三条。工具若接受 100，一次调用就会放大延迟、成本和 Context 污染。
-
-<!-- lesson-lab:id=ch04-unbounded-tool-args-failure layer=concept kind=failure concept=tool-schema pair=bounded-tool-args -->
 ### 让模型可见 Schema 接受任意正负整数
 
 **运行前先预测**：只声明 `limit: int` 时，生成的 JSON Schema 会包含 maximum 吗？传入 100 会不会被拒绝？
@@ -88,9 +86,6 @@ limit_100_result = query=checkpoint;limit=100
 我不会把这条上限只写在 docstring 里。Docstring 是给模型的提示，参数边界必须进入 Schema，并在工具执行前确定性拒绝非法值。
 
 **动手修改**：在 docstring 中写“最多 3 条”，但保持 Schema 不变。再次调用 100，解释自然语言提示为何不能替代边界校验。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch04-bounded-tool-schema-repair layer=concept kind=repair concept=tool-schema pair=bounded-tool-args -->
 ### 用 Pydantic args_schema 固化范围
 
 **运行前先预测**：`ge=1, le=3` 会同时进入模型可见 JSON Schema 和运行时校验吗？
@@ -141,15 +136,11 @@ invalid_limit_error = less_than_equal
 Schema 无法完成授权。即使参数形状合法，当前用户是否能检索某个知识域仍要由 Runtime Context 与 Middleware 判断。
 
 **动手修改**：让 query 只包含空格。观察 `min_length=1` 为何仍会通过，再增加去空格后的领域校验。
-<!-- /lesson-lab -->
-
 ## 3. `bind_tools` 只生成调用意图
 
 第 01 章看过 `tool_calls`，这里要把它放回真实消息协议。先只调用绑定工具的模型，然后查执行日志；这能把“表达意图”和“执行动作”分开。
 
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，也不会根据工具说明自主选择动作，只按脚本生成指定 `tool_calls`。它用于稳定观察消息配对和工具副作用，不代表真实模型一定会选对工具。
-
-<!-- lesson-lab:id=ch04-bind-tools-intent layer=concept kind=baseline concept=tool-intent -->
 ### 绑定工具后只得到 AIMessage
 
 **运行前先预测**：调用绑定工具的模型后，执行日志会增加一条记录吗？返回值是工具结果还是 AIMessage？
@@ -224,13 +215,9 @@ execution_log = []
 **发生了什么**：`bind_tools` 把工具 Schema 交给模型，使其能生成结构化 tool call。执行日志仍为空，因为没有任何组件负责 dispatch。
 
 **动手修改**：把 tool call 名称改成不存在的工具。列出应用在执行前必须验证的三项事实：名称、参数与权限。
-<!-- /lesson-lab -->
-
 ## 4. 函数执行了，消息历史为什么还是断的
 
 手写路由器调用 Python 函数并不难。难点是把结果写回 `ToolMessage`；少了这步，历史里只剩一个未完成的 tool call，模型无法知道结果属于哪个 call ID。
-
-<!-- lesson-lab:id=ch04-orphan-tool-result-failure layer=concept kind=failure concept=tool-message-protocol pair=tool-result-message -->
 ### 直接执行 args，留下孤立 tool call
 
 **运行前先预测**：工具函数返回字符串后，如果消息列表仍只有 HumanMessage 与 AIMessage，模型能否从消息历史读取结果？
@@ -280,9 +267,6 @@ orphan_tool_call_id = search-1
 **发生了什么**：Python 局部变量拿到了结果，消息协议却不知道。把 `raw_result` 随便拼到下一条 HumanMessage，会丢失角色和 call ID，也无法处理并行工具调用。
 
 **动手修改**：同时产生两个 tool call，只保留一个无标签结果字符串。尝试判断它属于哪个 call，并记录为什么位置顺序不是可靠身份。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch04-manual-tool-message-repair layer=concept kind=repair concept=tool-message-protocol pair=tool-result-message -->
 ### 构造 ToolMessage 并完成一次手动循环
 
 **运行前先预测**：ToolMessage 的 `tool_call_id` 与 AIMessage call ID 一致后，完整消息序列会是什么？
@@ -343,13 +327,9 @@ final_answer = 恢复时继续使用同一个 thread_id。 [official/persistence
 协议看清之后，就没必要继续手写脚手架。未知工具、参数错误、多个 tool call、重试、停止条件和 streaming，都属于 `create_agent` 应接管的通用循环。
 
 **动手修改**：给 ToolMessage 故意填错 call ID。写一个检查函数，在第二次模型调用前拒绝未配对与重复配对。
-<!-- /lesson-lab -->
-
 ## 5. 让 `create_agent` 接管重复循环
 
 `create_agent` 把刚才的 `model → tools → model` 循环封装成高层入口。它属于 LangChain API，运行时则由 LangGraph compiled graph 支撑；这是上下层关系，不是两套竞争循环。
-
-<!-- lesson-lab:id=ch04-create-agent-loop layer=concept kind=baseline concept=agent-loop -->
 ### 第一次运行完整 `model → tool → model`
 
 **运行前先预测**：只调用一次 `agent.invoke`，结果消息里会不会自动出现 ToolMessage？
@@ -429,13 +409,9 @@ final_answer = create_agent 使用 LangGraph runtime。
 fake model 按脚本返回两条 AIMessage，它不证明模型会正确选工具；它让消息轨迹和工具副作用成为确定性测试对象。
 
 **动手修改**：让第二条 AIMessage 继续调用同一工具，再准备第三条最终回答。预测消息序列和模型调用次数。
-<!-- /lesson-lab -->
-
 ## 6. `updates` 暴露了哪些 Graph 节点
 
 `invoke` 只给最终 State，不足以判断工具是否真的执行。我更关心 `stream` 的 `updates`：它会显示每一步由哪个节点产生局部更新。
-
-<!-- lesson-lab:id=ch04-create-agent-stream layer=concept kind=baseline concept=agent-stream -->
 ### 观察 model、tools、model 三步更新
 
 **运行前先预测**：完整工具循环会产生几个 v2 envelope？每个 `data` 的顶层 key 是什么？
@@ -514,13 +490,9 @@ updated_nodes = ['model', 'tools', 'model']
 `messages` stream 适合 token/message UI；`updates` 适合状态变化和 trajectory test。浏览器不应直接依赖原始 Graph 字典，Gateway 后面会投影成领域事件。
 
 **动手修改**：让模型直接回答、不产生 tool call。比较 `updated_nodes`，并说明为何最终文本测试看不出“是否绕过检索”。
-<!-- /lesson-lab -->
-
 ## 7. `user_id` 为什么不能由模型填写
 
 模型可以选 query、path 和 operation，因为它们表达任务意图。user ID、权限、工作区根目录和数据库连接由应用拥有；把这些字段放进工具 Schema，就等于允许模型冒充。
-
-<!-- lesson-lab:id=ch04-model-spoofs-runtime-failure layer=concept kind=failure concept=runtime-context pair=hidden-runtime -->
 ### 把 user_id 暴露给模型
 
 **运行前先预测**：`user_id` 出现在普通函数参数时，会不会进入 tool_call_schema？调用方能否填入 `admin`？
@@ -555,9 +527,6 @@ spoofed_result = user=admin;path=notes.txt
 **发生了什么**：类型和 Schema 都合法，身份所有权却错了。模型输出属于不可信候选数据，不能成为认证事实。
 
 **动手修改**：把 `permission="write"` 也放进模型参数。列出仅靠 Pydantic 仍无法阻止的越权组合。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch04-tool-runtime-repair layer=concept kind=repair concept=runtime-context pair=hidden-runtime -->
 ### 用 context_schema 与 ToolRuntime 注入身份
 
 **运行前先预测**：工具函数含 `runtime` 参数时，模型可见 Schema 会不会出现 runtime 或 user_id？
@@ -646,13 +615,9 @@ model_supplied_user_id = False
 隐藏字段不等于完成授权。`learner-1` 是否允许读取该路径，仍需权限检查与 Sandbox。下一章会系统区分 Runtime Context、Graph State、Store 和业务数据库。
 
 **动手修改**：在 context 增加 `permissions: frozenset[str]`，让工具拒绝缺少 `workspace:read` 的调用。确认 permissions 仍不进入模型 Schema。
-<!-- /lesson-lab -->
-
 ## 8. 错误的入口字段为何也能返回答案
 
 默认 Agent State 的入口是 `messages`。调用方若沿用旧教程的 `input`，额外字段可能直接被忽略。scripted model 仍会返回答案，但它从未收到用户消息。
-
-<!-- lesson-lab:id=ch04-wrong-input-key-failure layer=concept kind=failure concept=agent-input pair=messages-input -->
 ### 用 input 调用，结果里没有 HumanMessage
 
 **运行前先预测**：fake model 固定返回“脚本化回答”时，错误输入字段能否被“最后有文本”这种断言发现？
@@ -685,9 +650,6 @@ human_message_present = False
 **发生了什么**：只断言最终文本非空会得到假阳性。这是 State 输入 Schema 错误，不是 Prompt 问题。
 
 **动手修改**：让 fake model 返回一段很像正确答案的文本。解释为何内容越像正确，协议级回归测试越重要。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch04-messages-input-repair layer=concept kind=repair concept=agent-input pair=messages-input -->
 ### 用 messages 并验证用户消息未丢失
 
 **运行前先预测**：字典形式的 role/content 输入会被规范化成哪种 Message 类型？
@@ -723,15 +685,11 @@ final_text = 离线回答
 **发生了什么**：Agent 将标准输入规范化为 HumanMessage，后续 State、checkpoint 和评测都能依赖同一消息协议。
 
 **动手修改**：在 messages 前增加 SystemMessage。记录哪些系统指令应由 `system_prompt` 组合根拥有，而不应接受客户端任意注入。
-<!-- /lesson-lab -->
-
 ## 9. 把同一循环装进 Mini DeerFlow
 
 现在才需要打开 Mini DeerFlow。原生实验已经证明 Tool Schema、tool call、ToolMessage、`create_agent`、stream 和 Runtime Context；工程迁移要查的是项目又固定了哪些接缝。
 
 ### 9.1 Lead Agent 工厂复用同一消息循环
-
-<!-- lesson-lab:id=ch04-mini-deerflow-lead-loop layer=migration kind=contrast concept=agent-loop -->
 ### 运行带 source 的知识工具循环
 
 **运行前先预测**：Mini DeerFlow 结果是否仍是 HumanMessage、AIMessage、ToolMessage、AIMessage，还是另一套私有协议？
@@ -795,11 +753,7 @@ final_answer = create_agent 使用 LangGraph runtime。
 ```
 
 **发生了什么**：项目没有重造 Agent 消息协议。`create_lead_agent` 组合 system prompt、ThreadState、Runtime Context、工具、Middleware、checkpointer 与 Store，底层循环仍是刚才的原生 `create_agent`。
-<!-- /lesson-lab -->
-
 ### 9.2 Registry 是能力与权限的组合边界
-
-<!-- lesson-lab:id=ch04-mini-deerflow-tool-registry layer=migration kind=contrast concept=tool-schema -->
 ### 检查工具名称、Schema 与权限 metadata
 
 **运行前先预测**：registry 是否只有检索工具？工作区根目录会不会出现在 read tool 的模型可见字段？
@@ -837,11 +791,7 @@ read_visible_fields = ['path']
 **发生了什么**：Registry 集中声明当前 Agent 能看到的能力，并为治理层提供权限 metadata。连接对象、workspace root 与用户身份不进入 tool schema。
 
 不同用户、阶段和 Subagent 不应默认获得完整 registry。第 06 章会让 Middleware 在统一 hook 中消费这些 metadata。
-<!-- /lesson-lab -->
-
 ### 9.3 Runtime Context 为工作区工具提供应用事实
-
-<!-- lesson-lab:id=ch04-mini-deerflow-workspace-runtime layer=migration kind=contrast concept=runtime-context -->
 ### 模型只提交相对路径
 
 **运行前先预测**：模型 tool call 没有 workspace root，工具能否读取应用指定目录里的文件？
@@ -903,11 +853,7 @@ tool_call_args = {'path': 'notes.txt'}
 ```
 
 **发生了什么**：模型只生成相对 path，Runtime Context 提供 user 与 workspace root。当前实现只有最小路径护栏；符号链接、挂载、资源限额和进程隔离会在 Sandbox 专题真实失败后补齐。
-<!-- /lesson-lab -->
-
 ### 9.4 项目事件隔离 LangGraph 原始 envelope
-
-<!-- lesson-lab:id=ch04-mini-deerflow-v2-stream layer=migration kind=contrast concept=agent-stream -->
 ### 把 updates 投影成稳定 StreamEvent
 
 **运行前先预测**：adapter 会改变节点顺序吗？事件 data 还会不会包含 Message 对象？
@@ -943,11 +889,7 @@ json_safe_data = True
 ```
 
 **发生了什么**：Mini DeerFlow 保留节点轨迹，同时把 Message、Pydantic 与 dataclass 显式投影为 JSON-safe 数据。Gateway 不需要把 LangGraph 内部对象直接暴露给浏览器。
-<!-- /lesson-lab -->
-
 ### 9.5 Recursion limit 是最后护栏，不是业务预算
-
-<!-- lesson-lab:id=ch04-mini-deerflow-recursion-limit layer=migration kind=contrast concept=agent-loop -->
 ### 让无界 tool call 在 Graph 层停止
 
 **运行前先预测**：模型持续发出 calculator call，`recursion_limit=3` 会返回最终答案，还是抛出明确错误？
@@ -1007,8 +949,6 @@ final_answer_available = False
 ```
 
 **发生了什么**：Graph recursion limit 防止进程无限循环，但错误对业务用户并不友好。第 06 章会增加模型/工具调用预算与结构化终止；第 07 章再从 Graph 拓扑解释 recursion step。
-<!-- /lesson-lab -->
-
 | 原生概念 | Mini DeerFlow 增加的工程边界 |
 | --- | --- |
 | `@tool` + args_schema | 集中 registry、权限 metadata、统一工具集合 |

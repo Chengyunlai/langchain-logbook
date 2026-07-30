@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import hashlib
 import io
 import inspect
+import json
 import os
 from pathlib import Path
 import re
@@ -27,18 +28,12 @@ import nbformat
 
 SYNC_FENCE = re.compile(r"^```(?:python|py)\s+sync=([a-zA-Z0-9_.:-]+)\s*$")
 OUTPUT_FENCE = re.compile(r"^```text\s+output=([a-z0-9-]+)\s*$")
-LESSON_LAB_START = re.compile(
-    r"^<!-- lesson-lab:id=(?P<id>[a-z0-9-]+) "
-    r"layer=(?P<layer>concept|migration) "
-    r"kind=(?P<kind>baseline|failure|repair|contrast|exercise) "
-    r"concept=(?P<concept>[a-z0-9-]+)"
-    r"(?: pair=(?P<pair>[a-z0-9-]+))? -->$"
-)
-LESSON_LAB_END = "<!-- /lesson-lab -->"
+LESSON_SECTION_HEADING = re.compile(r"^#{2,3}\s+")
 NOTEBOOK_READING_PATH = re.compile(
     r"^\*\*Notebook 阅读顺序\*\*：.+$",
     re.MULTILINE,
 )
+LESSON_LAB_METADATA = Path("quality/lesson-labs.json")
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,46 +111,125 @@ def _labeled_prose(lines: list[str], label: str) -> str:
         if not line.startswith(prefix):
             continue
         prose = [line.removeprefix(prefix).strip()]
+        if label == "动手修改":
+            return prose[0]
+        paragraph_count = 1
+        pending_paragraph = False
         for following in lines[start + 1 :]:
             if (
-                following.startswith("**")
+                following.startswith("#")
+                or following.startswith("**")
                 or following.startswith("```")
-                or following.startswith("### ")
+                or following.startswith("|")
             ):
                 break
+            if not following.strip():
+                pending_paragraph = True
+                continue
+            if pending_paragraph:
+                paragraph_count += 1
+                if paragraph_count > 2:
+                    break
+                pending_paragraph = False
             prose.append(following.strip())
         return "\n".join(item for item in prose if item).strip()
     return ""
 
 
-def extract_lesson_labs(markdown: str) -> list[LessonLab]:
-    """按 Markdown 原始顺序解析 v2 lesson lab。"""
+def load_lesson_lab_metadata(
+    markdown_path: Path,
+) -> dict[str, dict[str, str | None]] | None:
+    """从仓库质量清单读取章节实验元数据；正文只保留教学内容。"""
+
+    resolved = markdown_path.resolve()
+    for root in (resolved.parent, *resolved.parents):
+        candidate = root / LESSON_LAB_METADATA
+        if not candidate.is_file():
+            continue
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+        chapters = payload.get("chapters", {})
+        chapter = chapters.get(resolved.stem, {})
+        return {
+            str(lab_id): {
+                "layer": str(spec["layer"]),
+                "kind": str(spec["kind"]),
+                "concept": str(spec["concept"]),
+                "pair": str(spec["pair"]) if spec.get("pair") is not None else None,
+            }
+            for lab_id, spec in chapter.items()
+        }
+    return None
+
+
+def _inferred_lesson_lab_metadata(lab_id: str) -> dict[str, str | None]:
+    """为临时测试文档推断最小元数据；正式课程使用质量清单。"""
+
+    suffix = next(
+        (
+            candidate
+            for candidate in ("failure", "repair", "migration")
+            if lab_id.endswith(f"-{candidate}")
+        ),
+        None,
+    )
+    concept = lab_id.removesuffix(f"-{suffix}") if suffix else lab_id
+    return {
+        "layer": "migration" if suffix == "migration" else "concept",
+        "kind": (
+            "failure"
+            if suffix == "failure"
+            else "repair"
+            if suffix == "repair"
+            else "contrast"
+            if suffix == "migration"
+            else "baseline"
+        ),
+        "concept": concept,
+        "pair": concept if suffix in {"failure", "repair"} else None,
+    }
+
+
+def _lesson_section(lines: list[str], sync_line: int, *, lab_id: str) -> tuple[int, list[str]]:
+    heading = next(
+        (
+            index
+            for index in range(sync_line - 1, -1, -1)
+            if lines[index].startswith("### ")
+        ),
+        None,
+    )
+    if heading is None:
+        raise ValueError(f"lesson lab {lab_id} 的 sync fence 前缺少三级标题")
+    end = next(
+        (
+            index
+            for index in range(sync_line + 1, len(lines))
+            if LESSON_SECTION_HEADING.match(lines[index])
+        ),
+        len(lines),
+    )
+    return heading, lines[heading:end]
+
+
+def extract_lesson_labs(
+    markdown: str,
+    *,
+    metadata: dict[str, dict[str, str | None]] | None = None,
+) -> list[LessonLab]:
+    """按 Markdown 原始顺序解析可见实验章节。"""
 
     lines = markdown.splitlines()
     labs: list[LessonLab] = []
     seen: set[str] = set()
-    index = 0
-    while index < len(lines):
-        match = LESSON_LAB_START.match(lines[index])
+    for index, raw_line in enumerate(lines):
+        match = SYNC_FENCE.match(raw_line)
         if not match:
-            if lines[index] == LESSON_LAB_END:
-                raise ValueError(f"第 {index + 1} 行存在没有开始 marker 的 lesson lab")
-            index += 1
             continue
-        lab_id = match.group("id")
+        lab_id = match.group(1)
         if lab_id in seen:
             raise ValueError(f"重复的 lesson lab id: {lab_id}")
         seen.add(lab_id)
-        line = index + 1
-        body: list[str] = []
-        index += 1
-        while index < len(lines) and lines[index] != LESSON_LAB_END:
-            if LESSON_LAB_START.match(lines[index]):
-                raise ValueError(f"lesson lab {lab_id} 内不允许嵌套 marker")
-            body.append(lines[index])
-            index += 1
-        if index >= len(lines):
-            raise ValueError(f"lesson lab {lab_id} 缺少结束 marker")
+        heading_line, body = _lesson_section(lines, index, lab_id=lab_id)
 
         sync_id, code = _fenced_block(body, SYNC_FENCE, lab_id=lab_id, label="sync")
         output_id, expected_output = _fenced_block(
@@ -163,8 +237,15 @@ def extract_lesson_labs(markdown: str) -> list[LessonLab]:
         )
         if sync_id != lab_id or output_id != lab_id:
             raise ValueError(
-                f"lesson lab {lab_id} 的 marker、sync 与 output id 必须一致"
+                f"lesson lab {lab_id} 的 sync 与 output id 必须一致"
             )
+        if metadata is not None and lab_id not in metadata:
+            raise ValueError(f"lesson lab {lab_id} 缺少质量清单元数据")
+        spec = (
+            metadata[lab_id]
+            if metadata is not None
+            else _inferred_lesson_lab_metadata(lab_id)
+        )
         title = next(
             (item.removeprefix("### ").strip() for item in body if item.startswith("### ")),
             "",
@@ -172,20 +253,25 @@ def extract_lesson_labs(markdown: str) -> list[LessonLab]:
         labs.append(
             LessonLab(
                 lab_id=lab_id,
-                layer=match.group("layer"),
-                kind=match.group("kind"),
-                concept=match.group("concept"),
-                pair=match.group("pair"),
+                layer=str(spec["layer"]),
+                kind=str(spec["kind"]),
+                concept=str(spec["concept"]),
+                pair=str(spec["pair"]) if spec.get("pair") is not None else None,
                 title=title,
                 prediction=_labeled_prose(body, "运行前先预测"),
                 code=code,
                 expected_output=expected_output,
                 explanation=_labeled_prose(body, "发生了什么"),
                 modification=_labeled_prose(body, "动手修改"),
-                line=line,
+                line=heading_line + 1,
             )
         )
-        index += 1
+    if metadata is not None:
+        unused = sorted(set(metadata) - seen)
+        if unused:
+            raise ValueError(
+                "质量清单包含正文中不存在的 lesson lab: " + ", ".join(unused)
+            )
     return labs
 
 
@@ -200,8 +286,18 @@ def extract_notebook_reading_path(markdown: str) -> str:
     return matches[0].group(0).strip()
 
 
-def _build_v2_notebook(markdown_path: Path, markdown: str) -> nbformat.NotebookNode:
-    labs = extract_lesson_labs(markdown)
+def has_visible_lesson_labs(markdown: str) -> bool:
+    """正文是否包含带稳定输出的结构化实验。"""
+
+    return any(OUTPUT_FENCE.match(line) for line in markdown.splitlines())
+
+
+def _build_v2_notebook(
+    markdown_path: Path,
+    markdown: str,
+    metadata: dict[str, dict[str, str | None]] | None,
+) -> nbformat.NotebookNode:
+    labs = extract_lesson_labs(markdown, metadata=metadata)
     if not labs:
         raise ValueError(f"{markdown_path} 声明 v2 契约却没有 lesson lab")
     title = markdown.splitlines()[0].removeprefix("# ")
@@ -291,8 +387,9 @@ def _build_v2_notebook(markdown_path: Path, markdown: str) -> nbformat.NotebookN
 
 def build_notebook(markdown_path: Path) -> nbformat.NotebookNode:
     markdown = markdown_path.read_text(encoding="utf-8")
-    if extract_lesson_labs(markdown):
-        notebook = _build_v2_notebook(markdown_path, markdown)
+    metadata = load_lesson_lab_metadata(markdown_path)
+    if metadata or has_visible_lesson_labs(markdown):
+        notebook = _build_v2_notebook(markdown_path, markdown, metadata)
         notebook.metadata["kernelspec"] = {
             "display_name": "Python 3",
             "language": "python",

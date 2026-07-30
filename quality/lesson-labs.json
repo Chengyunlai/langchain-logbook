@@ -1,0 +1,922 @@
+{
+  "version": 1,
+  "description": "课程实验的机器可读元数据；学习正文只保留标题、预测、代码、输出、解释和练习。",
+  "chapters": {
+    "01_Getting_Started": {
+      "ch01-message-invoke": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "model-message",
+        "pair": null
+      },
+      "ch01-runnable-pipeline": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "runnable-pipeline",
+        "pair": null
+      },
+      "ch01-tool-intent-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "tool-intent",
+        "pair": "tool-intent"
+      },
+      "ch01-tool-intent-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "tool-intent",
+        "pair": "tool-intent"
+      },
+      "ch01-stream-shape-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "stream-envelope",
+        "pair": "v2-envelope"
+      },
+      "ch01-stream-envelope": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "stream-envelope",
+        "pair": "v2-envelope"
+      },
+      "ch01-mini-deerflow-entry": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "model-message",
+        "pair": null
+      }
+    },
+    "02_Structured_Output": {
+      "ch02-string-parse-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "research-request",
+        "pair": "research-request"
+      },
+      "ch02-pydantic-request": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "research-request",
+        "pair": "research-request"
+      },
+      "ch02-model-structured-output": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "model-structured-output",
+        "pair": null
+      },
+      "ch02-default-objective-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "task-plan",
+        "pair": "required-plan-fields"
+      },
+      "ch02-task-plan-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "task-plan",
+        "pair": "required-plan-fields"
+      },
+      "ch02-artifact-path-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "artifact-contract",
+        "pair": "artifact-path"
+      },
+      "ch02-artifact-path-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "artifact-contract",
+        "pair": "artifact-path"
+      },
+      "ch02-outcome-shape-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "structured-failure",
+        "pair": "outcome-shape"
+      },
+      "ch02-outcome-shape-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "structured-failure",
+        "pair": "outcome-shape"
+      },
+      "ch02-schema-lifetimes": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "schema-lifetimes",
+        "pair": null
+      },
+      "ch02-mini-deerflow-schemas": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "research-request",
+        "pair": null
+      }
+    },
+    "03_RAG_2.0": {
+      "ch03-stuff-all-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "evidence-selection",
+        "pair": "context-budget"
+      },
+      "ch03-top-k-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "evidence-selection",
+        "pair": "context-budget"
+      },
+      "ch03-naive-split-source-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "document-splitting",
+        "pair": "chunk-metadata"
+      },
+      "ch03-document-split-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "document-splitting",
+        "pair": "chunk-metadata"
+      },
+      "ch03-bm25-retriever": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "retriever-protocol",
+        "pair": null
+      },
+      "ch03-source-format-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "citation-provenance",
+        "pair": "context-source"
+      },
+      "ch03-source-format-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "citation-provenance",
+        "pair": "context-source"
+      },
+      "ch03-runnable-rag": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "runnable-rag",
+        "pair": null
+      },
+      "ch03-forced-nearest-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "empty-retrieval",
+        "pair": "insufficient-evidence"
+      },
+      "ch03-explicit-empty-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "empty-retrieval",
+        "pair": "insufficient-evidence"
+      },
+      "ch03-recall-evaluation": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "retrieval-evaluation",
+        "pair": null
+      },
+      "ch03-mini-deerflow-local-index": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "evidence-selection",
+        "pair": null
+      },
+      "ch03-mini-deerflow-vector-index": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "retrieval-evaluation",
+        "pair": null
+      }
+    },
+    "04_Smart_Tooling": {
+      "ch04-unbounded-tool-args-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "tool-schema",
+        "pair": "bounded-tool-args"
+      },
+      "ch04-bounded-tool-schema-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "tool-schema",
+        "pair": "bounded-tool-args"
+      },
+      "ch04-bind-tools-intent": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "tool-intent",
+        "pair": null
+      },
+      "ch04-orphan-tool-result-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "tool-message-protocol",
+        "pair": "tool-result-message"
+      },
+      "ch04-manual-tool-message-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "tool-message-protocol",
+        "pair": "tool-result-message"
+      },
+      "ch04-create-agent-loop": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "agent-loop",
+        "pair": null
+      },
+      "ch04-create-agent-stream": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "agent-stream",
+        "pair": null
+      },
+      "ch04-model-spoofs-runtime-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "runtime-context",
+        "pair": "hidden-runtime"
+      },
+      "ch04-tool-runtime-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "runtime-context",
+        "pair": "hidden-runtime"
+      },
+      "ch04-wrong-input-key-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "agent-input",
+        "pair": "messages-input"
+      },
+      "ch04-messages-input-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "agent-input",
+        "pair": "messages-input"
+      },
+      "ch04-mini-deerflow-lead-loop": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "agent-loop",
+        "pair": null
+      },
+      "ch04-mini-deerflow-tool-registry": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "tool-schema",
+        "pair": null
+      },
+      "ch04-mini-deerflow-workspace-runtime": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "runtime-context",
+        "pair": null
+      },
+      "ch04-mini-deerflow-v2-stream": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "agent-stream",
+        "pair": null
+      },
+      "ch04-mini-deerflow-recursion-limit": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "agent-loop",
+        "pair": null
+      }
+    },
+    "05_Agent_Middleware": {
+      "ch05-universal-state-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "context-boundaries",
+        "pair": "universal-state"
+      },
+      "ch05-runtime-state-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "context-boundaries",
+        "pair": "universal-state"
+      },
+      "ch05-preference-state-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "store",
+        "pair": "preference-lifetime"
+      },
+      "ch05-store-cross-thread": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "store",
+        "pair": "preference-lifetime"
+      },
+      "ch05-store-user-isolation": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "store",
+        "pair": null
+      },
+      "ch05-stale-business-fact": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "business-database",
+        "pair": "business-authority"
+      },
+      "ch05-business-database-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "business-database",
+        "pair": "business-authority"
+      },
+      "ch05-thread-state-isolation": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "thread-state",
+        "pair": null
+      },
+      "ch05-mini-deerflow-context": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "context-boundaries",
+        "pair": null
+      }
+    },
+    "06_Observability_Persistence": {
+      "ch06-permission-omission": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "middleware",
+        "pair": "permission-boundary"
+      },
+      "ch06-tool-permission": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "middleware",
+        "pair": "permission-boundary"
+      },
+      "ch06-hook-order": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "lifecycle-hooks",
+        "pair": null
+      },
+      "ch06-context-prompt": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "wrap-model",
+        "pair": null
+      },
+      "ch06-model-routing": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "wrap-model",
+        "pair": null
+      },
+      "ch06-call-limit": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "wrap-model",
+        "pair": null
+      },
+      "ch06-raw-tool-error": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "wrap-tool-error",
+        "pair": "tool-errors"
+      },
+      "ch06-structured-tool-error": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "wrap-tool-error",
+        "pair": "tool-errors"
+      },
+      "ch06-async-cancellation": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "async-middleware",
+        "pair": null
+      },
+      "ch06-summarization": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "summarization",
+        "pair": null
+      },
+      "ch06-hitl-rejection": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "human-in-loop",
+        "pair": null
+      },
+      "ch06-listener-signature-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "runnable-listener",
+        "pair": "listener-signature"
+      },
+      "ch06-listener-signature-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "runnable-listener",
+        "pair": "listener-signature"
+      },
+      "ch06-mini-deerflow-governance": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "middleware",
+        "pair": null
+      }
+    },
+    "07_StateGraph": {
+      "ch07-state-node-patch": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "state-node-patch",
+        "pair": null
+      },
+      "ch07-serial-edge": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "serial-edge",
+        "pair": null
+      },
+      "ch07-conditional-edge": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "conditional-edge",
+        "pair": null
+      },
+      "ch07-parallel-conflict": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "reducer",
+        "pair": "parallel-results"
+      },
+      "ch07-parallel-reducer": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "reducer",
+        "pair": "parallel-results"
+      },
+      "ch07-task-list-duplicates": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "reducer",
+        "pair": "task-list-identity"
+      },
+      "ch07-task-list-merge": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "reducer",
+        "pair": "task-list-identity"
+      },
+      "ch07-explicit-react": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "explicit-react",
+        "pair": null
+      },
+      "ch07-stream-modes": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "stream-modes",
+        "pair": null
+      },
+      "ch07-recursion-limit": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "recursion-limit",
+        "pair": "loop-budget"
+      },
+      "ch07-loop-budget": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "recursion-limit",
+        "pair": "loop-budget"
+      },
+      "ch07-mini-deerflow-migration": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "explicit-react",
+        "pair": null
+      }
+    },
+    "08_Engineering_Defense": {
+      "ch08-duplicated-router-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "command-routing",
+        "pair": "single-routing-decision"
+      },
+      "ch08-command-route-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "command-routing",
+        "pair": "single-routing-decision"
+      },
+      "ch08-static-fanout-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "dynamic-fanout",
+        "pair": "runtime-task-count"
+      },
+      "ch08-send-fanout-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "dynamic-fanout",
+        "pair": "runtime-task-count"
+      },
+      "ch08-review-state-leak-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "subgraph-boundary",
+        "pair": "review-state-scope"
+      },
+      "ch08-review-subgraph-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "subgraph-boundary",
+        "pair": "review-state-scope"
+      },
+      "ch08-no-progress-loop-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "bounded-loop",
+        "pair": "loop-progress"
+      },
+      "ch08-progress-loop-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "bounded-loop",
+        "pair": "loop-progress"
+      },
+      "ch08-functional-task-baseline": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "functional-task",
+        "pair": null
+      },
+      "ch08-mini-deerflow-research-workflow": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "dynamic-fanout",
+        "pair": null
+      },
+      "ch08-mini-deerflow-command-reject": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "command-routing",
+        "pair": null
+      },
+      "ch08-mini-deerflow-send-stream": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "dynamic-fanout",
+        "pair": null
+      },
+      "ch08-mini-deerflow-subgraph-xray": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "subgraph-boundary",
+        "pair": null
+      },
+      "ch08-mini-deerflow-functional-policies": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "functional-task",
+        "pair": null
+      },
+      "ch08-mini-deerflow-artifact-command": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "command-routing",
+        "pair": null
+      }
+    },
+    "09_Multi_Agent_Eval": {
+      "ch09-result-only-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "checkpoint-basics",
+        "pair": "graph-state-persistence"
+      },
+      "ch09-memory-checkpointer-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "checkpoint-basics",
+        "pair": "graph-state-persistence"
+      },
+      "ch09-missing-thread-id-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "checkpoint-thread",
+        "pair": "thread-address"
+      },
+      "ch09-thread-isolation-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "checkpoint-thread",
+        "pair": "thread-address"
+      },
+      "ch09-memory-restart-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "durable-backend",
+        "pair": "process-restart"
+      },
+      "ch09-sqlite-restart-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "durable-backend",
+        "pair": "process-restart"
+      },
+      "ch09-snapshot-anatomy": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "state-snapshot",
+        "pair": null
+      },
+      "ch09-checkpoint-history": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "checkpoint-history",
+        "pair": null
+      },
+      "ch09-time-travel": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "time-travel",
+        "pair": null
+      },
+      "ch09-old-state-shape-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "state-migration",
+        "pair": "checkpoint-schema-version"
+      },
+      "ch09-state-migration-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "state-migration",
+        "pair": "checkpoint-schema-version"
+      },
+      "ch09-mini-deerflow-checkpoint-history": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "checkpoint-history",
+        "pair": null
+      },
+      "ch09-mini-deerflow-sqlite-restart": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "durable-backend",
+        "pair": null
+      },
+      "ch09-mini-deerflow-state-migration": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "state-migration",
+        "pair": null
+      }
+    },
+    "10_Human_In_The_Loop": {
+      "ch10-blocking-wait-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "durable-approval",
+        "pair": "release-worker"
+      },
+      "ch10-durable-interrupt-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "durable-approval",
+        "pair": "release-worker"
+      },
+      "ch10-approval-decision-protocol": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "approval-decision",
+        "pair": null
+      },
+      "ch10-effect-before-interrupt-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "interrupt-side-effect",
+        "pair": "effect-order"
+      },
+      "ch10-effect-after-interrupt-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "interrupt-side-effect",
+        "pair": "effect-order"
+      },
+      "ch10-time-travel-duplicate-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "idempotent-effect",
+        "pair": "stable-operation-id"
+      },
+      "ch10-idempotent-effect-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "idempotent-effect",
+        "pair": "stable-operation-id"
+      },
+      "ch10-multiple-interrupt-order": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "interrupt-order",
+        "pair": null
+      },
+      "ch10-mini-deerflow-approve-restart": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "durable-approval",
+        "pair": null
+      },
+      "ch10-mini-deerflow-edit-reject": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "approval-decision",
+        "pair": null
+      },
+      "ch10-mini-deerflow-multiple-interrupts": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "interrupt-order",
+        "pair": null
+      },
+      "ch10-mini-deerflow-time-travel-idempotency": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "idempotent-effect",
+        "pair": null
+      },
+      "ch10-mini-deerflow-concurrent-intent": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "idempotent-effect",
+        "pair": null
+      },
+      "ch10-mini-deerflow-idempotency-conflict": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "idempotent-effect",
+        "pair": null
+      }
+    },
+    "11_Multi_Agent_Patterns": {
+      "ch11-context-pollution-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "delegation-boundary",
+        "pair": "bounded-delegation"
+      },
+      "ch11-bounded-delegation-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "delegation-boundary",
+        "pair": "bounded-delegation"
+      },
+      "ch11-parent-context-leak-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "context-projection",
+        "pair": "allowlist-projection"
+      },
+      "ch11-context-projection-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "context-projection",
+        "pair": "allowlist-projection"
+      },
+      "ch11-command-router": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "router-command",
+        "pair": null
+      },
+      "ch11-send-router": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "router-send",
+        "pair": null
+      },
+      "ch11-handoff": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "handoff-ownership",
+        "pair": null
+      },
+      "ch11-subgraph-boundary": {
+        "layer": "concept",
+        "kind": "contrast",
+        "concept": "subgraph-boundary",
+        "pair": null
+      },
+      "ch11-ephemeral-specialist": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "ephemeral-subagent",
+        "pair": null
+      },
+      "ch11-unbounded-concurrency-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "concurrency-control",
+        "pair": "executor-semaphore"
+      },
+      "ch11-concurrency-limit": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "concurrency-control",
+        "pair": "executor-semaphore"
+      },
+      "ch11-gather-partial-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "partial-failure",
+        "pair": "structured-batch-results"
+      },
+      "ch11-timeout-partial-failure": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "partial-failure",
+        "pair": "structured-batch-results"
+      },
+      "ch11-output-budget-failure": {
+        "layer": "concept",
+        "kind": "failure",
+        "concept": "output-budget",
+        "pair": "bounded-result"
+      },
+      "ch11-output-budget-repair": {
+        "layer": "concept",
+        "kind": "repair",
+        "concept": "output-budget",
+        "pair": "bounded-result"
+      },
+      "ch11-bounded-delegation-record": {
+        "layer": "concept",
+        "kind": "baseline",
+        "concept": "delegation-ledger",
+        "pair": null
+      },
+      "ch11-isolated-specialists": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "ephemeral-subagent",
+        "pair": null
+      },
+      "ch11-task-tool": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "delegation-boundary",
+        "pair": null
+      },
+      "ch11-lead-agent-supervisor": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "delegation-boundary",
+        "pair": null
+      },
+      "ch11-mini-context-projection": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "context-projection",
+        "pair": null
+      },
+      "ch11-mini-concurrency-limit": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "concurrency-control",
+        "pair": null
+      },
+      "ch11-mini-partial-failure": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "partial-failure",
+        "pair": null
+      },
+      "ch11-mini-output-budget": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "output-budget",
+        "pair": null
+      },
+      "ch11-delegation-ledger-event": {
+        "layer": "migration",
+        "kind": "contrast",
+        "concept": "delegation-ledger",
+        "pair": null
+      }
+    }
+  }
+}

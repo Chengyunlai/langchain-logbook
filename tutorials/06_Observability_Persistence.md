@@ -42,8 +42,6 @@
 下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
 
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本请求发布工具。它让未授权副作用稳定复现，以便验证 Middleware 是否真正拦截调用。
-
-<!-- lesson-lab:id=ch06-permission-omission layer=concept kind=failure concept=middleware pair=permission-boundary -->
 ### 运行一个漏掉权限检查的发布工具
 
 **运行前先预测**：当前权限集合为空，`publish_report` 仍会执行并写入副作用列表吗？
@@ -119,13 +117,9 @@ final_answer = 发布完成
 日志、调用计数和异常转换也有同样问题：它们不是某个工具的核心业务，却必须覆盖每个调用点。这类职责叫横切关注点。
 
 **动手修改**：把权限检查复制到 `publish_report`。再假设项目新增十个工具，列出 review 怎样证明没有任何遗漏。
-<!-- /lesson-lab -->
-
 ## 3. `wrap_tool_call` 在副作用前统一拦截
 
 失败路径给出了控制点：检查必须发生在真实工具之前。`wrap_tool_call` 同时拿到工具请求和内层 handler；它可先读 Context，拒绝时返回 `ToolMessage`，允许时才调用 handler。
-
-<!-- lesson-lab:id=ch06-tool-permission layer=concept kind=repair concept=middleware pair=permission-boundary -->
 ### 用 `wrap_tool_call` 阻止未授权副作用
 
 **运行前先预测**：Middleware 返回拒绝消息后，真正的发布函数和后续模型调用会分别发生什么？
@@ -226,8 +220,6 @@ final_answer = 发布被拒绝，我不会声称已经完成。
 **发生了什么**：Middleware 在 handler 之前拥有控制权。拒绝路径仍产生与 tool call 配对的 `ToolMessage`，所以模型能解释结果；真实工具完全没有运行。
 
 **动手修改**：给 Context 加入 `report:publish` 并重跑。确认允许路径只执行一次，再说明权限为何不能来自模型生成的参数。
-<!-- /lesson-lab -->
-
 这时再看生命周期图，hook 名称就会对应已经见过的控制点，无需把它当作一张孤立的 API 表来背。
 
 ```mermaid
@@ -248,8 +240,6 @@ flowchart LR
 ## 4. 注册顺序如何改变进入与退出路径
 
 `before_model` 在每次模型调用前检查或准备状态，`after_model` 则读取模型结果。两者的组合像进入和退出调用栈，不是一张从上到下各跑一次的列表。
-
-<!-- lesson-lab:id=ch06-hook-order layer=concept kind=baseline concept=lifecycle-hooks -->
 ### 注册两个 Middleware 并观察 after 逆序退出
 
 **运行前先预测**：列表是 `[outer, inner]` 时，四个事件按什么顺序出现？
@@ -299,13 +289,9 @@ events = ['outer:before_model', 'inner:before_model', 'inner:after_model', 'oute
 **发生了什么**：before 正序进入，after 逆序退出。若日志早于脱敏读取输入，之后再修改消息也无法撤回已记录的 PII。
 
 **动手修改**：交换两个 Middleware 的注册顺序。先写出预测，再说明哪些治理职责的相对顺序必须由测试锁定。
-<!-- /lesson-lab -->
-
 ## 5. `wrap_model_call` 何时改请求，何时短路
 
 before/after 位于模型节点两侧，`wrap_model_call` 则直接包住 handler。它可用 `request.override()` 构造新请求，也可在预算耗尽时根本不调用内层模型。
-
-<!-- lesson-lab:id=ch06-context-prompt layer=concept kind=baseline concept=wrap-model -->
 ### 只把安全 Context 投影进 system message
 
 **运行前先预测**：模型收到的消息中会包含 `user_id` 还是 `auth_token`，或两者都有？
@@ -381,11 +367,7 @@ contains_auth_token = False
 **发生了什么**：Middleware 根据应用 Context 构造安全 system message，没有修改原 Context，也没有把 Token 复制进模型输入。
 
 **动手修改**：把整个 `context.__dict__` 拼入 Prompt 并检查输出。解释为什么 `repr=False` 无法阻止显式字典化泄漏。
-<!-- /lesson-lab -->
-
 同一个 wrapper 也能选择模型，但选择依据必须由应用提供。模型不能在自己的输出里要求切换到未授权供应商。
-
-<!-- lesson-lab:id=ch06-model-routing layer=concept kind=contrast concept=wrap-model -->
 ### 根据 Runtime Context 选择已授权模型
 
 **运行前先预测**：默认模型返回 `base`，Context profile 为 `premium` 时最终会调用哪一个？
@@ -442,11 +424,7 @@ selected_answer = premium-model
 **发生了什么**：wrapper 用应用控制的 profile 覆盖 `request.model`。它只在预先允许的模型映射中选择，未知 profile 回退到默认模型。
 
 **动手修改**：传入未知 profile。确认回退行为，再决定生产系统应回退还是 fail closed，并写出理由。
-<!-- /lesson-lab -->
-
 我们还需要证明 wrapper 能完全跳过 handler。调用预算最适合做这个实验：超限时必须在产生费用之前终止，而不是调用后再丢弃结果。
-
-<!-- lesson-lab:id=ch06-call-limit layer=concept kind=contrast concept=wrap-model -->
 ### 把模型调用上限设为零并验证短路
 
 **运行前先预测**：模型 fixture 中虽然准备了回答，`run_limit=0` 时它会被消费吗？
@@ -487,13 +465,9 @@ fixture_still_available = must-not-run
 **发生了什么**：Middleware 在模型 handler 之前终止，fixture 仍未消费。短路不是“模型回答后再丢弃”，而是避免调用发生。
 
 **动手修改**：把上限改成 1，并让模型产生一次 tool call 后再回到模型。预测第二轮模型调用在哪里被拒绝。
-<!-- /lesson-lab -->
-
 ## 6. 工具异常如何回到消息协议
 
 没有工具错误 Middleware 时，异常会直接中断 Agent。消息历史里没有与 tool call 配对的结果，模型也就没有机会解释超时、参数错误或权限拒绝。
-
-<!-- lesson-lab:id=ch06-raw-tool-error layer=concept kind=failure concept=wrap-tool-error pair=tool-errors -->
 ### 让原始工具异常直接终止 Agent
 
 **运行前先预测**：工具抛出 `TimeoutError` 后，第二个模型回答会不会执行？
@@ -556,9 +530,6 @@ second_model_response_unused = 我已处理超时
 **发生了什么**：异常越过工具节点，Agent 无法形成 ToolMessage，后续模型调用没有发生。原始 endpoint 细节也不适合直接暴露给模型或用户。
 
 **动手修改**：在工具函数内部加 `except Exception` 并返回字符串。解释为什么这会让每个工具重复分类逻辑，并可能把程序 bug 伪装成业务结果。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch06-structured-tool-error layer=concept kind=repair concept=wrap-tool-error pair=tool-errors -->
 ### 用 `wrap_tool_call` 返回结构化错误消息
 
 **运行前先预测**：超时被转换成 `ToolMessage` 后，模型能否继续生成最终回答？内部 endpoint 会不会进入 payload？
@@ -664,13 +635,9 @@ final_answer = 搜索暂时超时，请稍后重试。
 **发生了什么**：Middleware 统一分类异常并生成稳定 payload。模型得到协议化错误，原始异常保留给受控日志和 trace，而不是进入 ToolMessage。
 
 **动手修改**：让工具分别抛出 `ValueError` 与 `RuntimeError`。完成 error code、retryable、模型可见性和告警级别决策表。
-<!-- /lesson-lab -->
-
 ## 7. 异步路径不能吞掉取消
 
 同步 `wrap_tool_call` 正确，不代表异步路径自动受保护。自定义 Middleware 需要显式实现 `awrap_tool_call`，并且不能把调用方取消降格为普通工具错误。
-
-<!-- lesson-lab:id=ch06-async-cancellation layer=concept kind=contrast concept=async-middleware -->
 ### 验证异步取消不会被错误 Middleware 吞掉
 
 **运行前先预测**：异步工具抛出 `CancelledError` 时，会变成 `ToolMessage`，还是沿 Graph 取消边界上抛？
@@ -742,15 +709,11 @@ NodeCancelledError: cancellation propagated
 **发生了什么**：`except Exception` 处理普通工具失败，但不会吞掉取消控制流。LangGraph 把取消投影为 `NodeCancelledError`，调用方仍能停止任务。这里使用顶层 `await`，因为 Jupyter 内核已经运行着事件循环；`asyncio.run(...)` 是普通 Python 脚本的入口写法，不能嵌套进这个循环。
 
 **动手修改**：把捕获范围错误地扩大为 `BaseException`。解释它会怎样破坏取消、系统退出和运行时控制异常。
-<!-- /lesson-lab -->
-
 ## 8. 扩展预览：摘要与审批为什么需要完整协议
 
 有些治理不适合缩成几行回调。摘要会替换后续模型看到的 messages；人机协同（HITL）会暂停 Graph，还需要 checkpointer、`thread_id` 和恢复命令共同工作。
 
 > **首读边界**：这里要观察的是 `SummarizationMiddleware` 与 `HumanInTheLoopMiddleware` 如何进入 Agent 生命周期。暂时不要求解释 checkpoint、节点重入或 `Command(resume=...)`；这些机制会在第 09–10 章从零建立。第一次阅读可以运行实验、确认“发布未发生”，然后继续第 10 节。
-
-<!-- lesson-lab:id=ch06-summarization layer=concept kind=contrast concept=summarization -->
 ### 触发摘要并检查来源标记
 
 **运行前先预测**：超过消息阈值后，旧消息会被怎样替换？主模型还能继续回答吗？
@@ -806,9 +769,6 @@ final_answer = 基于摘要继续回答
 **发生了什么**：摘要消息带稳定来源标记，主模型在压缩后的上下文上继续运行。这只证明触发与替换正确，不证明摘要保真。
 
 **动手修改**：让摘要漏掉一个必须保留的 Artifact ID。说明哪些事实应进入结构化 State，而不能只存在有损摘要文本中。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch06-hitl-rejection layer=concept kind=contrast concept=human-in-loop -->
 ### 在发布副作用之前暂停并拒绝
 
 **运行前先预测**：第一次 invoke 会执行工具吗？恢复时选择 reject 后，副作用列表应有几个元素？
@@ -897,13 +857,9 @@ rejection_visible = True
 **发生了什么**：HITL 在工具副作用前暂停。恢复不是再次调用普通输入，而是对同一 Thread 发送 `Command(resume=...)`；拒绝结果通过 ToolMessage 回到模型协议。
 
 **动手修改**：把副作用错误地放到 interrupt 之前。解释恢复或重试为什么可能重复发布，以及幂等键应在哪里生成。
-<!-- /lesson-lab -->
-
 ## 9. 可选扩展：listener 观测 Runnable，不治理 Agent
 
 Runnable listener 适合做局部计时和日志。它不自动拥有 Agent State、Runtime Context 或工具循环；即使 listener 已经失败，业务函数仍可能返回成功结果。
-
-<!-- lesson-lab:id=ch06-listener-signature-failure layer=concept kind=failure concept=runnable-listener pair=listener-signature -->
 ### 给 listener 一个错误签名并只看业务结果
 
 **运行前先预测**：listener 抛出 `TypeError` 时，Runnable 的 `1 + 1` 会失败还是仍返回 2？
@@ -945,9 +901,6 @@ listener_type_error = True
 **发生了什么**：业务返回 2，但 listener 完全没有成功执行。只检查最终答案会漏掉观测链失败。
 
 **动手修改**：先不要查文档，猜测 listener 会收到哪些参数。运行后再根据错误信息修正签名。
-<!-- /lesson-lab -->
-
-<!-- lesson-lab:id=ch06-listener-signature-repair layer=concept kind=repair concept=runnable-listener pair=listener-signature -->
 ### 修正 listener 签名并观察 Run 元数据
 
 **运行前先预测**：正确 listener 会在业务函数之前还是之后记录 `on_start`？
@@ -983,13 +936,9 @@ event_order = ['start:RunnableLambda', 'business']
 **发生了什么**：listener 收到 `Run` 对象并在 Runnable 主体前执行。它适合局部计时和日志，但不能替代读取 Agent Context 的权限 Middleware。
 
 **动手修改**：增加 `on_end` 并记录顺序。比较 listener 事件与 `before_model/after_model` 分别属于哪一层生命周期。
-<!-- /lesson-lab -->
-
 ## 10. 回到主线：Mini DeerFlow 如何固定治理顺序
 
 现在才导入项目封装。原生实验已经证明每类 hook 拥有什么控制权；Mini DeerFlow 要固定的是同步/异步对称、类型化 State、安全 Context、稳定错误协议和注册顺序。
-
-<!-- lesson-lab:id=ch06-mini-deerflow-governance layer=migration kind=contrast concept=middleware -->
 ### 运行默认治理链并检查脱敏与生命周期
 
 **运行前先预测**：用户邮箱进入模型前是否被脱敏？默认链中哪些 Middleware 按顺序注册？
@@ -1038,8 +987,6 @@ final_answer = 已处理脱敏输入
 **发生了什么**：Mini DeerFlow 把已验证机制组合成稳定顺序，并为同步、异步、State patch、权限拒绝与错误消息建立公共类型。
 
 摘要模型只在配置时加入；HITL 需要具体危险工具和 checkpointer，因此不会盲目塞入所有 Agent。Runnable listener 继续属于更外层观测，不混入 Agent 治理链。
-<!-- /lesson-lab -->
-
 | 概念实验 | Mini DeerFlow 所有者 | 工程增加的边界 |
 |---|---|---|
 | before/after 顺序 | `LifecycleTraceMiddleware` | 类型化 trace、同步/异步一致 |

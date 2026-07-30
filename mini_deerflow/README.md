@@ -1,8 +1,6 @@
 # Mini DeerFlow：从 Agent Harness 到持久化 Runtime 的工程纵切面
 
 这一目录是课程贯穿项目的可导入 Python package。当前已经实现“增强模型层 → Agent 封装层 → Context/Middleware → 显式 Graph → Persistence/HITL → 隔离 Subagent → 线程工作区/MCP/Skills → 持久化 Thread/Run/Event → FastAPI/SSE → 测试/评测/观测/安全门禁 → 最终长任务”的闭环，并通过 [`app.py`](./app.py) 把它们装配为可恢复、可扩展、可验证的 Lead Agent 核心。完整分层见[工程架构总览](./ARCHITECTURE.md)；从零件到多轮恢复见 [Lead Agent 核心专题](./LEAD_AGENT_CORE.md)；工作区与扩展见 [Sandbox 专题](./SANDBOX_EXTENSIONS.md)；产品运行、取消、恢复与可重放事件见 [Runtime/Gateway 专题](./RUNTIME_GATEWAY.md)；结果/轨迹评测、唯一 trace root 与安全回归见 [评测与观测专题](./EVALUATION_OBSERVABILITY.md)；从空目录重建与组合故障演练见 [最终综合实战](./CAPSTONE.md)，完成后沿 [DeerFlow 源码调用链导读](./DEERFLOW_GUIDE.md) 进入真实架构。
-
-<!-- diagram:id=mini-deerflow-01-11-slice -->
 ```mermaid
 flowchart LR
     AS["ApplicationSettings"] --> ROOT["build_application<br/>Composition Root"]

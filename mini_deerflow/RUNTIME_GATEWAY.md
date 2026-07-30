@@ -75,8 +75,6 @@ for part in graph.stream(
 这里先划一条边界：**Graph runtime 执行图；产品 runtime 把执行变成可查询、可授权、可恢复的业务对象。** 后文出现的 Thread、Run 和 Event，都属于后一侧。
 
 ## 2. 先认出四种不同的事实
-
-<!-- diagram:id=runtime-four-storage-boundaries -->
 ```mermaid
 flowchart TB
     CLIENT["Authenticated client"] --> GW["FastAPI Gateway<br/>HTTP / SSE adapter"]
@@ -172,8 +170,6 @@ Graph/Agent Harness ──X──→ FastAPI
 ### 4.2 Run 记录一次执行
 
 同一个 Thread 可以先提交消息，稍后暂停审批，再由用户恢复。每次动作需要一个独立的 Run，才能分别查询、取消、计费和审计。
-
-<!-- diagram:id=runtime-run-state-machine -->
 ```mermaid
 stateDiagram-v2
     [*] --> pending: create_run
@@ -402,8 +398,6 @@ Graph 抛出异常时，RunManager 不会把 traceback 原样发给浏览器，�
 ## 6. 用户批准时，为什么要创建新 Run
 
 长任务执行到发布操作时，Graph 通过 interrupt 暂停。Run A 的事件日志已经完整记录这次执行，终态是 interrupted；checkpoint 则保留图停下的位置和审批 payload。
-
-<!-- diagram:id=runtime-interrupt-resume-sequence -->
 ```mermaid
 sequenceDiagram
     actor User as 用户
@@ -463,8 +457,6 @@ data: {"data":{"model":{"answer":"完成"}},"namespace":[]}
 heartbeat 不能推进浏览器保存的 last event ID，否则重连可能跳过还没处理的业务事件。`data` 使用紧凑 UTF-8 JSON；正文里的换行留在 JSON 字符串中，不会截断 SSE frame。
 
 ### 7.2 先写日志，再发给浏览器
-
-<!-- diagram:id=runtime-sse-replay -->
 ```mermaid
 flowchart LR
     GRAPH["Graph StreamPart"] --> NORMAL["JSON-safe normalizer"]

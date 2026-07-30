@@ -86,8 +86,6 @@ make mini-deerflow-capstone
 ## 2. 一份请求要经过哪些公共接缝
 
 先把研究目标沿调用链走一遍。图中每个方框都来自前文；新增的只有顺序和交接条件。
-
-<!-- diagram:id=capstone-system-boundaries -->
 ```mermaid
 flowchart TB
     REQ["CapstoneRequest<br/>objective / thread / request / report path"] --> APP["MiniDeerFlowApplication<br/>真实 create_agent Graph"]
@@ -213,8 +211,6 @@ M2 命令使用了 Shell brace 展开；若当前 shell 不支持，就逐个列
 ## 4. 进程退出发生在任务正中间
 
 模块关系清楚后，再看时间顺序。最关键的一刻不是最终写文件，而是 Graph 已经保存审批暂停、当前进程却不再存在。
-
-<!-- diagram:id=capstone-long-task-sequence -->
 ```mermaid
 sequenceDiagram
     autonumber
@@ -371,8 +367,6 @@ reject_draft_exists = True
 进程重建后，用户可能批准、编辑或拒绝。真正危险的是批准分支：客户端超时重试、worker 重启或消息重复投递，都可能让同一次发布被执行两遍。
 
 状态机把“用户已经决定”“发布意图已经记账”和“正式文件已经写成”拆成三个可检查的事实。
-
-<!-- diagram:id=capstone-approval-state -->
 ```mermaid
 stateDiagram-v2
     [*] --> Drafted

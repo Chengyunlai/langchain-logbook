@@ -56,8 +56,6 @@ Mini DeerFlow 已经能规划、检索、委派、暂停审批，并通过持久
 | Agent evaluation | 版本化 dataset、target、evaluator | outcome/trajectory/budget 分数与解释 | Agent 在一批代表性任务上表现如何？ | 代替工具授权、路径隔离等硬控制 |
 | Observability trace | 一次真实 Run 的 span tree | 时延、token、输入输出、父子调用 | 这一次为什么慢、贵、错或走了异常路径？ | 成为客户端的 durable event source |
 | Runtime Event Journal | Run 生命周期与客户端可见事件 | 单调序号、SSE replay、终态 | 客户端断线后从哪里继续？ | 保存完整模型 prompt 或 evaluator 基线 |
-
-<!-- diagram:id=qa-four-systems -->
 ```mermaid
 flowchart TB
     CHANGE["代码 / Prompt / 模型 / 工具变更"] --> TEST["确定性测试<br/>节点、Reducer、授权、恢复、安全"]
@@ -82,8 +80,6 @@ LLM judge 可以补充语义风险，却不能代替工具 allowlist、路径解
 ## 2. 先用测试守住不会波动的边界
 
 路径是否越界、Reducer 是否合并正确、resume 是否重复记账，都有确定答案。这些问题若交给自然语言 judge，反馈反而更慢、更贵，也更不稳定。
-
-<!-- diagram:id=qa-testing-pyramid -->
 ```mermaid
 flowchart TB
     E2E["少量显式在线实验<br/>真实 provider / 平台"]
@@ -169,8 +165,6 @@ class AgentObservation(BaseModel):
 `observation_from_agent_state()` 从真实 State 提取最终文本、`model → tool-name → model` 轨迹和调用计数。
 
 平台 adapter 只负责把同一对象转换成 Example 或 feedback，不重新定义质量规则。
-
-<!-- diagram:id=qa-evaluation-flow -->
 ```mermaid
 sequenceDiagram
     participant DS as EvaluationDataset
@@ -523,8 +517,6 @@ LangGraph/LCEL 会自动形成 runnable 父子层级。如果 Gateway、Graph in
 
 - `graph`：Graph invocation 自己是根；wrapper 只注入 project、tags 和 metadata，不再套 `@traceable`；
 - `gateway`：Gateway 是人为根，用一次 `traceable(..., run_type="chain")` 包住整个业务操作；若操作已被追踪则抛出 `DuplicateTraceRootError`。
-
-<!-- diagram:id=qa-trace-root-good-bad -->
 ```mermaid
 flowchart LR
     subgraph BAD["错误：多个 instrumentation owner"]
@@ -623,8 +615,6 @@ Manifest 文件存在不算通过，CI 必须运行它映射的完整测试集�
 在线 judge 也不应决定主分支能否构建，否则平台故障和质量退化会变成同一种红灯。
 
 ## 12. 把这次生产失败变成回归案例
-
-<!-- diagram:id=qa-production-feedback-loop -->
 ```mermaid
 stateDiagram-v2
     [*] --> Observe: 生产 Run

@@ -74,8 +74,6 @@ if not candidate.is_relative_to(root):
 官方 Deep Agents 文档也区分 `FilesystemBackend` 与 Sandbox：本地文件后端适合受控开发场景，生产执行应使用 Sandbox backend。[LangChain Deep Agents Backends](https://docs.langchain.com/oss/python/deepagents/backends)
 
 ## 2. 一张图看清身份、句柄与扩展来源
-
-<!-- diagram:id=sandbox-extension-capability-map -->
 ```mermaid
 flowchart LR
     U["User request"] --> APP["MiniDeerFlowApplication<br/>thread / user / permissions"]
@@ -198,8 +196,6 @@ Digest 只处理目录映射，不负责鉴权。调用者仍要从已认证 run
 这些属于后续 Runtime/Gateway 的产品用例，不应藏进通用 `release()`。
 
 ## 4. `write_workspace_file` 怎样把文件带回 State
-
-<!-- diagram:id=workspace-write-sequence -->
 ```mermaid
 sequenceDiagram
     participant M as Lead Model
@@ -653,8 +649,6 @@ research-report/
 `SKILL.md` 用 YAML frontmatter 保存 `name` 和 `description`，正文再放完整说明。Deep Agents 同样采用启动时读 metadata、需要时读正文的渐进披露。[LangChain Deep Agents Skills](https://docs.langchain.com/oss/python/deepagents/skills)
 
 ### 7.1 启动时只展示 name 和 description
-
-<!-- diagram:id=skill-progressive-disclosure -->
 ```mermaid
 flowchart TD
     DISK["skills/*/SKILL.md"] --> DISC["SkillCatalog.from_directory"]

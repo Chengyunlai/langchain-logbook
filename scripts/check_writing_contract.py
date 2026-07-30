@@ -31,6 +31,13 @@ DEFAULT_FILES = (
     "mini_deerflow/CAPSTONE.md",
     "mini_deerflow/DEERFLOW_GUIDE.md",
 )
+LEARNER_FACING_MARKDOWN_GLOBS = (
+    "README.md",
+    "ORIENTATION.md",
+    "tutorials/*.md",
+    "mini_deerflow/*.md",
+    "docs-site/src/data/blog/*.md",
+)
 
 BEGINNER_CONTRACT_FILES = frozenset(
     relative
@@ -68,6 +75,7 @@ CALIBRATION_PATTERNS = (
 )
 LINK_TARGET = re.compile(r"\]\((?:[^()]|\([^)]*\))*\)")
 LIST_ITEM = re.compile(r"^\s*(?:[-*+] |\d+[.)] )")
+INTERNAL_HTML_COMMENT = re.compile(r"^\s*<!--.*?-->\s*$", re.MULTILINE)
 
 
 def prose_paragraphs(path: Path) -> list[tuple[int, str]]:
@@ -176,6 +184,27 @@ def main() -> int:
     failures: list[str] = []
     calibration_count = 0
     paragraph_count = 0
+
+    comment_paths = (
+        tuple(root / relative for relative in relative_files)
+        if args.files
+        else tuple(
+            sorted(
+                {
+                    path
+                    for pattern in LEARNER_FACING_MARKDOWN_GLOBS
+                    for path in root.glob(pattern)
+                    if path.is_file()
+                }
+            )
+        )
+    )
+    for path in comment_paths:
+        if INTERNAL_HTML_COMMENT.search(path.read_text(encoding="utf-8")):
+            failures.append(
+                f"{path.relative_to(root)}: learner-facing article must not "
+                "contain internal HTML comments"
+            )
 
     for relative in relative_files:
         path = root / relative

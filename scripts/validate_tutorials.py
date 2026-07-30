@@ -19,6 +19,8 @@ from check_writing_contract import BEGINNER_NAVIGATION_FIELDS
 from sync_lesson_notebooks import (
     LessonLab,
     extract_lesson_labs,
+    has_visible_lesson_labs,
+    load_lesson_lab_metadata,
 )
 
 
@@ -246,9 +248,13 @@ def _validate_markdown(path: Path, root: Path) -> list[Issue]:
     issues: list[Issue] = []
     failure_sync_ids: set[str] = set()
     try:
-        failure_sync_ids = {
-            lab.lab_id for lab in extract_lesson_labs(text) if lab.kind == "failure"
-        }
+        metadata = load_lesson_lab_metadata(path)
+        if metadata or has_visible_lesson_labs(text):
+            failure_sync_ids = {
+                lab.lab_id
+                for lab in extract_lesson_labs(text, metadata=metadata)
+                if lab.kind == "failure"
+            }
     except ValueError:
         # 实验结构问题由 v2 validator 报告；普通 Python 校验仍继续执行。
         pass
@@ -324,8 +330,14 @@ def _is_assert_only_lab(code: str) -> bool:
 
 def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list[Issue]]:
     text = path.read_text(encoding="utf-8")
+    metadata = load_lesson_lab_metadata(path)
+    if not metadata and not has_visible_lesson_labs(text):
+        return [], []
     try:
-        labs = extract_lesson_labs(text)
+        labs = extract_lesson_labs(
+            text,
+            metadata=metadata,
+        )
     except ValueError as error:
         message = str(error)
         if "output fence" in message:
@@ -333,7 +345,7 @@ def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list
         elif "重复" in message or "id 必须一致" in message:
             code = "lesson-lab-id-duplicate"
         else:
-            code = "lesson-lab-marker-missing"
+            code = "lesson-lab-structure-missing"
         return [], [
             _lesson_issue(
                 code=code,
@@ -357,11 +369,11 @@ def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list
     if sync_ids != lab_ids:
         issues.append(
             _lesson_issue(
-                code="lesson-lab-marker-missing",
+                code="lesson-lab-structure-missing",
                 path=path,
                 root=root,
                 line="lesson labs",
-                message="v2 章节的每个 sync fence 必须按原顺序属于一个 lesson lab",
+                message="v2 章节的每个 sync fence 必须按原顺序属于一个可见实验小节",
                 anchor=f"sync:{','.join(sync_ids)}|labs:{','.join(lab_ids)}",
             )
         )
