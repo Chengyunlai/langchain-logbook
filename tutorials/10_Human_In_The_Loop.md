@@ -1,7 +1,5 @@
 # 第 10 章：审批等三天，Graph 不必占着 worker
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Graph 编排层第 4 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / SQLite checkpointer 3.x
 > **本章工件**：interrupt、Command(resume)、审批协议、重放边界与幂等 effect ledger

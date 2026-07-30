@@ -1,7 +1,5 @@
 # 第 07 章：研究流程为什么要写进 StateGraph
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Graph 编排层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
 > **本章工件**：一张从零搭建的研究流程图，以及 Mini DeerFlow 显式 ReAct 工厂
@@ -515,7 +513,6 @@ State、节点、边、条件分支和合并点现在都能从代码中指出来
 
 标准工具循环仍应优先使用 `create_agent`。这里手写一次，是为了看清 ToolMessage 为什么必须回到模型，以及验证、审批或质量门这类确定性阶段应该接在循环的什么位置。
 
-<!-- fake-model-notice:v1 -->
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，也不会自主推理工具轨迹，只按脚本先返回 tool call、再返回最终回答。它用于稳定展示 Graph 节点顺序与 ToolMessage 回流。
 
 <!-- lesson-lab:id=ch07-explicit-react layer=concept kind=baseline concept=explicit-react -->

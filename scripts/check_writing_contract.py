@@ -50,7 +50,6 @@ FAKE_MODEL_PATTERN = re.compile(
     r"GenericFakeChatModel|fake[ _](?:chat[ _])?model|离线模型",
     re.IGNORECASE,
 )
-FAKE_MODEL_NOTICE = "<!-- fake-model-notice:v1 -->"
 FAKE_MODEL_NON_PROVIDER_CUES = ("不调用", "不会调用", "不访问", "不会访问")
 FAKE_MODEL_DETERMINISM_CUES = (
     "只按脚本",
@@ -128,16 +127,12 @@ def visible_length(paragraph: str) -> int:
     return len(without_targets)
 
 
-def fake_model_notice_line(text: str, notice_index: int) -> str:
-    """返回标记后的第一条可见说明，忽略空行和内部 HTML 注释。"""
+def line_containing(text: str, position: int) -> str:
+    """返回指定位置所在的整行。"""
 
-    remaining = text[notice_index + len(FAKE_MODEL_NOTICE) :]
-    for raw_line in remaining.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("<!--"):
-            continue
-        return line
-    return ""
+    start = text.rfind("\n", 0, position) + 1
+    end = text.find("\n", position)
+    return text[start : end if end >= 0 else len(text)].strip()
 
 
 def beginner_contract_failures(path: Path) -> list[str]:
@@ -151,21 +146,15 @@ def beginner_contract_failures(path: Path) -> list[str]:
 
     fake_match = FAKE_MODEL_PATTERN.search(text)
     if fake_match is not None:
-        notice_index = text.rfind(FAKE_MODEL_NOTICE, 0, fake_match.start())
-        notice_line = (
-            fake_model_notice_line(text, notice_index)
-            if notice_index >= 0
-            else ""
-        )
+        notice_line = line_containing(text, fake_match.start())
         notice_is_complete = (
-            FAKE_MODEL_PATTERN.search(notice_line) is not None
-            and any(cue in notice_line for cue in FAKE_MODEL_NON_PROVIDER_CUES)
+            any(cue in notice_line for cue in FAKE_MODEL_NON_PROVIDER_CUES)
             and any(cue in notice_line for cue in FAKE_MODEL_DETERMINISM_CUES)
         )
         if not notice_is_complete:
             failures.append(
-                f"{FAKE_MODEL_NOTICE} must immediately precede a visible Fake Model "
-                "notice that explains non-provider and deterministic behavior"
+                "first visible Fake Model mention must explain non-provider "
+                "and deterministic behavior"
             )
     return failures
 

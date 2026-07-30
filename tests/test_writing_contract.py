@@ -86,10 +86,12 @@ def test_beginner_contract_rejects_unexplained_fake_model(tmp_path: Path) -> Non
     result = run_writing_checker(tmp_path)
 
     assert result.returncode == 1
-    assert "must immediately precede a visible Fake Model notice" in result.stdout
+    assert "first visible Fake Model mention must explain" in result.stdout
 
 
-def test_beginner_contract_rejects_marker_without_explanation(tmp_path: Path) -> None:
+def test_beginner_contract_rejects_explanation_after_first_mention(
+    tmp_path: Path,
+) -> None:
     document = tmp_path / "chapter.md"
     document.write_text(
         "# 第 02 章：示例\n\n"
@@ -107,13 +109,13 @@ def test_beginner_contract_rejects_marker_without_explanation(tmp_path: Path) ->
         "> **学完以后**：可以校验对象。\n"
         ">\n"
         "> **预计时间**：20 分钟。\n\n"
-        "<!-- fake-model-notice:v1 -->\n"
-        "这是一段无关说明。\n\n"
-        "下面使用 GenericFakeChatModel。\n",
+        "下面使用 GenericFakeChatModel。\n"
+        "\n"
+        "后面才解释它不会调用外部模型，只按脚本返回固定消息。\n",
         encoding="utf-8",
     )
 
     result = run_writing_checker(tmp_path)
 
     assert result.returncode == 1
-    assert "must immediately precede a visible Fake Model notice" in result.stdout
+    assert "first visible Fake Model mention must explain" in result.stdout

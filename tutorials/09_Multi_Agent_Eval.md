@@ -1,7 +1,5 @@
 # 第 09 章：关掉进程，研究任务还能回来吗
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Graph 编排层第 3 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / langgraph-checkpoint-sqlite 3.x
 > **本章工件**：Checkpointer、Thread、StateSnapshot、history、time travel、SQLite 重启与 State migration

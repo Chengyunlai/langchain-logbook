@@ -1,7 +1,5 @@
 # 第 05 章：为运行事实划清所有权（Context Engineering）
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Agent 封装层第 2 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 Runtime Context、Graph State、Store 与 Mini DeerFlow 数据边界

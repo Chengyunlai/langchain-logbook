@@ -15,8 +15,8 @@ import sys
 import textwrap
 from typing import Iterable
 
+from check_writing_contract import BEGINNER_NAVIGATION_FIELDS
 from sync_lesson_notebooks import (
-    LESSON_CONTRACT_V2,
     LessonLab,
     extract_lesson_labs,
 )
@@ -245,14 +245,13 @@ def _validate_markdown(path: Path, root: Path) -> list[Issue]:
     text = path.read_text(encoding="utf-8")
     issues: list[Issue] = []
     failure_sync_ids: set[str] = set()
-    if LESSON_CONTRACT_V2 in text:
-        try:
-            failure_sync_ids = {
-                lab.lab_id for lab in extract_lesson_labs(text) if lab.kind == "failure"
-            }
-        except ValueError:
-            # marker 结构问题由 v2 validator 报告；普通 Python 校验仍继续执行。
-            pass
+    try:
+        failure_sync_ids = {
+            lab.lab_id for lab in extract_lesson_labs(text) if lab.kind == "failure"
+        }
+    except ValueError:
+        # 实验结构问题由 v2 validator 报告；普通 Python 校验仍继续执行。
+        pass
     for fence_line, code, sync_id in _extract_python_fences(text):
         tree, syntax_issues = _parse_code(
             code,
@@ -325,8 +324,6 @@ def _is_assert_only_lab(code: str) -> bool:
 
 def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list[Issue]]:
     text = path.read_text(encoding="utf-8")
-    if LESSON_CONTRACT_V2 not in text:
-        return [], []
     try:
         labs = extract_lesson_labs(text)
     except ValueError as error:
@@ -347,6 +344,8 @@ def _validate_v2_markdown(path: Path, root: Path) -> tuple[list[LessonLab], list
                 anchor=_normalize_anchor(message),
             )
         ]
+    if not labs:
+        return [], []
 
     issues: list[Issue] = []
     sync_ids = [
@@ -939,14 +938,23 @@ def _validate_v2_release_scope(root: Path) -> list[Issue]:
         exemption_paths.add(path)
 
     for path in sorted(included - exemption_paths):
-        if LESSON_CONTRACT_V2 not in path.read_text(encoding="utf-8"):
+        text = path.read_text(encoding="utf-8")
+        missing_fields = [
+            aliases[0]
+            for aliases in BEGINNER_NAVIGATION_FIELDS
+            if not any(f"**{alias}**" in text for alias in aliases)
+        ]
+        if missing_fields:
             issues.append(
                 Issue(
                     code="lesson-contract-v2-incomplete",
                     path=_relative(path, root),
                     location="file",
-                    message="正式课程文档缺少 lesson-contract:v2 marker",
-                    anchor="lesson-contract-v2-missing",
+                    message=(
+                        "正式课程文档缺少面向学习者的章节导航字段: "
+                        + ", ".join(missing_fields)
+                    ),
+                    anchor="visible-lesson-contract-missing",
                 )
             )
     return issues
@@ -1012,7 +1020,7 @@ def main() -> int:
     parser.add_argument(
         "--require-v2-all",
         action="store_true",
-        help="按课程 manifest 要求全部正式文档完成 lesson-contract:v2",
+        help="按课程 manifest 要求全部正式文档具备可见章节导航",
     )
     args = parser.parse_args()
 

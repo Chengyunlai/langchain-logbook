@@ -241,7 +241,6 @@ mini_deerflow/
 
 ## 4. 一条消息如何穿过整套应用
 
-<!-- fake-model-notice:v1 -->
 > **离线运行说明**：下图中的 Offline Fake Model 不会访问外部供应商，只按脚本返回 tool call 与最终消息。工具执行、Middleware、State Reducer、Checkpointer 和 compiled Graph 仍走真实路径。
 
 <!-- diagram:id=mini-deerflow-minimal-run-sequence -->

@@ -12,8 +12,6 @@ learningGoal: "完成第一次模型调用，理解 Message 输入与 AIMessage 
 contentType: "main"
 ---
 
-
-
 > **课程位置**：增强模型层第 1 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：真实模型入口、Message 输入与 AIMessage 返回值；Runnable、工具意图与 v2 stream 作为工程深入
@@ -33,10 +31,7 @@ contentType: "main"
 >
 > **预计时间**：初学者主线 15 分钟；工程深入再增加 25～35 分钟。
 
-
-
 **Notebook 阅读顺序**：网页与 Markdown 会先展示真实开发写法；Notebook 为了离线执行，首个实验直接使用 Fake Model。它不会调用外部大模型，只按脚本返回固定 AIMessage。第一次只做实验 1；实验 2～7 属于 Runnable、工具意图和 v2 stream 的工程深入。
-
 
 ## 1. 先别做 Agent，先看返回值
 

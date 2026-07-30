@@ -1,7 +1,5 @@
 # 第 11 章：别让 Lead 亲自搬运所有原始材料
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Agent Harness 层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
 > **本章工件**：任务协议、上下文投影、控制权选择、SubagentExecutor、task tool 与 DelegationLedger
@@ -37,9 +35,7 @@
 
 第二遍再进入[第 5 节](#5-第二遍执行器要替-lead-守住四条运行边界)和[第 6 节](#6-第二遍mini-deerflow-如何收拢这些边界)。这里不再增加第五种模式，而是给 Subagent-as-tool 补齐并发、超时、部分失败、输出预算和 Delegation Ledger。它们是构建 Mini DeerFlow 的必备工程边界，但不是理解四种模式的前置。
 
-<!-- notebook-reading-path:start -->
 **Notebook 阅读顺序**：第一遍先做实验 1–9，建立请求协议、Context 投影与四种控制权模式；回到正文第 7 节完成决策表。第二遍再做实验 10–24，为 Subagent-as-tool 补齐并发、失败、输出预算与 Ledger。
-<!-- notebook-reading-path:end -->
 
 ```mermaid
 flowchart LR

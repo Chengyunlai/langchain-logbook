@@ -30,7 +30,6 @@ class NotebookSyncTests(unittest.TestCase):
     def test_v2_labs_are_parsed_with_teaching_prose(self) -> None:
         markdown = (
             "# 第 07 章：Demo\n\n"
-            "<!-- lesson-contract:v2 -->\n\n"
             "<!-- lesson-lab:id=demo-failure layer=concept kind=failure "
             "concept=merge pair=merge-results -->\n"
             "### 让并行写入发生冲突\n\n"
@@ -57,10 +56,7 @@ class NotebookSyncTests(unittest.TestCase):
             markdown = Path(directory, "07_Demo.md")
             markdown.write_text(
                 "# 第 07 章：Demo\n\n"
-                "<!-- lesson-contract:v2 -->\n\n"
-                "<!-- notebook-reading-path:start -->\n"
-                "第一次先完成实验 1，再进入实验 2。\n"
-                "<!-- notebook-reading-path:end -->\n\n"
+                "**Notebook 阅读顺序**：第一次先完成实验 1，再进入实验 2。\n\n"
                 "<!-- lesson-lab:id=demo-failure layer=concept kind=failure "
                 "concept=merge pair=merge-results -->\n"
                 "### 先看失败\n\n"
@@ -177,7 +173,6 @@ class NotebookSyncTests(unittest.TestCase):
             markdown = Path(directory, "06_Demo.md")
             markdown.write_text(
                 "# 第 06 章：Demo\n\n"
-                "<!-- lesson-contract:v2 -->\n\n"
                 "<!-- lesson-lab:id=demo-await layer=concept kind=repair "
                 "concept=async-execution -->\n"
                 "### 在 Notebook 中等待异步调用\n\n"

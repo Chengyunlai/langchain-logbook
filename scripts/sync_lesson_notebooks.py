@@ -35,9 +35,10 @@ LESSON_LAB_START = re.compile(
     r"(?: pair=(?P<pair>[a-z0-9-]+))? -->$"
 )
 LESSON_LAB_END = "<!-- /lesson-lab -->"
-LESSON_CONTRACT_V2 = "<!-- lesson-contract:v2 -->"
-NOTEBOOK_READING_PATH_START = "<!-- notebook-reading-path:start -->"
-NOTEBOOK_READING_PATH_END = "<!-- notebook-reading-path:end -->"
+NOTEBOOK_READING_PATH = re.compile(
+    r"^\*\*Notebook 阅读顺序\*\*：.+$",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,19 +190,14 @@ def extract_lesson_labs(markdown: str) -> list[LessonLab]:
 
 
 def extract_notebook_reading_path(markdown: str) -> str:
-    """读取由 Markdown 维护、需要同步到 Notebook 开场的阅读顺序。"""
+    """读取正文中需要同步到 Notebook 开场的可见阅读顺序。"""
 
-    start_count = markdown.count(NOTEBOOK_READING_PATH_START)
-    end_count = markdown.count(NOTEBOOK_READING_PATH_END)
-    if start_count == end_count == 0:
+    matches = list(NOTEBOOK_READING_PATH.finditer(markdown))
+    if not matches:
         return ""
-    if start_count != 1 or end_count != 1:
-        raise ValueError("Notebook 阅读顺序 marker 必须成对且只能出现一次")
-    _before, _marker, remainder = markdown.partition(NOTEBOOK_READING_PATH_START)
-    body, _marker, _after = remainder.partition(NOTEBOOK_READING_PATH_END)
-    if not body.strip():
-        raise ValueError("Notebook 阅读顺序不能为空")
-    return body.strip()
+    if len(matches) != 1:
+        raise ValueError("Notebook 阅读顺序必须且只能出现一次")
+    return matches[0].group(0).strip()
 
 
 def _build_v2_notebook(markdown_path: Path, markdown: str) -> nbformat.NotebookNode:
@@ -295,7 +291,7 @@ def _build_v2_notebook(markdown_path: Path, markdown: str) -> nbformat.NotebookN
 
 def build_notebook(markdown_path: Path) -> nbformat.NotebookNode:
     markdown = markdown_path.read_text(encoding="utf-8")
-    if LESSON_CONTRACT_V2 in markdown:
+    if extract_lesson_labs(markdown):
         notebook = _build_v2_notebook(markdown_path, markdown)
         notebook.metadata["kernelspec"] = {
             "display_name": "Python 3",

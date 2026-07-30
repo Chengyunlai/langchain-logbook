@@ -136,7 +136,7 @@ class TutorialCheckerCliTests(unittest.TestCase):
                     "<!-- /lesson-lab -->"
                 )
             markdown = (
-                "# 第 01 章：Demo\n\n<!-- lesson-contract:v2 -->\n\n"
+                "# 第 01 章：Demo\n\n"
                 + "\n\n".join(rendered_labs)
                 + "\n"
             )

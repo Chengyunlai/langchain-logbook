@@ -130,14 +130,8 @@ function rewriteLinks(content) {
 function stripInternalLessonMarkers(content) {
   return content
     .replace(/^> \[!NOTE\]$/gm, "> **本章导航**")
-    .replace(/^[ \t]*<!-- fake-model-notice:v1 -->[ \t]*$/gm, "")
-    .replace(/^[ \t]*<!-- lesson-contract:v2 -->[ \t]*$/gm, "")
     .replace(/^[ \t]*<!-- lesson-lab:[^\r\n]*-->[ \t]*$/gm, "")
-    .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "")
-    .replace(
-      /^[ \t]*<!-- notebook-reading-path:(?:start|end) -->[ \t]*$/gm,
-      ""
-    );
+    .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "");
 }
 
 function processFile(srcPath, destFilename) {

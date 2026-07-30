@@ -157,7 +157,6 @@ def check_contracts(
         if any(
             marker in html_text
             for marker in (
-                "<!-- lesson-contract:v2 -->",
                 "<!-- lesson-lab:",
                 "<!-- /lesson-lab -->",
             )
@@ -166,7 +165,7 @@ def check_contracts(
                 Finding(
                     "internal-lesson-marker",
                     html.relative_to(site),
-                    "internal lesson-contract metadata must be removed before publication",
+                    "internal lesson-lab metadata must be removed before publication",
                 )
             )
         for href in _parse_html(html).hrefs:

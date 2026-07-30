@@ -12,8 +12,6 @@ learningGoal: "用工具契约与 create_agent 构建第一个可观察、可测
 contentType: "main"
 ---
 
-
-
 > **课程位置**：Agent 封装层第 1 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：Tool Schema、ToolMessage、`create_agent`、ToolRuntime 与 Mini DeerFlow Lead Agent
@@ -160,7 +158,6 @@ Schema 无法完成授权。即使参数形状合法，当前用户是否能检�
 ## 3. `bind_tools` 只生成调用意图
 
 第 01 章看过 `tool_calls`，这里要把它放回真实消息协议。先只调用绑定工具的模型，然后查执行日志；这能把“表达意图”和“执行动作”分开。
-
 
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，也不会根据工具说明自主选择动作，只按脚本生成指定 `tool_calls`。它用于稳定观察消息配对和工具副作用，不代表真实模型一定会选对工具。
 

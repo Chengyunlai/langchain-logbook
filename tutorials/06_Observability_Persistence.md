@@ -1,7 +1,5 @@
 # 第 06 章：用 Agent Middleware 收回散落的调用治理
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Agent 封装层第 3 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 AgentMiddleware 实验与 Mini DeerFlow 默认治理链
@@ -37,15 +35,12 @@
 
 [第 7 节](#7-异步路径不能吞掉取消)是异步取消的可靠性扩展。[第 8 节](#8-扩展预览摘要与审批为什么需要完整协议)的摘要与审批、[第 9 节](#9-可选扩展listener-观测-runnable不治理-agent)的 Runnable listener 是接口预览；它们保留完整实验，但不作为进入第 07 章的前置。学完第 09–10 章后，再回看审批实验的持久化与恢复语义。
 
-<!-- notebook-reading-path:start -->
 **Notebook 阅读顺序**：第一次先做实验 1–8，再做实验 14，形成“权限遗漏 → 统一治理 → Mini DeerFlow”的主线。实验 9–13 分别补充异步取消、摘要、HITL 与 listener；学完第 09–10 章后，再回来看恢复语义。
-<!-- notebook-reading-path:end -->
 
 ## 2. 漏掉一次权限检查，副作用已经发生
 
 下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
 
-<!-- fake-model-notice:v1 -->
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本请求发布工具。它让未授权副作用稳定复现，以便验证 Middleware 是否真正拦截调用。
 
 <!-- lesson-lab:id=ch06-permission-omission layer=concept kind=failure concept=middleware pair=permission-boundary -->

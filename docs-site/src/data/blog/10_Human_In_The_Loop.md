@@ -12,8 +12,6 @@ learningGoal: "用 interrupt/resume 实现持久审批，并保护重放场景�
 contentType: "main"
 ---
 
-
-
 > **课程位置**：Graph 编排层第 4 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / SQLite checkpointer 3.x
 > **本章工件**：interrupt、Command(resume)、审批协议、重放边界与幂等 effect ledger

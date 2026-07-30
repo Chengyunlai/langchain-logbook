@@ -6,7 +6,12 @@
       "tutorials/[0-9][0-9]_*.md",
       "mini_deerflow/*.md"
     ],
-    "exemptions": []
+    "exemptions": [
+      {
+        "path": "mini_deerflow/README.md",
+        "reason": "包级运行说明，不是线性课程章节，不使用章节导航模板。"
+      }
+    ]
   },
   "chapters": {
     "01_Getting_Started": {

@@ -12,8 +12,6 @@ learningGoal: "用 Pydantic Schema 把模型输出变成可验证、可演进的
 contentType: "main"
 ---
 
-
-
 > **课程位置**：增强模型层第 2 章
 > **锁定环境**：Python 3.12 / Pydantic 2.12.x / LangChain 1.3.x
 > **本章工件**：ResearchRequest、TaskPlan、ArtifactRef 与结构化失败边界
@@ -160,7 +158,6 @@ error_type = greater_than_equal
 ## 4. AIMessage 正文为空，为什么仍能得到对象
 
 `model_validate` 只能证明 Schema 自己可用。接下来让 LangChain 返回结构化 tool call，再由 `with_structured_output` 转成同一个 Pydantic 对象。
-
 
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本返回一个结构化 tool call。它用于验证 `with_structured_output` 的解析协议，不能证明真实模型一定会生成正确字段。
 

@@ -1,7 +1,5 @@
 # 第 08 章：研究计划变长时，Graph 怎么跟着展开
 
-<!-- lesson-contract:v2 -->
-
 > **课程位置**：Graph 编排层第 2 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x
 > **本章工件**：Command、Send、Subgraph、显式循环、Functional API 与 Mini DeerFlow 研究图
