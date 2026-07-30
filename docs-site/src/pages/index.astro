@@ -18,7 +18,8 @@ const featuredPosts = learningPosts.filter(({ data }) => data.featured);
 const startingPosts = learningPosts.filter(
   ({ data }) => data.learningStage === "enhanced-model"
 );
-const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const homeUrl = basePath || "/";
 ---
 
 <Layout>
@@ -44,7 +45,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
         <LinkButton
           data-primary-start
           class="font-bold underline decoration-dashed underline-offset-4 hover:text-accent"
-          href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/orientation/`}
+          href={`${basePath}/posts/orientation/`}
         >
           第一次阅读，从第 00 章开始
         </LinkButton>
@@ -53,7 +54,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
       <div class="mt-6 grid gap-3 sm:grid-cols-3">
         <p class="rounded-lg border border-border p-3 text-sm">
           <LinkButton
-            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/orientation/`}
+            href={`${basePath}/posts/orientation/`}
             class="font-bold text-accent underline underline-offset-2"
           >
             我是初学者
@@ -62,7 +63,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
         </p>
         <p class="rounded-lg border border-border p-3 text-sm">
           <LinkButton
-            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/04_smart_tooling/`}
+            href={`${basePath}/posts/04_smart_tooling/`}
             class="font-bold text-accent underline underline-offset-2"
           >
             我会 LangChain
@@ -71,7 +72,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
         </p>
         <p class="rounded-lg border border-border p-3 text-sm">
           <LinkButton
-            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/architecture/`}
+            href={`${basePath}/posts/architecture/`}
             class="font-bold text-accent underline underline-offset-2"
           >
             我想搭 Agent 系统
@@ -87,7 +88,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
           工程中文课程，并通过 Mini DeerFlow
           展示从模型调用到可交付运行时的完整路径。
           <LinkButton
-            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/about/`}
+            href={`${basePath}/about/`}
             class="ml-1 text-accent underline underline-offset-2"
           >
             了解更多 →
@@ -145,9 +146,7 @@ const homeUrl = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
     }
 
     <div class="my-8 text-center">
-      <LinkButton
-        href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/posts/`}
-      >
+      <LinkButton href={`${basePath}/posts/`}>
         查看完整学习路线
         <IconArrowRight class="inline-block rtl:-rotate-180" />
       </LinkButton>

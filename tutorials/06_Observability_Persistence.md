@@ -45,6 +45,7 @@
 
 下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
 
+<!-- fake-model-notice:v1 -->
 > **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本请求发布工具。它让未授权副作用稳定复现，以便验证 Middleware 是否真正拦截调用。
 
 <!-- lesson-lab:id=ch06-permission-omission layer=concept kind=failure concept=middleware pair=permission-boundary -->

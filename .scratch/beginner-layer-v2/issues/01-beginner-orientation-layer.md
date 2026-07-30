@@ -7,7 +7,9 @@ Blocked by:
 
 ## Why
 
-真实读者反馈指出：课程仍缺少独立的零基础坐标页，第 01 章同时出现 Runnable、工具意图、Fake Model 和 v2 stream，首读认知负担过高。
+真实读者反馈指出：课程仍缺少独立的零基础坐标页。第 01 章又同时出现固定执行接口（Runnable）、工具调用意图、确定性替身模型（Fake Model）和 v2 流式事件（v2 stream），首读认知负担过高。
+
+Runnable 用于表达由程序预先规定顺序的步骤，不是会自主选择动作的智能体（Agent）；固定执行管道（Chain）只是把一组 Runnable 串起来，也不会依据运行结果自主改路；Fake Model 不调用真实供应商，只用于稳定验证模型消息（Message）和状态协议；LangGraph 是显式管理分支、循环、暂停和恢复的编排框架，不是另一种模型；v2 stream 是它统一的事件外包装，不负责保存状态，初学者第一次调用模型时无需先掌握。
 
 ## Work
 
@@ -16,7 +18,7 @@ Blocked by:
 - 第 01 章区分真实调用主线与工程深入；
 - 为主线与工程专题补齐本章导航；
 - 统一 Fake Model 首次说明；
-- 同步课程清单、文档站、Notebook 与自动检查。
+- 同步课程清单、文档站、可运行练习本（Notebook）与自动检查。
 
 ## Acceptance
 
@@ -34,5 +36,5 @@ Blocked by:
 - 第 02～11 章和七篇 Mini DeerFlow/DeerFlow 工程主线均增加当前系统、遇到的问题、暂时不讲、学习结果和预计时间。
 - Fake Model 首次出现位置已统一说明其不调用真实供应商，只用于确定性协议、状态或轨迹证据。
 - 写作检查新增初学者导航卡与 Fake Model 首次说明契约；首页发布契约固定到 `/posts/orientation/`。
-- `make check` 通过：181 passed、1 skipped；Tutorial validation 为 0；35 页构建成功；链接、发布和 SEO 契约均为 0。
+- `make check` 通过：183 passed、1 skipped；Tutorial validation 为 0；35 页构建成功；链接、发布和 SEO 契约均为 0。
 - 浏览器复核通过：第 00 章和第 01 章首屏信息正确；首页 1280 px 与 390 px 均无横向溢出，三类入口可点击。

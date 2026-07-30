@@ -12,7 +12,21 @@ from scripts.sync_lesson_notebooks import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 class NotebookSyncTests(unittest.TestCase):
+    def test_chapter_one_notebook_explains_fake_model_before_first_code(self) -> None:
+        notebook = build_notebook(PROJECT_ROOT / "tutorials/01_Getting_Started.md")
+
+        intro = notebook.cells[0].source
+        first_code = next(cell for cell in notebook.cells if cell.cell_type == "code")
+
+        self.assertIn("真实开发写法", intro)
+        self.assertIn("Fake Model", intro)
+        self.assertIn("不会调用外部大模型", intro)
+        self.assertIn("GenericFakeChatModel", first_code.source)
+
     def test_v2_labs_are_parsed_with_teaching_prose(self) -> None:
         markdown = (
             "# 第 07 章：Demo\n\n"
