@@ -2,13 +2,18 @@
   "stages": [
     {
       "id": "orientation",
-      "label": "序章",
-      "title": "接手研究交付任务",
-      "description": "先看清最终要交付的研究 Agent、学习者在项目中的角色，以及系统为何必须经过四次能力升级。",
+      "label": "开始前",
+      "title": "先建立坐标，再接手研究交付任务",
+      "description": "先分清模型、Chain、Agent 与 LangGraph，再看最终要交付的研究 Agent 为什么需要四次能力升级。",
       "audience": "第一次阅读本书的所有读者",
       "entryCondition": "会阅读基础 Python；不要求已经掌握 LangChain 或 LangGraph。",
       "kind": "main",
       "entries": [
+        {
+          "sourcePath": "ORIENTATION.md",
+          "question": "模型调用、Chain、Agent 与 LangGraph 分别解决什么问题？",
+          "goal": "建立模型调用、固定管道、Agent 循环和显式 Graph 的初学者坐标系。"
+        },
         {
           "sourcePath": "README.md",
           "question": "你将接手什么系统，最终要把它升级成什么样的研究交付 Agent？",
@@ -27,8 +32,8 @@
       "entries": [
         {
           "sourcePath": "tutorials/01_Getting_Started.md",
-          "question": "一次模型调用、固定 Runnable 管道与 Agent 循环究竟有什么区别？",
-          "goal": "区分直接模型调用、Runnable 管道和 Agent 循环，并能正确读取 v2 流式事件。"
+          "question": "第一次调用模型时，程序传入什么，又应该怎样读取返回值？",
+          "goal": "完成第一次模型调用，理解 Message 输入与 AIMessage 返回值；协议细节作为工程深入保留。"
         },
         {
           "sourcePath": "tutorials/02_Structured_Output.md",

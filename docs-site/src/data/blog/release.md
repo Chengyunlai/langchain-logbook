@@ -5,7 +5,7 @@ pubDatetime: 2026-07-14T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "docs/release.md"
-learningOrder: 21
+learningOrder: 22
 learningStage: "reference"
 learningStageTitle: "维护与协议资料"
 learningGoal: "执行文档站发布、线上验证与回滚，不属于 Agent 学习主线。"

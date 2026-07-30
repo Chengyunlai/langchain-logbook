@@ -5,7 +5,7 @@ pubDatetime: 2026-07-14T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/ARCHITECTURE.md"
-learningOrder: 12
+learningOrder: 13
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "先看懂 Mini DeerFlow 的组合根、数据边界、能力边界与交付边界。"
@@ -15,6 +15,21 @@ contentType: "main"
 > 校准日期：2026-07-14  
 > 适用范围：课程第 01–11 章、Lead Agent 核心、Sandbox/Subagent/MCP/Skills、Runtime/API/SSE、测试/评测/观测与最终综合实战  
 > 核心入口：[`app.py`](https://github.com/Chengyunlai/langchain-logbook/blob/main/mini_deerflow/app.py)；LangGraph 工具入口：[`../langgraph.json`](https://github.com/Chengyunlai/langchain-logbook/blob/main/langgraph.json)
+
+> **本章导航**
+> **本篇只解决一个问题**：前 11 章的零件怎样由一个组合根装成同一套应用。
+>
+> **当前系统**：模型、工具、State、Middleware、Checkpoint、审批和 Subagent 都已有可运行实现。
+>
+> **遇到的问题**：如果 CLI、Notebook 和 API 各自装配一套，权限、Store 和工具表会重新分裂。
+>
+> **本篇目标**：沿一次请求识别组合根、数据边界、能力边界和交付边界。
+>
+> **暂时不讲**：每个专题的完整实现细节。
+>
+> **读完以后**：你能从 `build_application` 沿调用链找到模型、工具、State 和 Checkpointer 的所有者。
+>
+> **预计时间**：30～40 分钟。
 
 ## 前 11 章的零件，不能各自留在 Demo 里
 
@@ -237,6 +252,8 @@ mini_deerflow/
 读到第四处后再回来看目录树，你会看到“不同生命周期的边界”，而不是二十多个陌生文件夹。
 
 ## 4. 一条消息如何穿过整套应用
+
+> **离线运行说明**：下图中的 Offline Fake Model 不会访问外部供应商，只按脚本返回 tool call 与最终消息。工具执行、Middleware、State Reducer、Checkpointer 和 compiled Graph 仍走真实路径。
 
 <!-- diagram:id=mini-deerflow-minimal-run-sequence -->
 ```mermaid

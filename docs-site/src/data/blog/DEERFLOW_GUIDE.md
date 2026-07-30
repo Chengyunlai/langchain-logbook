@@ -5,7 +5,7 @@ pubDatetime: 2026-07-14T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/DEERFLOW_GUIDE.md"
-learningOrder: 18
+learningOrder: 19
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "沿组合根、状态、Middleware、Subagent 与 Gateway 调用链阅读真实 DeerFlow。"
@@ -15,6 +15,21 @@ contentType: "main"
 > 校准日期：2026-07-14  
 > DeerFlow 官方源码锚点：[`4af617835805dd7cd78162ebed02fd6b782ea8bf`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf)  
 > 前置：[最终综合实战](/langchain-logbook/posts/capstone/)、[工程架构总览](/langchain-logbook/posts/architecture/)
+
+> **本章导航**
+> **本篇只解决一个问题**：面对大型 DeerFlow 仓库，怎样从故障沿调用链找到真正的责任边界。
+>
+> **当前系统**：你已经在 Mini DeerFlow 中亲手用过 Lead、State、Middleware、Subagent、Sandbox、Run/Event 和 SSE。
+>
+> **遇到的问题**：按目录逐文件阅读只能看到代码位置，无法解释一次请求为何经过这些模块。
+>
+> **本篇目标**：沿四个故障追踪组合根、能力边界、产品 Runtime 和可观测性调用链。
+>
+> **暂时不讲**：DeerFlow 的全部产品功能和每个目录的逐项摘要。
+>
+> **读完以后**：你能从入口、State、Middleware、Tool Registry、Runtime 和 Gateway 顺序定位源码。
+>
+> **预计时间**：60～90 分钟；建议先完成第 04、07、09、11 章与综合实战。
 
 ## 先用 Mini DeerFlow 作为源码坐标
 

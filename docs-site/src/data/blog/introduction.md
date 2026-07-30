@@ -5,9 +5,9 @@ pubDatetime: 2026-04-03T12:00:00Z
 featured: true
 tags: ["tutorial"]
 sourcePath: "README.md"
-learningOrder: 0
+learningOrder: 1
 learningStage: "orientation"
-learningStageTitle: "接手研究交付任务"
+learningStageTitle: "先建立坐标，再接手研究交付任务"
 learningGoal: "明确全书唯一项目、四部能力路线，以及 LangChain、LangGraph 与 DeerFlow 在项目中的位置。"
 contentType: "main"
 ---
@@ -19,6 +19,8 @@ contentType: "main"
 每一章都从上一次运行留下的问题开始。代码可以离线执行；Markdown 负责讲清原因，Notebook 负责让你亲手验证，测试负责守住已经建立的边界。
 
 [在线阅读](https://chengyunlai.github.io/langchain-logbook/) · [课程改造任务](https://github.com/Chengyunlai/langchain-logbook/blob/main/TODO.md) · [版本策略](/langchain-logbook/posts/version-policy/) · [SEO 与搜索收录](/langchain-logbook/posts/seo/)
+
+如果“Chain、Agent 和 LangGraph 到底是什么关系”还说不清，先读[第 00 章：先看懂模型、Chain、Agent 和 LangGraph](/langchain-logbook/posts/orientation/)。序章只负责介绍贯穿全书的项目，不要求你先理解完整工程架构。
 
 ## 序章：接手研究交付任务
 
@@ -73,7 +75,7 @@ flowchart LR
 
 | 章节 | 当前系统遇到的问题 | 本章交付 |
 | --- | --- | --- |
-| [第 01 章](/langchain-logbook/posts/01_getting_started/) | 模型、Runnable 与 Agent 看起来都像“调用模型”，事件也无法稳定消费 | 模型工厂、消息入口、v2 流式事件 adapter |
+| [第 01 章](/langchain-logbook/posts/01_getting_started/) | 第一次调用模型时，不知道应传入什么、怎样读取返回值 | 模型入口、Message 输入与 AIMessage 返回值；Runnable、工具意图和流事件作为工程深入 |
 | [第 02 章](/langchain-logbook/posts/02_structured_output/) | 自然语言计划不能被路由、持久化或验证 | `TaskPlan`、`ArtifactRef`、显式失败结果 |
 | [第 03 章](/langchain-logbook/posts/03_rag_20/) | 计划结构正确，事实却可能过时且没有来源 | 带来源 Retriever、空召回协议、recall@k 与可替换知识索引 |
 

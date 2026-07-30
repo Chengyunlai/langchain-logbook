@@ -5,7 +5,7 @@ pubDatetime: 2025-01-01T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "docs/version-policy.md"
-learningOrder: 20
+learningOrder: 21
 learningStage: "reference"
 learningStageTitle: "维护与协议资料"
 learningGoal: "理解兼容范围、锁定版本与依赖升级门禁。"

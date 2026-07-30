@@ -5,7 +5,7 @@ pubDatetime: 2026-07-14T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/CAPSTONE.md"
-learningOrder: 17
+learningOrder: 18
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "完成检索、并行委派、草稿、审批、恢复、幂等发布与评测组成的长任务闭环。"
@@ -16,6 +16,21 @@ contentType: "main"
 > 前置：课程 01–11、Lead/Sandbox/Runtime/Evaluation 四篇专题  
 > 代码事实源：`mini_deerflow/capstone.py`  
 > 自动验收：`tests/test_mini_deerflow_capstone.py`
+
+> **本章导航**
+> **本篇只解决一个问题**：怎样把前面分别验证的能力装成一条可恢复、可审批、可评测的研究交付链。
+>
+> **当前系统**：检索、Subagent、Sandbox、Checkpoint、审批、Runtime 与评测都已建立公共接缝。
+>
+> **遇到的问题**：零件各自通过测试，不代表它们组合后不会在恢复、重复请求或部分失败时互相破坏。
+>
+> **本篇目标**：装配完整纵切面，并用正常完成、重建恢复、重复 resume 与断线重放验证边界。
+>
+> **暂时不讲**：重新发明一套 Capstone 框架或复制生产级 DeerFlow。
+>
+> **读完以后**：你能从空目录按能力依赖重建 Mini DeerFlow，并指出每一步的验证证据。
+>
+> **预计时间**：60～90 分钟。
 
 ## 零件已经齐了，这次只装配一条交付链
 
@@ -114,6 +129,8 @@ Approval Graph 把 interrupt 写入 SQLite checkpoint。恢复后，系统先验
 如果直接复制 `capstone.py`，最容易得到一个“能跑但说不清”的项目。更可靠的做法是回到空目录，按全书出现过的依赖顺序重建公共接缝。
 
 下面的里程碑不是第二份课程目录。每一行都回答一个具体问题：此刻新增哪份事实，立刻用什么证据验证，又有哪些机制还不该提前出现。
+
+> **离线运行说明**：里程碑中的 Fake Model 不调用真实供应商，只提供可重复的模型消息。它用于验证完整 Agent/Graph 路径，开放式回答质量仍需真实模型实验和评测。
 
 | 里程碑 | 新增事实源 | 立即反馈 | 失败时不要提前补什么 |
 |---|---|---|---|

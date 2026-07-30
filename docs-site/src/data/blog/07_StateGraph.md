@@ -5,7 +5,7 @@ pubDatetime: 2026-03-27T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/07_StateGraph.md"
-learningOrder: 7
+learningOrder: 8
 learningStage: "langgraph"
 learningStageTitle: "把业务流程写成可恢复的图"
 learningGoal: "理解 State、Reducer、Node 与 Edge，并判断何时应该显式设计 Graph。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：Graph 编排层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
 > **本章工件**：一张从零搭建的研究流程图，以及 Mini DeerFlow 显式 ReAct 工厂
+
+> **本章导航**
+> **本章只解决一个问题**：当 Prompt 不能保证业务顺序时，怎样把状态与转移写成可检查的 Graph。
+>
+> **当前系统**：Agent 会调用工具，Middleware 会治理调用生命周期。
+>
+> **遇到的问题**：“先规划、再并行检索、最后汇总”仍只是给模型的自然语言要求。
+>
+> **本章目标**：从零建立 State、Node、Edge、Reducer 和显式 ReAct 循环。
+>
+> **暂时不讲**：动态 worker、跨进程持久化和人工审批。
+>
+> **学完以后**：你能判断何时标准 `create_agent` 已足够，何时业务规则必须进入 Graph。
+>
+> **预计时间**：35～45 分钟。
 
 ## 1. 工具会调用了，顺序仍然无法证明
 
@@ -511,6 +526,8 @@ State、节点、边、条件分支和合并点现在都能从代码中指出来
 模型决定是否调用工具，工具结果写回消息历史，再由模型继续判断。
 
 标准工具循环仍应优先使用 `create_agent`。这里手写一次，是为了看清 ToolMessage 为什么必须回到模型，以及验证、审批或质量门这类确定性阶段应该接在循环的什么位置。
+
+> **确定性测试写法**：下面的 Fake Model 不会自主推理工具轨迹，只按脚本先返回 tool call、再返回最终回答。它用于稳定展示 Graph 节点顺序与 ToolMessage 回流。
 
 
 ### 连接 model、tools 和返回边

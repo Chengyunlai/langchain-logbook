@@ -6,6 +6,21 @@
 > DeerFlow 阅读锚点：`807c3c521832526c6205ffee23e5f05231eaea5b`  
 > 校准日期：2026-07-13
 
+> [!NOTE]
+> **本篇只解决一个问题**：Agent 写文件或连接外部能力时，怎样限制它能访问的位置与权限。
+>
+> **当前系统**：Lead 可以委派 Subagent，ArtifactRef 也能进入 Graph State。
+>
+> **遇到的问题**：ArtifactRef 只有逻辑引用；把宿主路径、shell 和全部远端工具直接交给模型会越权。
+>
+> **本篇目标**：建立 Workspace、Sandbox Provider、Capability Handle、MCP allowlist 与按需 Skill 边界。
+>
+> **暂时不讲**：生产容器编排、网络隔离和多租户资源调度。
+>
+> **读完以后**：你能区分路径校验与进程隔离，也能说明“发现工具”为什么不等于“允许 Agent 使用”。
+>
+> **预计时间**：45～60 分钟。
+
 ## ArtifactRef 已经入 State，文件却还没有落点
 
 第 11 章让 Lead 通过 `task` 委派隔离 specialist。上一篇又把 `ArtifactRef` 合并进 State。此时引用已经存在，文件落点、写入身份和可复用能力仍没有答案。

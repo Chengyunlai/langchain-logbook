@@ -5,7 +5,7 @@ pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/RUNTIME_GATEWAY.md"
-learningOrder: 15
+learningOrder: 16
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "区分产品 Thread、Run、Event 与 Graph Checkpoint，并通过 API/SSE 交付长任务。"
@@ -16,6 +16,21 @@ contentType: "main"
 > 前置内容：第 09、10 章、[`LEAD_AGENT_CORE.md`](/langchain-logbook/posts/lead_agent_core/) 与 [`SANDBOX_EXTENSIONS.md`](/langchain-logbook/posts/sandbox_extensions/)  
 > 对应实现：`mini_deerflow/runtime/`、`mini_deerflow/api/`、`mini_deerflow/persistence.py`  
 > 可执行验收：`tests/test_mini_deerflow_runtime_gateway.py`
+
+> **本章导航**
+> **本篇只解决一个问题**：怎样把 Graph 执行变成客户端可创建、查询、取消、重连和恢复的长任务服务。
+>
+> **当前系统**：Agent Harness 能执行工具、保存 Graph State、暂停审批并隔离 Subagent。
+>
+> **遇到的问题**：HTTP 请求或浏览器连接结束后，产品仍需要保存任务身份、状态和可重放事件。
+>
+> **本篇目标**：区分产品 Thread、Run、Event 与 Graph Checkpoint，并建立 API/SSE 交付边界。
+>
+> **暂时不讲**：多 worker lease、分布式队列和生产级高可用。
+>
+> **读完以后**：你能解释 Checkpoint 服务恢复、Event 服务客户端观察，两者为什么不能合并。
+>
+> **预计时间**：50～65 分钟。
 
 ## 浏览器一关，任务还在吗
 

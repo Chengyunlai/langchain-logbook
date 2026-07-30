@@ -47,6 +47,7 @@ function slugify(text) {
 // Helper to determine publication date for sorting (01 < 02 < 03 ... Appendix)
 function getPubDate(filename) {
   if (filename.toLowerCase() === "introduction") return "2026-04-03T12:00:00Z";
+  if (filename.toLowerCase() === "orientation") return "2026-04-03T13:00:00Z";
   const engineeringDates = {
     ARCHITECTURE: "2026-07-14T00:00:00Z",
     LEAD_AGENT_CORE: "2026-07-13T00:00:00Z",
@@ -128,6 +129,7 @@ function rewriteLinks(content) {
 
 function stripInternalLessonMarkers(content) {
   return content
+    .replace(/^> \[!NOTE\]$/gm, "> **本章导航**")
     .replace(/^[ \t]*<!-- lesson-contract:v2 -->[ \t]*$/gm, "")
     .replace(/^[ \t]*<!-- lesson-lab:[^\r\n]*-->[ \t]*$/gm, "")
     .replace(/^[ \t]*<!-- \/lesson-lab -->[ \t]*$/gm, "")
@@ -210,6 +212,7 @@ processFile(
 processFile(path.join(SRC_DIR, "docs/seo.md"), "seo.md");
 processFile(path.join(SRC_DIR, "docs/version-policy.md"), "version-policy.md");
 processFile(path.join(SRC_DIR, "docs/release.md"), "release.md");
+processFile(path.join(SRC_DIR, "ORIENTATION.md"), "orientation.md");
 
 const miniDeerFlowDir = path.join(SRC_DIR, "mini_deerflow");
 for (const file of fs.readdirSync(miniDeerFlowDir)) {

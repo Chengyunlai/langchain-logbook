@@ -637,7 +637,7 @@ class SiteReleaseContractCliTests(unittest.TestCase):
         (site / "index.html").write_text(
             f'<main data-home-url="{home_url}"></main>'
             '<a data-primary-start '
-            'href="/langchain-logbook/posts/introduction/">Start</a>'
+            'href="/langchain-logbook/posts/orientation/">Start</a>'
             f'<a href="{href}">Edit</a>',
             encoding="utf-8",
         )
@@ -725,7 +725,7 @@ class SiteReleaseContractCliTests(unittest.TestCase):
             index.write_text(
                 index.read_text(encoding="utf-8")
                 + '<a data-primary-start '
-                'href="/langchain-logbook/posts/introduction/">Again</a>',
+                'href="/langchain-logbook/posts/orientation/">Again</a>',
                 encoding="utf-8",
             )
 

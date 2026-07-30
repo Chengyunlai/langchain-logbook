@@ -6,6 +6,21 @@
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / langgraph-checkpoint-sqlite 3.x
 > **本章工件**：Checkpointer、Thread、StateSnapshot、history、time travel、SQLite 重启与 State migration
 
+> [!NOTE]
+> **本章只解决一个问题**：进程退出后，怎样找回 Graph 已经做到哪里并从同一现场继续。
+>
+> **当前系统**：Graph 已能拆分、并行、汇总和修订研究任务。
+>
+> **遇到的问题**：返回值可以保存最终结果，却不能恢复下一节点、并行任务和等待状态。
+>
+> **本章目标**：用 Checkpointer、`thread_id` 和 StateSnapshot 保存与恢复执行现场。
+>
+> **暂时不讲**：人工审批、重复副作用和产品级 Run/Event。
+>
+> **学完以后**：你能区分 Checkpoint、Store 与业务数据库，并完成 SQLite 跨重建恢复。
+>
+> **预计时间**：40～50 分钟。
+
 ## 1. 第 08 章留下了一份临时现场
 
 第 08 章的研究助手已经会拆分任务、并行检索、汇总、审查和修订。运行结束时，`result` 里有一份完整报告。先不要急着庆祝，关掉 Python 进程再看。

@@ -5,7 +5,7 @@ pubDatetime: 2026-03-30T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/04_Smart_Tooling.md"
-learningOrder: 4
+learningOrder: 5
 learningStage: "agent-wrapper"
 learningStageTitle: "让 Agent 成为受控运行时"
 learningGoal: "用工具契约与 create_agent 构建第一个可观察、可测试的 Lead Agent。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：Agent 封装层第 1 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：Tool Schema、ToolMessage、`create_agent`、ToolRuntime 与 Mini DeerFlow Lead Agent
+
+> **本章导航**
+> **本章只解决一个问题**：让模型选择工具后，程序真正执行工具，并把结果正确交还给模型。
+>
+> **当前系统**：应用可以固定执行检索管道。
+>
+> **遇到的问题**：模型还不能根据任务选择搜索、计算或直接回答。
+>
+> **本章目标**：看懂 Tool Schema、`AIMessage.tool_calls`、ToolMessage 和 `create_agent` 的完整循环。
+>
+> **暂时不讲**：用户身份、权限、长期状态与 Middleware 治理。
+>
+> **学完以后**：你能手写一次 model → tool → model 轨迹，并知道 `bind_tools` 不会执行函数。
+>
+> **预计时间**：35～45 分钟。
 
 ## 1. 检索管道为什么还不算 Agent
 
@@ -145,6 +160,8 @@ Schema 无法完成授权。即使参数形状合法，当前用户是否能检�
 ## 3. `bind_tools` 只生成调用意图
 
 第 01 章看过 `tool_calls`，这里要把它放回真实消息协议。先只调用绑定工具的模型，然后查执行日志；这能把“表达意图”和“执行动作”分开。
+
+> **确定性测试写法**：下面的 Fake Model 不会根据工具说明自主选择动作，只按脚本生成指定 `tool_calls`。它用于稳定观察消息配对和工具副作用，不代表真实模型一定会选对工具。
 
 
 ### 绑定工具后只得到 AIMessage

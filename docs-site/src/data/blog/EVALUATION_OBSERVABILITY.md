@@ -5,7 +5,7 @@ pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/EVALUATION_OBSERVABILITY.md"
-learningOrder: 16
+learningOrder: 17
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "用测试、结果/轨迹/预算评测与 Trace 证明 Agent 的质量和安全边界。"
@@ -16,6 +16,21 @@ contentType: "main"
 > 前置内容：第 05–11 章、[`LEAD_AGENT_CORE.md`](/langchain-logbook/posts/lead_agent_core/)、[`SANDBOX_EXTENSIONS.md`](/langchain-logbook/posts/sandbox_extensions/) 与 [`RUNTIME_GATEWAY.md`](/langchain-logbook/posts/runtime_gateway/)  
 > 对应实现：`mini_deerflow/evals/`、`mini_deerflow/observability.py`、`quality/critical-regressions.json`  
 > 可执行验收：`tests/test_mini_deerflow_evaluation_observability.py`
+
+> **本章导航**
+> **本篇只解决一个问题**：Run 成功以后，怎样证明结果、轨迹、预算和安全都达到交付要求。
+>
+> **当前系统**：客户端可以创建 Run、观察事件并收到成功终态。
+>
+> **遇到的问题**：`success` 只证明程序完成，不证明引用真实、审批未绕过或成本没有超限。
+>
+> **本篇目标**：区分测试、Evaluation、Trace 与 Runtime Event Journal，并建立四层质量证据。
+>
+> **暂时不讲**：把一个总分当作万能质量指标，或用 Trace 替代产品事件日志。
+>
+> **读完以后**：你能为固定场景、样本集退化和单次故障选择正确的验证手段。
+>
+> **预计时间**：45～60 分钟。
 
 ## Run 显示 `success`，报告仍然可能不可交付
 
@@ -32,6 +47,8 @@ Mini DeerFlow 已经能规划、检索、委派、暂停审批，并通过持久
 ## 1. 四套记录都存在，仍不能混着使用
 
 面对这条失败 Run，第一步不是再加一个总分。先看四套系统各自保存什么，以及它们能回答到哪一层。
+
+> **离线评测说明**：表中的 Fake Model 不调用真实供应商，用于稳定复现工具轨迹、状态转换和预算计数。它适合守住工程契约，不能代替真实模型上的结果质量评测。
 
 | 系统 | 输入 | 主要输出 | 回答的问题 | 不应承担的职责 |
 |---|---|---|---|---|

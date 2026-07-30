@@ -6,7 +6,7 @@ featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/05_Agent_Middleware.md"
 notebookFilename: "05_Context_State_Store.ipynb"
-learningOrder: 5
+learningOrder: 6
 learningStage: "agent-wrapper"
 learningStageTitle: "让 Agent 成为受控运行时"
 learningGoal: "按生命周期与控制权区分 Runtime Context、Graph State、Store 和 Secret。"
@@ -18,6 +18,21 @@ contentType: "main"
 > **课程位置**：Agent 封装层第 2 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 Runtime Context、Graph State、Store 与 Mini DeerFlow 数据边界
+
+> **本章导航**
+> **本章只解决一个问题**：身份、线程事实、长期偏好和业务数据分别应该放在哪里。
+>
+> **当前系统**：Lead Agent 已经能选择并执行工具。
+>
+> **遇到的问题**：把所有值都叫“上下文”会造成 Secret 泄漏、序列化失败和陈旧业务副本。
+>
+> **本章目标**：按控制权与生命周期区分 Runtime Context、Graph State、Store 和业务数据库。
+>
+> **暂时不讲**：如何统一执行权限、日志、预算和错误规则。
+>
+> **学完以后**：你能为一份运行数据选择正确的所有者与存储边界。
+>
+> **预计时间**：25～35 分钟。
 
 ## 1. 一个“上下文”袋子装不下所有事实
 

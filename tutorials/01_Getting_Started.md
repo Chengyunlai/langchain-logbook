@@ -1,36 +1,66 @@
-# 第 01 章：模型、消息与第一次可观察调用
+# 第 01 章：第一次调用大模型，程序拿到的是什么
 
 <!-- lesson-contract:v2 -->
 
 > **课程位置**：增强模型层第 1 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
-> **本章工件**：可替换模型入口、Messages、Runnable 与 v2 stream envelope
+> **本章工件**：真实模型入口、Message 输入与 AIMessage 返回值；Runnable、工具意图与 v2 stream 作为工程深入
+
+> [!NOTE]
+> **本章只解决一个问题**：第一次调用模型时，程序传入什么，又应该怎样读取返回值。
+>
+> **当前系统**：第 00 章已经分清模型调用、Chain、Agent 与 LangGraph。
+>
+> **遇到的问题**：很多示例只打印回答正文，读者看不出 LangChain 实际传递的是 Message 对象。
+>
+> **本章目标**：完成一次真实调用，认清 `HumanMessage → model.invoke → AIMessage`。
+>
+> **暂时不讲**：Runnable、工具意图、`create_agent` 和 v2 stream 都放在后半篇“工程深入”，第一次阅读可以跳过。
+>
+> **学完以后**：你能替换模型、构造消息输入，并从返回的 AIMessage 中读取正文。
+>
+> **预计时间**：初学者主线 15 分钟；工程深入再增加 25～35 分钟。
 
 ## 1. 先别做 Agent，先看返回值
 
-长期目标是一份带引用、可恢复、可审批的研究报告。现在先把这个目标放远一点。第一章没有工具、Graph 和 Subagent，只有一次模型调用。
+长期目标是一份带引用、可恢复、可审批的研究报告。现在先把这个目标放远一点。初学者主线没有工具、Graph 和 Subagent，只有一次模型调用。
 
-我们先检查三个最普通的问题：传进去的是什么，返回的是什么，运行过程能看到什么。连这三件事都说不清，后面的 Agent 封装只会像魔法。
+第一次阅读只检查三个最普通的问题：输入是什么，输出是什么，为什么返回值不是普通字符串。连这三件事都说不清，后面的 Agent 封装只会像魔法。
 
-这一章会依次运行单次模型、固定 Runnable、工具调用意图和 v2 stream。工具真正怎样执行，留到第 04 章。
+完成第 2 节后，可以直接进入第 02 章。第 3～9 节保留 Runnable、工具调用意图和 v2 stream 等工程实验，等需要这些协议时再回来。
 
 ```mermaid
 flowchart LR
-    U["研究请求"] --> M["Messages"]
-    M --> I["model.invoke"]
-    M --> R["prompt | model | parser"]
-    M --> T["model.bind_tools"]
-    I --> A["AIMessage"]
-    R --> S["固定管道输出"]
-    T --> C["AIMessage.tool_calls"]
-    C --> N["工具尚未执行"]
+    U["用户输入"] --> H["HumanMessage"]
+    H --> M["model.invoke"]
+    M --> A["AIMessage"]
+    A --> C["应用读取 content"]
 ```
 
-**图的文本替代**：同一请求可以进入单次模型调用、固定 Runnable 或绑定工具的模型。前两者由应用决定顺序；`bind_tools` 只允许模型表达工具意图，不执行函数。
+**图的文本替代**：用户输入先成为 HumanMessage，模型调用返回 AIMessage，应用再读取其中的 content。
 
 ## 2. 模型返回的是 Message
 
-在线模型会受到网络、凭证和随机输出影响。这里先用 LangChain 自带的 fake model。它的回答是固定的，我们可以专心观察调用协议。
+### 真实开发写法
+
+真实项目先初始化一个模型，再调用 `invoke`。下面示例需要配置对应供应商的 API Key，因此不进入离线测试。
+
+```python
+from langchain.chat_models import init_chat_model
+
+
+model = init_chat_model("openai:gpt-4.1-mini")
+response = model.invoke("一句话解释什么是 Agent")
+
+print(type(response).__name__)
+print(response.content)
+```
+
+输入可以先写成字符串，LangChain 会把它转换成用户消息。返回值是 `AIMessage`，正文放在 `content` 中；模型名称、Token 用量等供应商信息通常位于 `response_metadata` 或 `usage_metadata`。
+
+### 确定性测试写法
+
+在线模型会受到网络、凭证和随机输出影响。下面改用 LangChain 自带的 Fake Model。它不会调用外部大模型，只按脚本返回固定 AIMessage，用来稳定观察消息协议；它不能证明真实模型会正确理解问题。
 
 <!-- lesson-lab:id=ch01-message-invoke layer=concept kind=baseline concept=model-message -->
 ### 调用一次模型并检查返回消息类型
@@ -70,6 +100,12 @@ output_content = checkpoint 保存图运行中的状态快照。
 
 **动手修改**：增加一条历史 AIMessage 和新的 HumanMessage。预测 fake model 是否会推理历史，再说明确定性 fixture 与真实模型能力的区别。
 <!-- /lesson-lab -->
+
+到这里，初学者主线已经完成。你应该能回答：`invoke` 收到什么，返回什么，正文放在哪里。下面进入协议与工程深入；第一次阅读可以直接跳到[第 02 章](./02_Structured_Output.md)。
+
+## 工程深入：固定管道、工具意图与流式事件
+
+后面的实验不再回答“怎样第一次调用模型”，而是比较不同入口由谁控制下一步，并观察 Agent 的 v2 stream 协议。它们仍然是工程所需证据，但不是理解 Message 的前置。
 
 ## 3. 步骤固定时，用 Runnable
 

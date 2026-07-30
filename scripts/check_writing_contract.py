@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 DEFAULT_FILES = (
+    "ORIENTATION.md",
     "README.md",
     *(f"tutorials/{name}.md" for name in (
         "01_Getting_Started",
@@ -29,6 +30,36 @@ DEFAULT_FILES = (
     "mini_deerflow/EVALUATION_OBSERVABILITY.md",
     "mini_deerflow/CAPSTONE.md",
     "mini_deerflow/DEERFLOW_GUIDE.md",
+)
+
+BEGINNER_CONTRACT_FILES = frozenset(
+    relative
+    for relative in DEFAULT_FILES
+    if relative not in {"README.md"}
+)
+BEGINNER_NAVIGATION_FIELDS = (
+    ("本章只解决一个问题", "本篇只解决一个问题"),
+    ("当前系统",),
+    ("遇到的问题",),
+    ("本章目标", "本篇目标"),
+    ("暂时不讲",),
+    ("学完以后", "读完以后"),
+    ("预计时间",),
+)
+FAKE_MODEL_PATTERN = re.compile(
+    r"GenericFakeChatModel|fake[ _-]?(?:chat[ _-]?)?model|离线模型",
+    re.IGNORECASE,
+)
+FAKE_MODEL_EXPLANATIONS = (
+    "不调用",
+    "不会调用",
+    "不访问",
+    "不会访问",
+    "只按脚本",
+    "只返回预设",
+    "替换成可预测",
+    "不依赖 API Key",
+    "不需要 API Key",
 )
 
 CALIBRATION_PATTERNS = (
@@ -98,10 +129,35 @@ def visible_length(paragraph: str) -> int:
     return len(without_targets)
 
 
+def beginner_contract_failures(path: Path) -> list[str]:
+    """检查章节导航卡与 Fake Model 首次说明。"""
+
+    text = path.read_text(encoding="utf-8")
+    failures: list[str] = []
+    for aliases in BEGINNER_NAVIGATION_FIELDS:
+        if not any(f"**{alias}**" in text for alias in aliases):
+            failures.append(f"missing beginner navigation field: {aliases[0]}")
+
+    fake_match = FAKE_MODEL_PATTERN.search(text)
+    if fake_match is not None:
+        explanation_window = text[fake_match.start() : fake_match.start() + 420]
+        if not any(marker in explanation_window for marker in FAKE_MODEL_EXPLANATIONS):
+            failures.append(
+                "first Fake Model mention must explain that it does not call "
+                "a real provider and only provides deterministic evidence"
+            )
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--max-paragraph-chars", type=int, default=240)
+    parser.add_argument(
+        "--require-beginner-contracts",
+        action="store_true",
+        help="require the beginner navigation card and Fake Model first-use notice",
+    )
     parser.add_argument("files", nargs="*")
     args = parser.parse_args()
 
@@ -118,6 +174,11 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
         calibration_count += sum(len(pattern.findall(text)) for pattern in CALIBRATION_PATTERNS)
+        if args.require_beginner_contracts or relative in BEGINNER_CONTRACT_FILES:
+            failures.extend(
+                f"{relative}: {failure}"
+                for failure in beginner_contract_failures(path)
+            )
         for line_number, paragraph in prose_paragraphs(path):
             paragraph_count += 1
             length = visible_length(paragraph)

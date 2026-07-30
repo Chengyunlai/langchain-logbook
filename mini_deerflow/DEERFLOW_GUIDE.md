@@ -4,6 +4,21 @@
 > DeerFlow 官方源码锚点：[`4af617835805dd7cd78162ebed02fd6b782ea8bf`](https://github.com/bytedance/deer-flow/tree/4af617835805dd7cd78162ebed02fd6b782ea8bf)  
 > 前置：[最终综合实战](./CAPSTONE.md)、[工程架构总览](./ARCHITECTURE.md)
 
+> [!NOTE]
+> **本篇只解决一个问题**：面对大型 DeerFlow 仓库，怎样从故障沿调用链找到真正的责任边界。
+>
+> **当前系统**：你已经在 Mini DeerFlow 中亲手用过 Lead、State、Middleware、Subagent、Sandbox、Run/Event 和 SSE。
+>
+> **遇到的问题**：按目录逐文件阅读只能看到代码位置，无法解释一次请求为何经过这些模块。
+>
+> **本篇目标**：沿四个故障追踪组合根、能力边界、产品 Runtime 和可观测性调用链。
+>
+> **暂时不讲**：DeerFlow 的全部产品功能和每个目录的逐项摘要。
+>
+> **读完以后**：你能从入口、State、Middleware、Tool Registry、Runtime 和 Gateway 顺序定位源码。
+>
+> **预计时间**：60～90 分钟；建议先完成第 04、07、09、11 章与综合实战。
+
 ## 先用 Mini DeerFlow 作为源码坐标
 
 第一次打开 DeerFlow，最醒目的是目录数量。可目录只能告诉你代码放在哪里，不能解释一次请求为何走到这里，也不能解释故障应由谁处理。

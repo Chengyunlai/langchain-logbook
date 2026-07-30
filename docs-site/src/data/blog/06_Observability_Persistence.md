@@ -6,7 +6,7 @@ featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/06_Observability_Persistence.md"
 notebookFilename: "06_Agent_Middleware.ipynb"
-learningOrder: 6
+learningOrder: 7
 learningStage: "agent-wrapper"
 learningStageTitle: "让 Agent 成为受控运行时"
 learningGoal: "用 AgentMiddleware 统一治理 Prompt、模型、工具、PII、调用上限与失败。"
@@ -18,6 +18,21 @@ contentType: "main"
 > **课程位置**：Agent 封装层第 3 章
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x
 > **本章工件**：原生 AgentMiddleware 实验与 Mini DeerFlow 默认治理链
+
+> **本章导航**
+> **本章只解决一个问题**：怎样让权限、脱敏、预算和错误处理稳定覆盖每次模型与工具调用。
+>
+> **当前系统**：不同事实已经归入 Runtime Context、Graph State、Store 和业务数据库。
+>
+> **遇到的问题**：规则仍散落在调用点，新工具很容易漏掉一次检查。
+>
+> **本章目标**：用 Agent Middleware 治理模型与工具生命周期，并理解注册顺序和短路。
+>
+> **暂时不讲**：固定业务阶段、并行汇合、跨进程恢复和持久审批。
+>
+> **学完以后**：你能判断一条规则应放 Middleware，还是应进入显式 Graph。
+>
+> **预计时间**：首读 35～45 分钟；扩展实验可稍后完成。
 
 ## 1. 事实已经归位，权限检查却还会漏
 
@@ -42,6 +57,8 @@ contentType: "main"
 ## 2. 漏掉一次权限检查，副作用已经发生
 
 下面两个工具都能读当前权限。`search_docs` 记得检查，`publish_report` 忘了。模型选中发布工具时，Agent runtime 只看到一个合法 tool call，它不知道这条路径越权。
+
+> **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本请求发布工具。它让未授权副作用稳定复现，以便验证 Middleware 是否真正拦截调用。
 
 
 ### 运行一个漏掉权限检查的发布工具

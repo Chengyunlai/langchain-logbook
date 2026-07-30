@@ -5,7 +5,7 @@ pubDatetime: 2026-03-26T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/08_Engineering_Defense.md"
-learningOrder: 8
+learningOrder: 9
 learningStage: "langgraph"
 learningStageTitle: "把业务流程写成可恢复的图"
 learningGoal: "用 Command、Send、Subgraph 与 Reducer 表达条件、循环和动态并行。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：Graph 编排层第 2 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x
 > **本章工件**：Command、Send、Subgraph、显式循环、Functional API 与 Mini DeerFlow 研究图
+
+> **本章导航**
+> **本章只解决一个问题**：任务数量和分支在运行时变化时，Graph 怎样安全展开并最终汇合。
+>
+> **当前系统**：研究流程已经是显式 StateGraph，但 worker 数量和部分规则仍在编译前写死。
+>
+> **遇到的问题**：第三个研究任务会静默消失，重复决策和无终点修订也会随后出现。
+>
+> **本章目标**：用 Command、Send、Subgraph 和显式进度表达动态控制流。
+>
+> **暂时不讲**：进程退出后的恢复、长期审批和副作用重放。
+>
+> **学完以后**：你能为条件、动态并行、隔离子流程和循环选择合适的 Graph 原语。
+>
+> **预计时间**：40～50 分钟。
 
 ## 1. 第三个研究任务没有进入图
 

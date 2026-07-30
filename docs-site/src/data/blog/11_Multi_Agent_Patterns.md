@@ -5,7 +5,7 @@ pubDatetime: 2026-03-23T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/11_Multi_Agent_Patterns.md"
-learningOrder: 11
+learningOrder: 12
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "根据控制权选择 Router、Handoff、Subgraph 或 Subagent-as-tool，并理解 Supervisor 如何由中心 Lead 实现。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：Agent Harness 层第 1 章  
 > **锁定环境**：Python 3.12 / LangChain 1.3.x / LangGraph 1.2.x  
 > **本章工件**：任务协议、上下文投影、控制权选择、SubagentExecutor、task tool 与 DelegationLedger
+
+> **本章导航**
+> **本章只解决一个问题**：什么时候应该把局部任务交给 Subagent，同时让 Lead 保留正确的控制权与上下文。
+>
+> **当前系统**：研究 Graph 能恢复、等待审批并安全发布。
+>
+> **遇到的问题**：Lead 同时搬运网页、命令输出和工具轨迹，主消息历史越来越长。
+>
+> **本章目标**：先按控制权区分 Router、Handoff、Subgraph 和 Subagent-as-tool，再实现受控委派。
+>
+> **暂时不讲**：文件 Sandbox、产品 Runtime、SSE 和完整交付装配。
+>
+> **学完以后**：你能根据会话所有权、Context 投影、并发与结果预算选择协作模式。
+>
+> **预计时间**：第一遍 35 分钟；工程实现第二遍再增加 45～60 分钟。
 
 ## 1. 报告能交付了，主消息历史也快塞满了
 

@@ -5,7 +5,7 @@ pubDatetime: 2026-07-13T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "mini_deerflow/LEAD_AGENT_CORE.md"
-learningOrder: 13
+learningOrder: 14
 learningStage: "agent-engineering"
 learningStageTitle: "把单图扩展为可交付的 Agent 系统"
 learningGoal: "把 State、Tools、Middleware、Checkpointer 与 Streaming 组合成可恢复的 Lead Agent。"
@@ -17,6 +17,21 @@ contentType: "main"
 > 前置章节：课程第 04–11 章  
 > 工程事实源：`mini_deerflow.app`、`state`、`middleware`、`persistence`、`streaming`  
 > 验证日期：2026-07-13
+
+> **本章导航**
+> **本篇只解决一个问题**：同一 Thread 运行多轮并经历进程重建后，Lead Agent 怎样保持事实一致。
+>
+> **当前系统**：组合根已经把模型、工具、Store 和 Checkpointer 装进同一应用。
+>
+> **遇到的问题**：最终文本看起来正确，仍不能证明恢复、权限、摘要和 Artifact 合并没有互相破坏。
+>
+> **本篇目标**：让 State、Reducer、Middleware、Checkpointer 与 Streaming 在同一业务路径受压。
+>
+> **暂时不讲**：文件隔离、产品 Run/Event 和离线评测。
+>
+> **读完以后**：你能沿两轮调用说明每份事实在哪里变化、保存和恢复。
+>
+> **预计时间**：40～50 分钟。
 
 兼容 minor 窗口和升级门禁见 [`docs/version-policy.md`](/langchain-logbook/posts/version-policy/)。本文不重复手写精确 patch，避免依赖升级后出现互相冲突的第四套版本事实。
 

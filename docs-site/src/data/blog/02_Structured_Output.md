@@ -5,7 +5,7 @@ pubDatetime: 2026-04-01T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/02_Structured_Output.md"
-learningOrder: 2
+learningOrder: 3
 learningStage: "enhanced-model"
 learningStageTitle: "让模型进入程序"
 learningGoal: "用 Pydantic Schema 把模型输出变成可验证、可演进的业务对象。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：增强模型层第 2 章
 > **锁定环境**：Python 3.12 / Pydantic 2.12.x / LangChain 1.3.x
 > **本章工件**：ResearchRequest、TaskPlan、ArtifactRef 与结构化失败边界
+
+> **本章导航**
+> **本章只解决一个问题**：怎样把不稳定的自然语言计划变成程序可以验证的 Python 对象。
+>
+> **当前系统**：研究助手能调用模型并读取 AIMessage。
+>
+> **遇到的问题**：模型把“目标”换成“研究主题”，手写字符串解析就失去字段。
+>
+> **本章目标**：用 Pydantic 和 `with_structured_output` 建立可验证的请求、计划与失败结果。
+>
+> **暂时不讲**：事实是否真实、资料怎样检索，以及 Graph 如何保存这些对象。
+>
+> **学完以后**：你能区分候选模型输出、Schema 校验和业务对象。
+>
+> **预计时间**：25～35 分钟。
 
 ## 1. 研究助手给出计划，程序却找不到字段
 
@@ -144,7 +159,9 @@ error_type = greater_than_equal
 
 ## 4. AIMessage 正文为空，为什么仍能得到对象
 
-`model_validate` 只能证明 Schema 自己可用。接下来让 LangChain 的 fake chat model 返回结构化 tool call，再由 `with_structured_output` 转成同一个 Pydantic 对象。
+`model_validate` 只能证明 Schema 自己可用。接下来让 LangChain 返回结构化 tool call，再由 `with_structured_output` 转成同一个 Pydantic 对象。
+
+> **确定性测试写法**：下面的 Fake Model 不会调用外部大模型，只按脚本返回一个结构化 tool call。它用于验证 `with_structured_output` 的解析协议，不能证明真实模型一定会生成正确字段。
 
 
 ### 从结构化 tool call 解析 ResearchRequest

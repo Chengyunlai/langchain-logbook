@@ -5,7 +5,7 @@ pubDatetime: 2025-01-01T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "APPENDIX.md"
-learningOrder: 19
+learningOrder: 20
 learningStage: "reference"
 learningStageTitle: "维护与协议资料"
 learningGoal: "查询消息、工具调用与底层协议细节，不必在第 01 章前通读。"

@@ -5,6 +5,21 @@
 > 对应实现：`mini_deerflow/runtime/`、`mini_deerflow/api/`、`mini_deerflow/persistence.py`  
 > 可执行验收：`tests/test_mini_deerflow_runtime_gateway.py`
 
+> [!NOTE]
+> **本篇只解决一个问题**：怎样把 Graph 执行变成客户端可创建、查询、取消、重连和恢复的长任务服务。
+>
+> **当前系统**：Agent Harness 能执行工具、保存 Graph State、暂停审批并隔离 Subagent。
+>
+> **遇到的问题**：HTTP 请求或浏览器连接结束后，产品仍需要保存任务身份、状态和可重放事件。
+>
+> **本篇目标**：区分产品 Thread、Run、Event 与 Graph Checkpoint，并建立 API/SSE 交付边界。
+>
+> **暂时不讲**：多 worker lease、分布式队列和生产级高可用。
+>
+> **读完以后**：你能解释 Checkpoint 服务恢复、Event 服务客户端观察，两者为什么不能合并。
+>
+> **预计时间**：50～65 分钟。
+
 ## 浏览器一关，任务还在吗
 
 前面的课程已经有了一套完整的 Agent Harness。它能调用工具、保存 Graph State、暂停审批，也能把 Subagent 和工作区隔离开。

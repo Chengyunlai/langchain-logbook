@@ -119,15 +119,15 @@ def check_contracts(
                     f"expected data-home-url={normalized_base!r}, got {home_urls!r}",
                 )
             )
-        expected_start = f"{normalized_base}/posts/introduction/"
+        expected_start = f"{normalized_base}/posts/orientation/"
         if normalized_base == "/":
-            expected_start = "/posts/introduction/"
+            expected_start = "/posts/orientation/"
         if index_contract.primary_start_hrefs != [expected_start]:
             findings.append(
                 Finding(
                     "primary-start",
                     index.relative_to(site),
-                    "expected one explicit introduction start link, got "
+                    "expected one explicit beginner orientation start link, got "
                     f"{index_contract.primary_start_hrefs!r}",
                 )
             )

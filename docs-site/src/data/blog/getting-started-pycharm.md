@@ -5,7 +5,7 @@ pubDatetime: 2025-01-01T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "docs/getting-started-pycharm.md"
-learningOrder: 22
+learningOrder: 23
 learningStage: "reference"
 learningStageTitle: "维护与协议资料"
 learningGoal: "在 PyCharm 中复用 uv 环境，运行离线示例、测试与 Notebook，并找到课程入口。"

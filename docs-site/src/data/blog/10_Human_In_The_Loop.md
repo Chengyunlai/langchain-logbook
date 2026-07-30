@@ -5,7 +5,7 @@ pubDatetime: 2026-03-24T00:00:00.000Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/10_Human_In_The_Loop.md"
-learningOrder: 10
+learningOrder: 11
 learningStage: "langgraph"
 learningStageTitle: "把业务流程写成可恢复的图"
 learningGoal: "用 interrupt/resume 实现持久审批，并保护重放场景中的副作用。"
@@ -17,6 +17,21 @@ contentType: "main"
 > **课程位置**：Graph 编排层第 4 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / SQLite checkpointer 3.x
 > **本章工件**：interrupt、Command(resume)、审批协议、重放边界与幂等 effect ledger
+
+> **本章导航**
+> **本章只解决一个问题**：怎样让 Graph 释放 worker、等待人工审批，并在以后从原位置恢复。
+>
+> **当前系统**：研究任务已经可以跨进程恢复执行现场。
+>
+> **遇到的问题**：报告会直接发布；若简单阻塞线程，又无法等待数小时或数天。
+>
+> **本章目标**：用 Interrupt、`Command(resume=...)` 和稳定 operation ID 实现持久审批与幂等副作用。
+>
+> **暂时不讲**：多 Agent 委派、产品 Runtime 和 SSE 重连。
+>
+> **学完以后**：你能解释 Interrupt 为什么不是线程睡眠，以及节点重入为何要求副作用幂等。
+>
+> **预计时间**：35～45 分钟。
 
 ## 1. 报告恢复了，却会绕过负责人直接发布
 

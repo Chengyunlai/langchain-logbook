@@ -5,7 +5,7 @@ pubDatetime: 2025-01-01T00:00:00Z
 featured: false
 tags: ["tutorial"]
 sourcePath: "docs/seo.md"
-learningOrder: 23
+learningOrder: 24
 learningStage: "reference"
 learningStageTitle: "维护与协议资料"
 learningGoal: "配置站点验证、提交 sitemap，并用自动化契约保护 canonical、元数据和结构化数据。"

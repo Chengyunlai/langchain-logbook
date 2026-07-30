@@ -6,7 +6,7 @@ featured: false
 tags: ["tutorial"]
 sourcePath: "tutorials/09_Multi_Agent_Eval.md"
 notebookFilename: "09_Checkpoint_Recovery.ipynb"
-learningOrder: 9
+learningOrder: 10
 learningStage: "langgraph"
 learningStageTitle: "把业务流程写成可恢复的图"
 learningGoal: "用 Checkpointer 持久保存 checkpoint，并让同一 Thread 上的 Graph 能够跨进程恢复。"
@@ -18,6 +18,21 @@ contentType: "main"
 > **课程位置**：Graph 编排层第 3 章
 > **锁定环境**：Python 3.12 / LangGraph 1.2.x / langgraph-checkpoint-sqlite 3.x
 > **本章工件**：Checkpointer、Thread、StateSnapshot、history、time travel、SQLite 重启与 State migration
+
+> **本章导航**
+> **本章只解决一个问题**：进程退出后，怎样找回 Graph 已经做到哪里并从同一现场继续。
+>
+> **当前系统**：Graph 已能拆分、并行、汇总和修订研究任务。
+>
+> **遇到的问题**：返回值可以保存最终结果，却不能恢复下一节点、并行任务和等待状态。
+>
+> **本章目标**：用 Checkpointer、`thread_id` 和 StateSnapshot 保存与恢复执行现场。
+>
+> **暂时不讲**：人工审批、重复副作用和产品级 Run/Event。
+>
+> **学完以后**：你能区分 Checkpoint、Store 与业务数据库，并完成 SQLite 跨重建恢复。
+>
+> **预计时间**：40～50 分钟。
 
 ## 1. 第 08 章留下了一份临时现场
 
